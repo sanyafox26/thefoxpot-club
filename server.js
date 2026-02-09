@@ -2,9 +2,9 @@ const express = require("express");
 const { Telegraf } = require("telegraf");
 
 const app = express();
-app.use(express.json()); // важливо для webhook
+app.use(express.json());
 
-// --- ENV (з Railway Variables) ---
+// ===== ENV VARIABLES (з Railway → Variables) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 const PUBLIC_URL = process.env.PUBLIC_URL;
@@ -22,13 +22,14 @@ if (!PUBLIC_URL) {
   process.exit(1);
 }
 
-// --- Telegram bot ---
+// ===== TELEGRAM BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
+// проста перевірка
 bot.start((ctx) => ctx.reply("The FoxPot Club bot OK ✅"));
 bot.hears(/test/i, (ctx) => ctx.reply("Test OK ✅"));
 
-// --- Basic routes ---
+// ===== BASIC ROUTES =====
 app.get("/", (req, res) => {
   res.status(200).send("The FoxPot Club backend OK");
 });
@@ -37,11 +38,11 @@ app.get("/health", (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-// --- Webhook route (секретний шлях) ---
+// ===== WEBHOOK ROUTE (СЕКРЕТНИЙ ШЛЯХ) =====
 const webhookPath = `/telegram/${WEBHOOK_SECRET}`;
 app.use(webhookPath, bot.webhookCallback(webhookPath));
 
-// --- Start server ---
+// ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Server listening on ${PORT}`);
