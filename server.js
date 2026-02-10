@@ -25,7 +25,7 @@ app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
 const webhookPath = `/telegram/${WEBHOOK_SECRET}`;
-app.use(webhookPath, bot.webhookCallback(webhookPath));
+app.use(bot.webhookCallback(webhookPath));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
