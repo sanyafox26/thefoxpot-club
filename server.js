@@ -25,10 +25,14 @@ app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
 const webhookPath = `/telegram/${WEBHOOK_SECRET}`;
-app.use(bot.webhookCallback(webhookPath));
+
+// ✅ ВАЖЛИВО: тільки POST і тільки на цей шлях
+app.post(webhookPath, (req, res, next) => {
+  return bot.webhookCallback(webhookPath)(req, res, next);
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server listening on ${PORT}`);
-  console.log(`✅ Webhook path ready: ${webhookPath}`);
+  console.log(`✅ Webhook path: ${webhookPath}`);
 });
