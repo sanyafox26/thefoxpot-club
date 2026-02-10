@@ -98,3 +98,89 @@ bot.command("me", async (ctx) => {
 
     return ctx.reply(
       "🦊 Твій статус Fox\n\n" +
+        `Інвайти: ${fox.invites}\n` +
+        `Рейтинг: ${fox.rating}\n` +
+        `Відвідування: ${fox.visits}`
+    );
+  } catch (e) {
+    console.error("❌ /me error:", e);
+    return ctx.reply("❌ Помилка сервера. Спробуй ще раз через 10 секунд.");
+  }
+});
+
+bot.command("rules", (ctx) => {
+  return ctx.reply(
+    "📜 FoxPot Phase 1 — коротко:\n\n" +
+      "• Fox = учасник клубу\n" +
+      "• Знижки мін. −10% у закладах\n" +
+      "• Рейтинг = не гроші\n" +
+      "• Інвайти не продаються\n" +
+      "• Fox не представляє FoxPot"
+  );
+});
+
+bot.command("invite", async (ctx) => {
+  const userId = ctx.from.id;
+
+  try {
+    const fox = await getFox(userId);
+    if (!fox) return ctx.reply("❌ Спочатку /start");
+
+    return ctx.reply(`🎟 Твої інвайти: ${fox.invites}\n\nГенерація кодів — скоро.`);
+  } catch (e) {
+    console.error("❌ /invite error:", e);
+    return ctx.reply("❌ Помилка сервера. Спробуй ще раз через 10 секунд.");
+  }
+});
+
+// швидкий тест
+bot.hears(/test/i, (ctx) => ctx.reply("Test OK ✅"));
+
+// ===== ROUTES =====
+app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
+app.get("/health", (req, res) => res.status(200).json({ ok: true }));
+
+// Щоб браузер показував, що шлях існує (GET)
+app.get(`/telegram/${WEBHOOK_SECRET}`, (req, res) => {
+  res.status(200).send("OK (webhook endpoint exists)");
+});
+
+// ДОДАТКОВО: тест БД в браузері
+app.get("/db", async (req, res) => {
+  try {
+    const r = await pool.query("SELECT 1 as ok");
+    res.json({ ok: true, db: r.rows[0] });
+  } catch (e) {
+    console.error("❌ /db error:", e);
+    res.status(500).json({ ok: false, error: "db_failed" });
+  }
+});
+
+// ===== WEBHOOK =====
+const webhookPath = `/telegram/${WEBHOOK_SECRET}`;
+
+app.post(webhookPath, (req, res) => {
+  console.log("📩 Telegram update received");
+  try {
+    return bot.webhookCallback(webhookPath)(req, res);
+  } catch (e) {
+    console.error("❌ Webhook handler error:", e);
+    return res.sendStatus(200);
+  }
+});
+
+// ===== START =====
+const PORT = process.env.PORT || 3000;
+
+(async () => {
+  try {
+    await initDb();
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`✅ Server listening on ${PORT}`);
+      console.log(`✅ Webhook path: ${webhookPath}`);
+    });
+  } catch (e) {
+    console.error("❌ DB init failed:", e);
+    process.exit(1);
+  }
+})();
