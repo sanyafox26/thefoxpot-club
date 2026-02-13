@@ -25,7 +25,6 @@ if (!DATABASE_URL) {
 }
 if (!ADMIN_USER_ID) {
   console.error("❌ ADMIN_USER_ID not set (add it in Railway Variables)");
-  // не виходимо, але адмін-функції не працюватимуть
 }
 
 // ===== POSTGRES =====
@@ -72,23 +71,30 @@ async function createFoxIfMissing(userId) {
 const OWNER_INVITES = 999999999; // дуже велике число автоматично
 const OWNER_RATING_GAP = 1000; // адмін завжди +1000 над будь-ким
 
+function isAdminId(userId) {
+  return String(userId) === String(ADMIN_USER_ID);
+}
 function isAdmin(ctx) {
-  return String(ctx.from.id) === String(ADMIN_USER_ID);
+  return isAdminId(ctx.from.id);
 }
 
-async function getMaxRating() {
-  const r = await pool.query("SELECT COALESCE(MAX(rating), 0) AS max FROM foxes");
+// MAX рейтинг серед ВСІХ, крім адміна
+async function getMaxRatingExcludingAdmin() {
+  const r = await pool.query(
+    "SELECT COALESCE(MAX(rating), 0) AS max FROM foxes WHERE user_id <> $1",
+    [ADMIN_USER_ID]
+  );
   return Number(r.rows[0].max || 0);
 }
 
-// Головна гарантія: адмін завжди топ+1000 + багато інвайтів, і ніколи не 0
+// Гарантія: адмін завжди top(інших)+1000 + багато інвайтів, і ніколи не 0
 async function ownerEnsure(userId) {
-  if (String(userId) !== String(ADMIN_USER_ID)) return;
+  if (!isAdminId(userId)) return;
 
   await createFoxIfMissing(userId);
 
-  const maxRating = await getMaxRating();
-  const wantedRating = maxRating + OWNER_RATING_GAP;
+  const maxOther = await getMaxRatingExcludingAdmin();
+  const wantedRating = maxOther + OWNER_RATING_GAP;
 
   await pool.query(
     `
@@ -105,9 +111,6 @@ async function ownerEnsure(userId) {
   `,
     [userId, OWNER_INVITES, wantedRating]
   );
-
-  // Якщо раптом maxRating = це сам адмін, wantedRating стане rating+1000,
-  // це нормально: адмін завжди буде вище.
 }
 
 // ===== BOT =====
@@ -120,26 +123,25 @@ bot.command("admin", async (ctx) => {
   return ctx.reply("👑 Ти АДМІН (owner mode).");
 });
 
-// Разова команда (не обовʼязкова, але корисна)
 bot.command("admin_open", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
+
   const userId = ctx.from.id;
-
   await ownerEnsure(userId);
-  const fox = await getFox(userId);
 
-  const maxRating = await getMaxRating();
-  const wantedRating = maxRating + OWNER_RATING_GAP;
+  const fox = await getFox(userId);
+  const maxOther = await getMaxRatingExcludingAdmin();
+  const wantedRating = maxOther + OWNER_RATING_GAP;
 
   return ctx.reply(
     "✅ Owner Mode оновлено.\n\n" +
       `🎟 Інвайти: ${fox.invites}\n` +
-      `⭐ Рейтинг: ${fox.rating}\n` +
-      `📌 Правило: OWNER = MAX(${maxRating}) + ${OWNER_RATING_GAP} = ${wantedRating}`
+      `⭐ Рейтинг: ${fox.rating}\n\n` +
+      `📌 Правило: OWNER = MAX_інших(${maxOther}) + ${OWNER_RATING_GAP} = ${wantedRating}`
   );
 });
 
-// Ручні команди лишаємо (на випадок тестів)
+// Ручні (на випадок тестів)
 bot.command("admin_invites", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
 
@@ -207,13 +209,13 @@ bot.command("me", async (ctx) => {
   if (!fox) return ctx.reply("❌ Натисни /start");
 
   if (isAdmin(ctx)) {
-    const maxRating = await getMaxRating();
+    const maxOther = await getMaxRatingExcludingAdmin();
     return ctx.reply(
       "👑 OWNER STATUS\n\n" +
         `🎟 Інвайти: ${fox.invites}\n` +
         `⭐ Рейтинг: ${fox.rating}\n` +
         `👣 Візити: ${fox.visits}\n\n` +
-        `📌 Правило: OWNER = MAX(${maxRating}) + ${OWNER_RATING_GAP}`
+        `📌 Правило: OWNER = MAX_інших(${maxOther}) + ${OWNER_RATING_GAP}`
     );
   }
 
@@ -236,7 +238,6 @@ bot.command("visit", async (ctx) => {
     [userId]
   );
 
-  // після змін ще раз гарантуємо owner-правило
   await ownerEnsure(userId);
 
   const fox = await getFox(userId);
@@ -250,10 +251,9 @@ bot.command("visit", async (ctx) => {
   const remaining = 5 - progress;
 
   if (progress === 0) {
-    await pool.query(
-      "UPDATE foxes SET invites = invites + 1 WHERE user_id = $1",
-      [userId]
-    );
+    await pool.query("UPDATE foxes SET invites = invites + 1 WHERE user_id = $1", [
+      userId,
+    ]);
     message += "🎟 +1 інвайт за 5 візитів!";
   } else {
     message += `📈 До наступного інвайта: ще ${remaining} візит(и).`;
@@ -279,7 +279,6 @@ bot.command("id", (ctx) => {
 // ===== ROUTES =====
 app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
-
 app.get("/db", async (req, res) => {
   try {
     const r = await pool.query("SELECT 1 as ok");
@@ -291,11 +290,9 @@ app.get("/db", async (req, res) => {
 
 // ===== WEBHOOK =====
 const webhookPath = `/telegram/${WEBHOOK_SECRET}`;
+app.post(webhookPath, (req, res) => bot.webhookCallback(webhookPath)(req, res));
 
-app.post(webhookPath, (req, res) => {
-  return bot.webhookCallback(webhookPath)(req, res);
-});
-
+// ===== START =====
 const PORT = process.env.PORT || 3000;
 
 (async () => {
