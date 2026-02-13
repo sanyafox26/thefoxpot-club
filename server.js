@@ -41,7 +41,7 @@ async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-  console.log("✅ DB: table foxes ready");
+  console.log("✅ DB ready");
 }
 
 async function getFox(userId) {
@@ -64,83 +64,72 @@ async function createFoxIfMissing(userId) {
   return getFox(userId);
 }
 
+// ===== ADMIN HELPERS =====
+function isAdmin(ctx) {
+  return String(ctx.from.id) === String(ADMIN_USER_ID);
+}
+
+async function adminGuard(userId) {
+  if (String(userId) !== String(ADMIN_USER_ID)) return;
+
+  await pool.query(
+    "UPDATE foxes SET rating = CASE WHEN rating <= 0 THEN 1 ELSE rating END WHERE user_id = $1",
+    [userId]
+  );
+}
+
+// ===== BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
-// ===== ADMIN COMMAND =====
+// ===== ADMIN =====
 bot.command("admin", async (ctx) => {
-  const userId = String(ctx.from.id);
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Ти не адмін.");
+  return ctx.reply("👑 Ти АДМІН (owner mode).");
+});
 
-  if (userId === ADMIN_USER_ID) {
-    return ctx.reply("👑 Ти АДМІН (owner mode).");
-  } else {
-    return ctx.reply("⛔ Ти не адмін.");
+bot.command("admin_invites", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
+
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const n = Number(parts[1]);
+
+  if (!Number.isInteger(n) || n < 0 || n > 1000000) {
+    return ctx.reply("❌ Напиши так: /admin_invites 999");
   }
-});
 
-// ===== USER ID CHECK =====
-bot.command("id", (ctx) => {
-  return ctx.reply(`Твій Telegram ID: ${ctx.from.id}`);
-});
-
-// ===== VISIT COMMAND =====
-bot.command("visit", async (ctx) => {
   const userId = ctx.from.id;
+  await createFoxIfMissing(userId);
+  await pool.query("UPDATE foxes SET invites = $2 WHERE user_id = $1", [userId, n]);
 
-  try {
-    await createFoxIfMissing(userId);
-
-    await pool.query(
-      "UPDATE foxes SET visits = visits + 1, rating = rating + 1 WHERE user_id = $1",
-      [userId]
-    );
-
-    const fox = await getFox(userId);
-
-    let message =
-      "🦊 Візит зараховано!\n\n" +
-      `Відвідування: ${fox.visits}\n` +
-      `Рейтинг: ${fox.rating}\n\n`;
-
-    const progress = fox.visits % 5;
-    const remaining = 5 - progress;
-
-    if (progress === 0) {
-      await pool.query(
-        "UPDATE foxes SET invites = invites + 1 WHERE user_id = $1",
-        [userId]
-      );
-      message += "🎟 +1 інвайт за 5 візитів!";
-    } else {
-      message += `📈 До наступного інвайта: ще ${remaining} візит(и).`;
-    }
-
-    return ctx.reply(message);
-  } catch (e) {
-    console.error("❌ /visit error:", e);
-    return ctx.reply("❌ Помилка сервера.");
-  }
+  return ctx.reply(`✅ Інвайти встановлено: ${n}`);
 });
 
-// ===== BASIC COMMANDS =====
+bot.command("admin_unban", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
+
+  const userId = ctx.from.id;
+  await createFoxIfMissing(userId);
+  await pool.query("UPDATE foxes SET rating = 1 WHERE user_id = $1", [userId]);
+
+  return ctx.reply("✅ Рейтинг відновлено.");
+});
+
+// ===== BASIC =====
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
+  await createFoxIfMissing(userId);
 
-  try {
-    await createFoxIfMissing(userId);
-
-    return ctx.reply(
-      "🦊 Ласкаво просимо до FoxPot Club\n\n" +
-        "Статус: /me\n" +
-        "Візит: /visit\n" +
-        "Інвайти: /invite"
-    );
-  } catch (e) {
-    console.error("❌ /start error:", e);
-    return ctx.reply("❌ Помилка сервера.");
-  }
+  return ctx.reply(
+    "🦊 Ласкаво просимо до FoxPot Club\n\n" +
+      "Статус: /me\n" +
+      "Візит: /visit\n" +
+      "Інвайти: /invite"
+  );
 });
 
 bot.command("me", async (ctx) => {
+  await adminGuard(ctx.from.id);
+
   const fox = await getFox(ctx.from.id);
   if (!fox) return ctx.reply("❌ Натисни /start");
 
@@ -152,6 +141,40 @@ bot.command("me", async (ctx) => {
   );
 });
 
+bot.command("visit", async (ctx) => {
+  const userId = ctx.from.id;
+  await adminGuard(userId);
+
+  await createFoxIfMissing(userId);
+
+  await pool.query(
+    "UPDATE foxes SET visits = visits + 1, rating = rating + 1 WHERE user_id = $1",
+    [userId]
+  );
+
+  const fox = await getFox(userId);
+
+  let message =
+    "🦊 Візит зараховано!\n\n" +
+    `Відвідування: ${fox.visits}\n` +
+    `Рейтинг: ${fox.rating}\n\n`;
+
+  const progress = fox.visits % 5;
+  const remaining = 5 - progress;
+
+  if (progress === 0) {
+    await pool.query(
+      "UPDATE foxes SET invites = invites + 1 WHERE user_id = $1",
+      [userId]
+    );
+    message += "🎟 +1 інвайт за 5 візитів!";
+  } else {
+    message += `📈 До наступного інвайта: ще ${remaining} візит(и).`;
+  }
+
+  return ctx.reply(message);
+});
+
 bot.command("invite", async (ctx) => {
   const fox = await getFox(ctx.from.id);
   if (!fox) return ctx.reply("❌ Натисни /start");
@@ -159,9 +182,14 @@ bot.command("invite", async (ctx) => {
   return ctx.reply(`🎟 Твої інвайти: ${fox.invites}`);
 });
 
+bot.command("id", (ctx) => {
+  return ctx.reply(`Твій Telegram ID: ${ctx.from.id}`);
+});
+
 // ===== ROUTES =====
 app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
+
 app.get("/db", async (req, res) => {
   try {
     const r = await pool.query("SELECT 1 as ok");
