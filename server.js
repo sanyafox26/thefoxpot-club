@@ -1,7 +1,7 @@
 /**
- * The FoxPot Club — server.js (FULL FILE, DEBUG + /panel + /venues)
+ * The FoxPot Club — server.js (FULL FILE, safe migrations + /panel + /venues)
  *
- * Required ENV:
+ * ENV required:
  * - DATABASE_URL
  * - BOT_TOKEN
  * - PUBLIC_URL
@@ -9,7 +9,7 @@
  *
  * Optional:
  * - ADMIN_USER_ID
- * - NODE_ENV=production
+ * - NODE_ENV=production (можна, але НЕ обов'язково)
  */
 
 const express = require("express");
@@ -34,7 +34,6 @@ if (!BOT_TOKEN) throw new Error("Missing env: BOT_TOKEN");
 if (!PUBLIC_URL) throw new Error("Missing env: PUBLIC_URL");
 if (!WEBHOOK_SECRET) throw new Error("Missing env: WEBHOOK_SECRET");
 
-// normalize PUBLIC_URL (no trailing slash)
 const PUBLIC_URL_NORM = String(PUBLIC_URL).replace(/\/+$/, "");
 
 const pool = new Pool({
@@ -70,7 +69,7 @@ function pbkdf2Hex(pin, saltHex) {
   return crypto.pbkdf2Sync(String(pin), salt, 120000, 32, "sha256").toString("hex");
 }
 
-// simple cookie signing
+// cookie signing
 function signCookie(payload) {
   const raw = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = sha256Hex(raw + "|" + WEBHOOK_SECRET);
@@ -112,7 +111,7 @@ function shortErr(e) {
   if (!e) return "unknown";
   const code = e.code ? String(e.code) : "";
   const msg = e.message ? String(e.message) : String(e);
-  return `${code ? code + " " : ""}${msg}`.slice(0, 180);
+  return `${code ? code + " " : ""}${msg}`.slice(0, 200);
 }
 
 // ---------------- DB schema helpers ----------------
@@ -138,12 +137,6 @@ async function tableExists(tableName) {
   return rows.length > 0;
 }
 
-async function addColumnIfMissing(tableName, columnName, columnTypeSQL) {
-  const exists = await columnExists(tableName, columnName);
-  if (exists) return;
-  await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnTypeSQL};`);
-}
-
 async function safeQuery(sql) {
   try {
     await pool.query(sql);
@@ -152,24 +145,48 @@ async function safeQuery(sql) {
   }
 }
 
+async function addColumnIfMissing(tableName, columnName, columnTypeSQL) {
+  const exists = await columnExists(tableName, columnName);
+  if (exists) return;
+  await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnTypeSQL};`);
+}
+
 /**
- * Add constraint ONLY if it's missing (Postgres-safe).
+ * Add constraint only if missing (Postgres-safe)
  */
 async function addConstraintIfMissing(constraintName, alterSql) {
   const sql = `
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = '${constraintName}'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${constraintName}') THEN
     ${alterSql}
   END IF;
 END $$;`;
   await safeQuery(sql);
 }
 
+/**
+ * Detect which column stores Telegram user id in table foxes.
+ * We support legacy: user_id / telegram_id / fox_id / id
+ */
+async function detectFoxIdColumn() {
+  if (!(await tableExists("foxes"))) return "id";
+
+  const candidates = ["id", "user_id", "telegram_id", "fox_id"];
+  for (const c of candidates) {
+    if (await columnExists("foxes", c)) return c;
+  }
+
+  // if no suitable column exists, create id
+  await addColumnIfMissing("foxes", "id", "BIGINT");
+  return "id";
+}
+
+let FOX_ID_COL = "id"; // will be set on boot
+
+// ---------------- Migrations ----------------
 async function ensureTablesAndMigrations() {
-  // Baseline tables
+  // venues
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -181,6 +198,7 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
+  // foxes (create baseline if not exists)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       id BIGINT PRIMARY KEY,
@@ -189,6 +207,7 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
+  // checkins
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
       id SERIAL PRIMARY KEY,
@@ -202,6 +221,7 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
+  // counted_visits
   await pool.query(`
     CREATE TABLE IF NOT EXISTS counted_visits (
       id SERIAL PRIMARY KEY,
@@ -212,22 +232,14 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // Migrate foxes legacy columns -> id
-  if (await tableExists("foxes")) {
-    const hasId = await columnExists("foxes", "id");
-    const hasFoxId = await columnExists("foxes", "fox_id");
-    const hasTelegramId = await columnExists("foxes", "telegram_id");
+  // FOX_ID_COL detection + legacy fixes
+  FOX_ID_COL = await detectFoxIdColumn();
 
-    if (!hasId && hasFoxId) await safeQuery(`ALTER TABLE foxes RENAME COLUMN fox_id TO id;`);
-    if (!hasId && hasTelegramId) await safeQuery(`ALTER TABLE foxes RENAME COLUMN telegram_id TO id;`);
+  // If foxes has legacy columns but "id" is not the one used, ensure it exists too (harmless)
+  await addColumnIfMissing("foxes", "username", "TEXT");
+  await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-    if (!(await columnExists("foxes", "id"))) await addColumnIfMissing("foxes", "id", "BIGINT");
-    await addColumnIfMissing("foxes", "username", "TEXT");
-    await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
-    await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_id_unique ON foxes(id);`);
-  }
-
-  // Ensure needed columns exist
+  // Ensure required columns in checkins/counts exist
   await addColumnIfMissing("checkins", "venue_id", "INT");
   await addColumnIfMissing("checkins", "fox_id", "BIGINT");
   await addColumnIfMissing("checkins", "otp", "TEXT");
@@ -239,21 +251,18 @@ async function ensureTablesAndMigrations() {
   await addColumnIfMissing("counted_visits", "fox_id", "BIGINT");
   await addColumnIfMissing("counted_visits", "day_warsaw", "DATE");
 
-  // Constraints (safe)
+  // Foreign keys (soft-safe)
   await addConstraintIfMissing(
     "checkins_venue_fk",
     `ALTER TABLE checkins
      ADD CONSTRAINT checkins_venue_fk
      FOREIGN KEY (venue_id) REFERENCES venues(id);`
   );
-  await addConstraintIfMissing(
-    "checkins_fox_fk",
-    `ALTER TABLE checkins
-     ADD CONSTRAINT checkins_fox_fk
-     FOREIGN KEY (fox_id) REFERENCES foxes(id);`
-  );
 
-  // Indexes
+  // This FK references foxes(<FOX_ID_COL>) — but FK needs a fixed target.
+  // We'll keep checkins.fox_id = BIGINT Telegram id and ensure foxes has UNIQUE on that column.
+  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_${FOX_ID_COL}_uniq ON foxes(${FOX_ID_COL});`);
+
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
     ON checkins (venue_id, fox_id, day_warsaw)
@@ -370,9 +379,8 @@ app.get("/panel", async (req, res) => {
   }
 
   const { rows: pend } = await pool.query(
-    `SELECT c.id, c.otp, c.fox_id, c.expires_at, f.username
+    `SELECT c.id, c.otp, c.fox_id, c.expires_at
      FROM checkins c
-     LEFT JOIN foxes f ON f.id=c.fox_id
      WHERE c.venue_id=$1 AND (c.confirmed_at IS NULL) AND c.expires_at >= NOW()
      ORDER BY c.created_at DESC
      LIMIT 20;`,
@@ -381,11 +389,10 @@ app.get("/panel", async (req, res) => {
 
   const pendingHtml = pend.length
     ? pend.map((p) => {
-        const uname = p.username ? `@${p.username}` : "(no username)";
         const exp = new Date(p.expires_at).toISOString();
         return `<div style="padding:10px;border:1px solid #2a2a40;border-radius:12px;margin:8px 0">
           <div><b>OTP:</b> <code>${p.otp}</code></div>
-          <div class="muted">Fox: ${uname} (ID ${String(p.fox_id).slice(0,4)}****)</div>
+          <div class="muted">Fox ID: ${String(p.fox_id).slice(0,4)}****</div>
           <div class="muted">Expires: ${exp}</div>
         </div>`;
       }).join("")
@@ -503,12 +510,10 @@ bot.start(async (ctx) => {
   );
 });
 
-// NEW: /panel command (so you get link in Telegram)
 bot.command("panel", async (ctx) => {
   await ctx.reply(`Panel lokalu: ${PUBLIC_URL_NORM}/panel`);
 });
 
-// NEW: /venues debug (see if venues exist)
 bot.command("venues", async (ctx) => {
   try {
     const { rows } = await pool.query(`SELECT id, name, city FROM venues ORDER BY id ASC LIMIT 50;`);
@@ -527,14 +532,18 @@ bot.command("checkin", async (ctx) => {
     const venueId = Number(parts[1]);
     if (!venueId) return ctx.reply("❌ Napisz tak: /checkin 1");
 
-    const foxId = Number(ctx.from.id); // BIGINT
+    const foxTelegramId = Number(ctx.from.id);
     const username = ctx.from.username ? String(ctx.from.username) : null;
 
-    // Ensure fox exists
+    // Insert fox into legacy-safe schema
+    // FOX_ID_COL can be "id" OR "user_id" OR something legacy
+    const col = FOX_ID_COL;
+
+    // Build dynamic SQL safely (column name is controlled by us)
     await pool.query(
-      `INSERT INTO foxes (id, username) VALUES ($1,$2)
-       ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username;`,
-      [foxId, username]
+      `INSERT INTO foxes (${col}, username) VALUES ($1,$2)
+       ON CONFLICT (${col}) DO UPDATE SET username=EXCLUDED.username;`,
+      [foxTelegramId, username]
     );
 
     const { rows } = await pool.query(`SELECT id, name FROM venues WHERE id=$1`, [venueId]);
@@ -548,7 +557,7 @@ bot.command("checkin", async (ctx) => {
     await pool.query(
       `INSERT INTO checkins (venue_id, fox_id, otp, expires_at, day_warsaw)
        VALUES ($1,$2,$3, NOW() + ($4::int * interval '1 minute'), $5::date);`,
-      [venueId, foxId, otp, expiresMinutes, day]
+      [venueId, foxTelegramId, otp, expiresMinutes, day]
     );
 
     await ctx.reply(
@@ -556,7 +565,6 @@ bot.command("checkin", async (ctx) => {
     );
   } catch (e) {
     console.error("checkin error:", e);
-    // give user useful debug without logs
     await ctx.reply("❌ Error creating check-in\n" + shortErr(e));
   }
 });
@@ -571,5 +579,6 @@ bot.command("checkin", async (ctx) => {
   app.listen(PORT, () => {
     console.log(`✅ Server listening on ${PORT}`);
     console.log(`✅ Webhook path ready: /${WEBHOOK_SECRET}`);
+    console.log(`✅ FOX_ID_COL detected: ${FOX_ID_COL}`);
   });
 })();
