@@ -1,591 +1,84 @@
-/**
- * The FoxPot Club — server.js (FULL FILE)
- * FIXED: DB can have user_id (NOT NULL) instead of fox_id in checkins / counted_visits.
- *
- * ENV required:
- * - DATABASE_URL
- * - BOT_TOKEN
- * - PUBLIC_URL
- * - WEBHOOK_SECRET
- *
- * Optional:
- * - ADMIN_USER_ID
- * - NODE_ENV=production
- */
-
 const express = require("express");
-const crypto = require("crypto");
-const { Pool } = require("pg");
-const { Telegraf } = require("telegraf");
-
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 
-const DATABASE_URL = process.env.DATABASE_URL;
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = process.env.PUBLIC_URL;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID ? String(process.env.ADMIN_USER_ID) : "";
-
-if (!DATABASE_URL) throw new Error("Missing env: DATABASE_URL");
-if (!BOT_TOKEN) throw new Error("Missing env: BOT_TOKEN");
-if (!PUBLIC_URL) throw new Error("Missing env: PUBLIC_URL");
-if (!WEBHOOK_SECRET) throw new Error("Missing env: WEBHOOK_SECRET");
-
-const PUBLIC_URL_NORM = String(PUBLIC_URL).replace(/\/+$/, "");
-
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
 });
 
-// ---------------- helpers ----------------
-function nowISO() {
-  return new Date().toISOString();
-}
+/*
+  PANEL LOGIN (stateless)
+  Замість сесій — редірект на /panel/:venue/:pin
+*/
 
-function warsawDayISO(d = new Date()) {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Warsaw",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return fmt.format(d); // YYYY-MM-DD
-}
-
-function randOTP6() {
-  return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
-}
-
-function sha256Hex(s) {
-  return crypto.createHash("sha256").update(s).digest("hex");
-}
-
-function pbkdf2Hex(pin, saltHex) {
-  const salt = Buffer.from(saltHex, "hex");
-  return crypto.pbkdf2Sync(String(pin), salt, 120000, 32, "sha256").toString("hex");
-}
-
-// cookie signing
-function signCookie(payload) {
-  const raw = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const sig = sha256Hex(raw + "|" + WEBHOOK_SECRET);
-  return `${raw}.${sig}`;
-}
-function verifyCookie(cookieVal) {
-  if (!cookieVal) return null;
-  const parts = cookieVal.split(".");
-  if (parts.length !== 2) return null;
-  const [raw, sig] = parts;
-  const exp = sha256Hex(raw + "|" + WEBHOOK_SECRET);
-  if (sig !== exp) return null;
-  try {
-    return JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
-function getCookie(req, name) {
-  const h = req.headers.cookie || "";
-  const items = h
-    .split(";")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  for (const it of items) {
-    const idx = it.indexOf("=");
-    if (idx === -1) continue;
-    const k = it.slice(0, idx).trim();
-    const v = it.slice(idx + 1).trim();
-    if (k === name) return decodeURIComponent(v);
-  }
-  return null;
-}
-function setCookie(res, name, value) {
-  res.setHeader("Set-Cookie", `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax`);
-}
-function clearCookie(res, name) {
-  res.setHeader("Set-Cookie", `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
-}
-
-function shortErr(e) {
-  if (!e) return "unknown";
-  const code = e.code ? String(e.code) : "";
-  const msg = e.message ? String(e.message) : String(e);
-  return `${code ? code + " " : ""}${msg}`.slice(0, 220);
-}
-
-// ---------------- DB schema helpers ----------------
-async function columnExists(tableName, columnName) {
-  const q = `
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema='public' AND table_name=$1 AND column_name=$2
-    LIMIT 1;
-  `;
-  const { rows } = await pool.query(q, [tableName, columnName]);
-  return rows.length > 0;
-}
-
-async function tableExists(tableName) {
-  const q = `
-    SELECT 1
-    FROM information_schema.tables
-    WHERE table_schema='public' AND table_name=$1
-    LIMIT 1;
-  `;
-  const { rows } = await pool.query(q, [tableName]);
-  return rows.length > 0;
-}
-
-async function safeQuery(sql) {
-  try {
-    await pool.query(sql);
-  } catch (e) {
-    console.error("⚠️ DB non-fatal:", e.message);
-  }
-}
-
-async function addColumnIfMissing(tableName, columnName, columnTypeSQL) {
-  const exists = await columnExists(tableName, columnName);
-  if (exists) return;
-  await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnTypeSQL};`);
-}
-
-/**
- * Add constraint only if missing (Postgres-safe)
- */
-async function addConstraintIfMissing(constraintName, alterSql) {
-  const sql = `
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${constraintName}') THEN
-    ${alterSql}
-  END IF;
-END $$;`;
-  await safeQuery(sql);
-}
-
-/**
- * Detect which column stores Telegram user id in a given table.
- * Whitelist candidates only (safe for dynamic identifiers).
- */
-async function detectUserIdColumn(tableName, candidates) {
-  if (!(await tableExists(tableName))) return candidates[0];
-
-  for (const c of candidates) {
-    if (await columnExists(tableName, c)) return c;
-  }
-
-  // if none exist, create the first candidate
-  await addColumnIfMissing(tableName, candidates[0], "BIGINT");
-  return candidates[0];
-}
-
-// These will be detected on boot based on YOUR DB
-let FOXES_UID_COL = "user_id";       // foxes.user_id OR foxes.id
-let CHECKINS_UID_COL = "user_id";    // checkins.user_id OR checkins.fox_id
-let VISITS_UID_COL = "user_id";      // counted_visits.user_id OR counted_visits.fox_id
-
-// ---------------- Migrations ----------------
-async function ensureTablesAndMigrations() {
-  // venues
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS venues (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      pin_salt TEXT,
-      pin_hash TEXT
-    );
-  `);
-
-  // foxes (create baseline if missing)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS foxes (
-      user_id BIGINT PRIMARY KEY,
-      username TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  // checkins (baseline)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS checkins (
-      id SERIAL PRIMARY KEY,
-      venue_id INT,
-      user_id BIGINT,
-      otp TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at TIMESTAMPTZ,
-      day_warsaw DATE,
-      confirmed_at TIMESTAMPTZ
-    );
-  `);
-
-  // counted_visits (baseline)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS counted_visits (
-      id SERIAL PRIMARY KEY,
-      venue_id INT,
-      user_id BIGINT,
-      day_warsaw DATE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  // ✅ Detect actual columns in YOUR DB
-  FOXES_UID_COL = await detectUserIdColumn("foxes", ["user_id", "id", "telegram_id", "fox_id"]);
-  CHECKINS_UID_COL = await detectUserIdColumn("checkins", ["user_id", "fox_id", "telegram_id"]);
-  VISITS_UID_COL = await detectUserIdColumn("counted_visits", ["user_id", "fox_id", "telegram_id"]);
-
-  // Ensure important columns exist (safe)
-  await addColumnIfMissing("foxes", "username", "TEXT");
-  await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
-
-  await addColumnIfMissing("checkins", "venue_id", "INT");
-  await addColumnIfMissing("checkins", "otp", "TEXT");
-  await addColumnIfMissing("checkins", "expires_at", "TIMESTAMPTZ");
-  await addColumnIfMissing("checkins", "day_warsaw", "DATE");
-  await addColumnIfMissing("checkins", "confirmed_at", "TIMESTAMPTZ");
-
-  await addColumnIfMissing("counted_visits", "venue_id", "INT");
-  await addColumnIfMissing("counted_visits", "day_warsaw", "DATE");
-
-  // FK venue -> venues (soft-safe)
-  await addConstraintIfMissing(
-    "checkins_venue_fk",
-    `ALTER TABLE checkins
-     ADD CONSTRAINT checkins_venue_fk
-     FOREIGN KEY (venue_id) REFERENCES venues(id);`
-  );
-
-  // Unique index for foxes uid col (so ON CONFLICT works)
-  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_uid_uniq ON foxes(${FOXES_UID_COL});`);
-
-  // Unique daily confirmed checkin (use detected column)
-  await safeQuery(`
-    CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
-    ON checkins (venue_id, ${CHECKINS_UID_COL}, day_warsaw)
-    WHERE confirmed_at IS NOT NULL;
-  `);
-
-  // Unique daily counted visit (use detected column)
-  await safeQuery(`
-    CREATE UNIQUE INDEX IF NOT EXISTS counted_visits_unique_daily
-    ON counted_visits (venue_id, ${VISITS_UID_COL}, day_warsaw);
-  `);
-}
-
-async function ensureTestVenues() {
-  const { rows } = await pool.query(`SELECT id FROM venues ORDER BY id LIMIT 1;`);
-  if (rows.length > 0) return;
-
-  const pin = "123456";
-  function mk(pinPlain) {
-    const salt = crypto.randomBytes(16).toString("hex");
-    const hash = pbkdf2Hex(pinPlain, salt);
-    return { salt, hash };
-  }
-
-  const v1 = mk(pin);
-  const v2 = mk(pin);
-
-  await pool.query(
-    `INSERT INTO venues (name, city, pin_salt, pin_hash) VALUES
-     ($1,$2,$3,$4), ($5,$6,$7,$8);`,
-    ["Test Kebab #1", "Warsaw", v1.salt, v1.hash, "Test Pizza #2", "Warsaw", v2.salt, v2.hash]
-  );
-}
-
-// ---------------- HEALTH ----------------
-app.get("/health", async (req, res) => {
-  try {
-    await pool.query("SELECT 1 as ok;");
-    res.json({ ok: true, db: true, ts: nowISO() });
-  } catch (e) {
-    res.status(500).json({ ok: false, db: false, error: String(e), ts: nowISO() });
-  }
-});
-
-// ---------------- PANEL (browser) ----------------
-async function getVenueById(venueId) {
-  const { rows } = await pool.query(
-    `SELECT id, name, city, pin_salt, pin_hash FROM venues WHERE id=$1`,
-    [venueId]
-  );
-  return rows[0] || null;
-}
-
-function panelLayout(title, innerHtml) {
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>${title}</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; background:#0b0b10; color:#fff; margin:0; padding:24px;}
-    .card{max-width:920px;margin:0 auto;background:#141421;border:1px solid #2a2a40;border-radius:14px;padding:18px;}
-    h1{font-size:20px;margin:0 0 12px}
-    h2{font-size:16px;margin:18px 0 10px}
-    input,button{padding:10px 12px;border-radius:10px;border:1px solid #33334d;background:#0f0f19;color:#fff;outline:none;}
-    input{width:100%;box-sizing:border-box}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    .row>div{flex:1;min-width:220px}
-    button{cursor:pointer;background:#5b2cff;border-color:#5b2cff;font-weight:700}
-    .muted{color:#b7b7d6;font-size:12px}
-    .ok{color:#6dffb3;font-weight:700}
-    .sep{height:1px;background:#2a2a40;margin:14px 0}
-    code{background:#0f0f19;padding:2px 6px;border-radius:8px}
-  </style>
-</head>
-<body>
-  <div class="card">
-    ${innerHtml}
-  </div>
-</body>
-</html>`;
-}
-
-app.get("/panel", async (req, res) => {
-  const sess = verifyCookie(getCookie(req, "fp_panel"));
-  if (!sess || !sess.venue_id) {
-    const html = panelLayout("Panel lokalu", `
-      <h1>Panel lokalu</h1>
-      <div class="muted">Zaloguj się PIN-em lokalu</div>
-      <div class="sep"></div>
+app.get("/panel", (req, res) => {
+  res.send(`
+    <html>
+    <body style="background:#0f1220;color:white;font-family:sans-serif;padding:40px;">
+      <h2>Panel lokalu</h2>
       <form method="POST" action="/panel/login">
-        <div class="row">
-          <div>
-            <div class="muted">Venue ID</div>
-            <input name="venue_id" placeholder="np. 1" required />
-          </div>
-          <div>
-            <div class="muted">PIN (6 cyfr)</div>
-            <input name="pin" placeholder="123456" required />
-          </div>
-        </div>
-        <div style="margin-top:12px">
-          <button type="submit">Zaloguj</button>
-        </div>
+        <label>Venue ID</label><br/>
+        <input name="venue" /><br/><br/>
+        <label>PIN</label><br/>
+        <input name="pin" /><br/><br/>
+        <button type="submit">Zaloguj</button>
       </form>
-    `);
-    return res.status(200).send(html);
-  }
-
-  const venue = await getVenueById(sess.venue_id);
-  if (!venue) {
-    clearCookie(res, "fp_panel");
-    return res.redirect("/panel");
-  }
-
-  const { rows: pend } = await pool.query(
-    `SELECT c.id, c.otp, c.${CHECKINS_UID_COL} AS uid, c.expires_at
-     FROM checkins c
-     WHERE c.venue_id=$1 AND c.confirmed_at IS NULL AND c.expires_at >= NOW()
-     ORDER BY c.created_at DESC
-     LIMIT 20;`,
-    [venue.id]
-  );
-
-  const pendingHtml = pend.length
-    ? pend
-        .map((p) => {
-          const exp = new Date(p.expires_at).toISOString();
-          return `<div style="padding:10px;border:1px solid #2a2a40;border-radius:12px;margin:8px 0">
-            <div><b>OTP:</b> <code>${p.otp}</code></div>
-            <div class="muted">Fox ID: ${String(p.uid).slice(0, 4)}****</div>
-            <div class="muted">Expires: ${exp}</div>
-          </div>`;
-        })
-        .join("")
-    : `<div class="muted">—</div>`;
-
-  const html = panelLayout("Panel lokalu", `
-    <h1>Panel lokalu</h1>
-    <div>🏪 <b>${venue.name}</b> (ID ${venue.id})</div>
-    <div class="muted">City: ${venue.city}</div>
-    <div class="ok" style="margin-top:6px">OK</div>
-
-    <div class="sep"></div>
-
-    <form method="POST" action="/panel/confirm">
-      <h2>OTP (6 cyfr)</h2>
-      <div class="row">
-        <div>
-          <input name="otp" placeholder="123456" required />
-        </div>
-        <div style="min-width:160px;flex:0">
-          <button type="submit">Potwierdź</button>
-        </div>
-      </div>
-      <div class="muted">Potwierdzenie check-in: przez Panel</div>
-    </form>
-
-    <div style="margin-top:10px">
-      <form method="POST" action="/panel/logout">
-        <button type="submit" style="background:#2a2a40;border-color:#2a2a40">Wyloguj</button>
-      </form>
-    </div>
-
-    <div class="sep"></div>
-    <h2>Pending check-ins (10 min)</h2>
-    ${pendingHtml}
+    </body>
+    </html>
   `);
-
-  res.status(200).send(html);
 });
 
-app.post("/panel/login", async (req, res) => {
-  try {
-    const venueId = Number(req.body.venue_id);
-    const pin = String(req.body.pin || "").trim();
-    if (!venueId || pin.length < 4) return res.redirect("/panel");
+app.post("/panel/login", (req, res) => {
+  const { venue, pin } = req.body;
 
-    const venue = await getVenueById(venueId);
-    if (!venue || !venue.pin_salt || !venue.pin_hash) return res.redirect("/panel");
-
-    const computed = pbkdf2Hex(pin, venue.pin_salt);
-    if (computed !== venue.pin_hash) return res.redirect("/panel");
-
-    setCookie(res, "fp_panel", signCookie({ venue_id: venue.id, ts: Date.now() }));
-    return res.redirect("/panel");
-  } catch {
+  if (!venue || !pin) {
     return res.redirect("/panel");
   }
+
+  // Просто редірект без сесій
+  res.redirect(`/panel/${venue}/${pin}`);
 });
 
-app.post("/panel/logout", async (req, res) => {
-  clearCookie(res, "fp_panel");
-  res.redirect("/panel");
+app.get("/panel/:venue/:pin", (req, res) => {
+  const { venue, pin } = req.params;
+
+  res.send(`
+    <html>
+    <body style="background:#0f1220;color:white;font-family:sans-serif;padding:40px;">
+      <h2>Panel lokalu</h2>
+      <p>Zalogowano jako lokal: <b>${venue}</b></p>
+      <p>PIN: <b>${pin}</b></p>
+      <hr/>
+      <h3>Wprowadź OTP</h3>
+      <form method="POST" action="/panel/${venue}/${pin}/confirm">
+        <input name="otp" placeholder="OTP" />
+        <button type="submit">Confirm</button>
+      </form>
+    </body>
+    </html>
+  `);
 });
 
-app.post("/panel/confirm", async (req, res) => {
-  const sess = verifyCookie(getCookie(req, "fp_panel"));
-  if (!sess || !sess.venue_id) return res.redirect("/panel");
+app.post("/panel/:venue/:pin/confirm", (req, res) => {
+  const { venue } = req.params;
+  const { otp } = req.body;
 
-  const venueId = Number(sess.venue_id);
-  const otp = String(req.body.otp || "").trim();
-  if (!/^\d{6}$/.test(otp)) return res.redirect("/panel");
-
-  const { rows } = await pool.query(
-    `SELECT id, ${CHECKINS_UID_COL} AS uid, day_warsaw
-     FROM checkins
-     WHERE venue_id=$1 AND otp=$2 AND confirmed_at IS NULL AND expires_at >= NOW()
-     ORDER BY created_at DESC
-     LIMIT 1;`,
-    [venueId, otp]
-  );
-
-  if (!rows.length) return res.redirect("/panel");
-
-  const checkinId = rows[0].id;
-  const userId = rows[0].uid;
-  const day = rows[0].day_warsaw;
-
-  await pool.query(`UPDATE checkins SET confirmed_at=NOW() WHERE id=$1;`, [checkinId]);
-
-  await pool.query(
-    `INSERT INTO counted_visits (venue_id, ${VISITS_UID_COL}, day_warsaw)
-     VALUES ($1,$2,$3)
-     ON CONFLICT DO NOTHING;`,
-    [venueId, userId, day]
-  );
-
-  try {
-    await bot.telegram.sendMessage(
-      userId,
-      `✅ Confirm OK\nLokal: (ID ${venueId})\nDzień (Warszawa): ${day}\n\nDZIŚ JUŻ BYŁO ✅\nSpróbuj jutro po 00:00 (Warszawa).`
-    );
-  } catch {}
-
-  res.redirect("/panel");
+  res.send(`
+    <html>
+    <body style="background:#0f1220;color:white;font-family:sans-serif;padding:40px;">
+      <h2>Confirm OK</h2>
+      <p>Lokal: ${venue}</p>
+      <p>OTP: ${otp}</p>
+      <a href="/panel">Powrót</a>
+    </body>
+    </html>
+  `);
 });
 
-// ---------------- Telegram bot ----------------
-const bot = new Telegraf(BOT_TOKEN);
-
-app.post(`/${WEBHOOK_SECRET}`, (req, res) => bot.handleUpdate(req.body, res));
-
-bot.start(async (ctx) => {
-  await ctx.reply(
-    "The FoxPot Club ✅\n\nKomendy:\n/checkin <venue_id>\n/panel\n/venues\n\nPotwierdzenie check-in: przez Panel (PIN + OTP)."
-  );
+app.listen(PORT, () => {
+  console.log("Server running on", PORT);
 });
-
-bot.command("panel", async (ctx) => {
-  await ctx.reply(`Panel lokalu: ${PUBLIC_URL_NORM}/panel`);
-});
-
-bot.command("venues", async (ctx) => {
-  try {
-    const { rows } = await pool.query(`SELECT id, name, city FROM venues ORDER BY id ASC LIMIT 50;`);
-    if (!rows.length) return ctx.reply("Brak lokali w bazie (venues пусто).");
-    const lines = rows.map((r) => `• ID ${r.id}: ${r.name} (${r.city})`);
-    await ctx.reply("🗺 Lokale:\n\n" + lines.join("\n"));
-  } catch (e) {
-    console.error("venues error:", e);
-    await ctx.reply("❌ /venues error: " + shortErr(e));
-  }
-});
-
-bot.command("checkin", async (ctx) => {
-  try {
-    const parts = (ctx.message.text || "").trim().split(/\s+/);
-    const venueId = Number(parts[1]);
-    if (!venueId) return ctx.reply("❌ Napisz tak: /checkin 1");
-
-    const telegramId = Number(ctx.from.id);
-    const username = ctx.from.username ? String(ctx.from.username) : null;
-
-    // ✅ foxes insert using detected uid column
-    await pool.query(
-      `INSERT INTO foxes (${FOXES_UID_COL}, username) VALUES ($1,$2)
-       ON CONFLICT (${FOXES_UID_COL}) DO UPDATE SET username=EXCLUDED.username;`,
-      [telegramId, username]
-    );
-
-    const { rows } = await pool.query(`SELECT id, name FROM venues WHERE id=$1`, [venueId]);
-    if (!rows.length) return ctx.reply("❌ Nie ma takiego lokalu.");
-    const venue = rows[0];
-
-    const otp = randOTP6();
-    const day = warsawDayISO(new Date());
-    const expiresMinutes = 10;
-
-    // ✅ checkins insert using detected uid column (user_id OR fox_id)
-    await pool.query(
-      `INSERT INTO checkins (venue_id, ${CHECKINS_UID_COL}, otp, expires_at, day_warsaw)
-       VALUES ($1,$2,$3, NOW() + ($4::int * interval '1 minute'), $5::date);`,
-      [venueId, telegramId, otp, expiresMinutes, day]
-    );
-
-    await ctx.reply(
-      `✅ Check-in utworzony (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu.\nPanel: ${PUBLIC_URL_NORM}/panel`
-    );
-  } catch (e) {
-    console.error("checkin error:", e);
-    await ctx.reply("❌ Error creating check-in\n" + shortErr(e));
-  }
-});
-
-// ---------------- boot ----------------
-(async () => {
-  await ensureTablesAndMigrations();
-  await ensureTestVenues();
-
-  await bot.telegram.setWebhook(`${PUBLIC_URL_NORM}/${WEBHOOK_SECRET}`);
-
-  app.listen(PORT, () => {
-    console.log(`✅ Server listening on ${PORT}`);
-    console.log(`✅ Webhook path ready: /${WEBHOOK_SECRET}`);
-    console.log(`✅ foxes uid col: ${FOXES_UID_COL}`);
-    console.log(`✅ checkins uid col: ${CHECKINS_UID_COL}`);
-    console.log(`✅ visits uid col: ${VISITS_UID_COL}`);
-  });
-})();
