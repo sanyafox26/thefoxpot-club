@@ -1,11 +1,5 @@
 /**
- * The FoxPot Club — server.js (FULL FILE, FIXED MIGRATIONS)
- *
- * Fixes:
- * - Postgres DOES NOT support: ALTER TABLE ... ADD CONSTRAINT IF NOT EXISTS
- *   -> replaced with DO $$ BEGIN ... END $$ checks via pg_constraint
- * - Auto-migrate foxes table to have column "id" BIGINT (rename from fox_id / telegram_id if exists)
- * - Keeps /health stable
+ * The FoxPot Club — server.js (FULL FILE, DEBUG + /panel + /venues)
  *
  * Required ENV:
  * - DATABASE_URL
@@ -39,6 +33,9 @@ if (!DATABASE_URL) throw new Error("Missing env: DATABASE_URL");
 if (!BOT_TOKEN) throw new Error("Missing env: BOT_TOKEN");
 if (!PUBLIC_URL) throw new Error("Missing env: PUBLIC_URL");
 if (!WEBHOOK_SECRET) throw new Error("Missing env: WEBHOOK_SECRET");
+
+// normalize PUBLIC_URL (no trailing slash)
+const PUBLIC_URL_NORM = String(PUBLIC_URL).replace(/\/+$/, "");
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -111,6 +108,13 @@ function clearCookie(res, name) {
   res.setHeader("Set-Cookie", `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
 }
 
+function shortErr(e) {
+  if (!e) return "unknown";
+  const code = e.code ? String(e.code) : "";
+  const msg = e.message ? String(e.message) : String(e);
+  return `${code ? code + " " : ""}${msg}`.slice(0, 180);
+}
+
 // ---------------- DB schema helpers ----------------
 async function columnExists(tableName, columnName) {
   const q = `
@@ -150,7 +154,6 @@ async function safeQuery(sql) {
 
 /**
  * Add constraint ONLY if it's missing (Postgres-safe).
- * Uses pg_constraint check (works on all supported PG versions).
  */
 async function addConstraintIfMissing(constraintName, alterSql) {
   const sql = `
@@ -166,7 +169,7 @@ END $$;`;
 }
 
 async function ensureTablesAndMigrations() {
-  // ----- Create tables if missing (baseline) -----
+  // Baseline tables
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -178,7 +181,6 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // IMPORTANT: create foxes with id BIGINT
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       id BIGINT PRIMARY KEY,
@@ -210,112 +212,40 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS venue_status_events (
-      id SERIAL PRIMARY KEY,
-      venue_id INT,
-      kind TEXT NOT NULL,
-      reason TEXT,
-      starts_at TIMESTAMPTZ NOT NULL,
-      ends_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS venue_stamps (
-      id SERIAL PRIMARY KEY,
-      venue_id INT,
-      fox_id BIGINT,
-      balance INT NOT NULL DEFAULT 0,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS venue_stamp_events (
-      id SERIAL PRIMARY KEY,
-      venue_id INT,
-      fox_id BIGINT,
-      delta INT NOT NULL,
-      note TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  // ----- Migrate venues -----
-  await addColumnIfMissing("venues", "pin_salt", "TEXT");
-  await addColumnIfMissing("venues", "pin_hash", "TEXT");
-  await addColumnIfMissing("venues", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
-  await addColumnIfMissing("venues", "city", "TEXT");
-  await addColumnIfMissing("venues", "name", "TEXT");
-
-  // ----- Migrate foxes: ensure column "id" exists -----
-  // If older foxes table had "fox_id" or "telegram_id", rename to "id"
+  // Migrate foxes legacy columns -> id
   if (await tableExists("foxes")) {
     const hasId = await columnExists("foxes", "id");
     const hasFoxId = await columnExists("foxes", "fox_id");
     const hasTelegramId = await columnExists("foxes", "telegram_id");
 
-    if (!hasId && hasFoxId) {
-      await safeQuery(`ALTER TABLE foxes RENAME COLUMN fox_id TO id;`);
-    } else if (!hasId && hasTelegramId) {
-      await safeQuery(`ALTER TABLE foxes RENAME COLUMN telegram_id TO id;`);
-    }
+    if (!hasId && hasFoxId) await safeQuery(`ALTER TABLE foxes RENAME COLUMN fox_id TO id;`);
+    if (!hasId && hasTelegramId) await safeQuery(`ALTER TABLE foxes RENAME COLUMN telegram_id TO id;`);
 
-    // if still no id, add it (best-effort)
-    if (!(await columnExists("foxes", "id"))) {
-      await addColumnIfMissing("foxes", "id", "BIGINT");
-    }
-
+    if (!(await columnExists("foxes", "id"))) await addColumnIfMissing("foxes", "id", "BIGINT");
     await addColumnIfMissing("foxes", "username", "TEXT");
     await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
-
-    // Ensure UNIQUE on foxes.id so ON CONFLICT (id) works.
-    // If table already has PK on another column, this may fail -> non-fatal.
     await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_id_unique ON foxes(id);`);
   }
 
-  // ----- Migrate checkins / visits -----
+  // Ensure needed columns exist
   await addColumnIfMissing("checkins", "venue_id", "INT");
   await addColumnIfMissing("checkins", "fox_id", "BIGINT");
   await addColumnIfMissing("checkins", "otp", "TEXT");
   await addColumnIfMissing("checkins", "expires_at", "TIMESTAMPTZ");
   await addColumnIfMissing("checkins", "day_warsaw", "DATE");
   await addColumnIfMissing("checkins", "confirmed_at", "TIMESTAMPTZ");
-  await addColumnIfMissing("checkins", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
   await addColumnIfMissing("counted_visits", "venue_id", "INT");
   await addColumnIfMissing("counted_visits", "fox_id", "BIGINT");
   await addColumnIfMissing("counted_visits", "day_warsaw", "DATE");
-  await addColumnIfMissing("counted_visits", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  await addColumnIfMissing("venue_status_events", "venue_id", "INT");
-  await addColumnIfMissing("venue_status_events", "kind", "TEXT");
-  await addColumnIfMissing("venue_status_events", "reason", "TEXT");
-  await addColumnIfMissing("venue_status_events", "starts_at", "TIMESTAMPTZ");
-  await addColumnIfMissing("venue_status_events", "ends_at", "TIMESTAMPTZ");
-  await addColumnIfMissing("venue_status_events", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
-
-  await addColumnIfMissing("venue_stamps", "venue_id", "INT");
-  await addColumnIfMissing("venue_stamps", "fox_id", "BIGINT");
-  await addColumnIfMissing("venue_stamps", "balance", "INT NOT NULL DEFAULT 0");
-  await addColumnIfMissing("venue_stamps", "updated_at", "TIMESTAMPTAMPTZ NOT NULL DEFAULT NOW()`.replace("TIMESTAMPTAMPTZ", "TIMESTAMPTZ"));
-
-  await addColumnIfMissing("venue_stamp_events", "venue_id", "INT");
-  await addColumnIfMissing("venue_stamp_events", "fox_id", "BIGINT");
-  await addColumnIfMissing("venue_stamp_events", "delta", "INT NOT NULL DEFAULT 0");
-  await addColumnIfMissing("venue_stamp_events", "note", "TEXT");
-  await addColumnIfMissing("venue_stamp_events", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
-
-  // ----- Constraints (Postgres-safe) -----
+  // Constraints (safe)
   await addConstraintIfMissing(
     "checkins_venue_fk",
     `ALTER TABLE checkins
      ADD CONSTRAINT checkins_venue_fk
      FOREIGN KEY (venue_id) REFERENCES venues(id);`
   );
-
   await addConstraintIfMissing(
     "checkins_fox_fk",
     `ALTER TABLE checkins
@@ -323,21 +253,7 @@ async function ensureTablesAndMigrations() {
      FOREIGN KEY (fox_id) REFERENCES foxes(id);`
   );
 
-  await addConstraintIfMissing(
-    "counted_visits_venue_fk",
-    `ALTER TABLE counted_visits
-     ADD CONSTRAINT counted_visits_venue_fk
-     FOREIGN KEY (venue_id) REFERENCES venues(id);`
-  );
-
-  await addConstraintIfMissing(
-    "counted_visits_fox_fk",
-    `ALTER TABLE counted_visits
-     ADD CONSTRAINT counted_visits_fox_fk
-     FOREIGN KEY (fox_id) REFERENCES foxes(id);`
-  );
-
-  // ----- Indexes (ok with IF NOT EXISTS) -----
+  // Indexes
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
     ON checkins (venue_id, fox_id, day_warsaw)
@@ -347,11 +263,6 @@ async function ensureTablesAndMigrations() {
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS counted_visits_unique_daily
     ON counted_visits (venue_id, fox_id, day_warsaw);
-  `);
-
-  await safeQuery(`
-    CREATE UNIQUE INDEX IF NOT EXISTS venue_stamps_unique
-    ON venue_stamps (venue_id, fox_id);
   `);
 }
 
@@ -386,27 +297,13 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// ---------------- PANEL ----------------
+// ---------------- PANEL (browser) ----------------
 async function getVenueById(venueId) {
   const { rows } = await pool.query(
     `SELECT id, name, city, pin_salt, pin_hash FROM venues WHERE id=$1`,
     [venueId]
   );
   return rows[0] || null;
-}
-
-async function getCurrentStatus(venueId) {
-  const { rows } = await pool.query(
-    `SELECT kind, reason, starts_at, ends_at
-     FROM venue_status_events
-     WHERE venue_id=$1 AND starts_at <= NOW() AND ends_at >= NOW()
-     ORDER BY created_at DESC
-     LIMIT 10;`,
-    [venueId]
-  );
-  const reserve = rows.find((r) => r.kind === "reserve") || null;
-  const limited = rows.find((r) => r.kind === "limited") || null;
-  return { reserve, limited };
 }
 
 function panelLayout(title, innerHtml) {
@@ -421,7 +318,7 @@ function panelLayout(title, innerHtml) {
     .card{max-width:920px;margin:0 auto;background:#141421;border:1px solid #2a2a40;border-radius:14px;padding:18px;}
     h1{font-size:20px;margin:0 0 12px}
     h2{font-size:16px;margin:18px 0 10px}
-    input,select,button{padding:10px 12px;border-radius:10px;border:1px solid #33334d;background:#0f0f19;color:#fff;outline:none;}
+    input,button{padding:10px 12px;border-radius:10px;border:1px solid #33334d;background:#0f0f19;color:#fff;outline:none;}
     input{width:100%;box-sizing:border-box}
     .row{display:flex;gap:12px;flex-wrap:wrap}
     .row>div{flex:1;min-width:220px}
@@ -471,8 +368,6 @@ app.get("/panel", async (req, res) => {
     clearCookie(res, "fp_panel");
     return res.redirect("/panel");
   }
-
-  const status = await getCurrentStatus(venue.id);
 
   const { rows: pend } = await pool.query(
     `SELECT c.id, c.otp, c.fox_id, c.expires_at, f.username
@@ -524,9 +419,7 @@ app.get("/panel", async (req, res) => {
     </div>
 
     <div class="sep"></div>
-
-    <h2>Szybko z pending</h2>
-    <div class="muted">Pending check-ins (10 min)</div>
+    <h2>Pending check-ins (10 min)</h2>
     ${pendingHtml}
   `);
 
@@ -606,8 +499,26 @@ app.post(`/${WEBHOOK_SECRET}`, (req, res) => bot.handleUpdate(req.body, res));
 
 bot.start(async (ctx) => {
   await ctx.reply(
-    "The FoxPot Club ✅\n\nKomandy:\n/checkin <venue_id>\n\nPotwierdzenie teraz TYLKO przez Panel (PIN + OTP)."
+    "The FoxPot Club ✅\n\nKomendy:\n/checkin <venue_id>\n/panel\n/venues\n\nPotwierdzenie check-in: przez Panel (PIN + OTP)."
   );
+});
+
+// NEW: /panel command (so you get link in Telegram)
+bot.command("panel", async (ctx) => {
+  await ctx.reply(`Panel lokalu: ${PUBLIC_URL_NORM}/panel`);
+});
+
+// NEW: /venues debug (see if venues exist)
+bot.command("venues", async (ctx) => {
+  try {
+    const { rows } = await pool.query(`SELECT id, name, city FROM venues ORDER BY id ASC LIMIT 50;`);
+    if (!rows.length) return ctx.reply("Brak lokali w bazie (venues пусто).");
+    const lines = rows.map((r) => `• ID ${r.id}: ${r.name} (${r.city})`);
+    await ctx.reply("🗺 Lokale:\n\n" + lines.join("\n"));
+  } catch (e) {
+    console.error("venues error:", e);
+    await ctx.reply("❌ /venues error: " + shortErr(e));
+  }
 });
 
 bot.command("checkin", async (ctx) => {
@@ -616,10 +527,10 @@ bot.command("checkin", async (ctx) => {
     const venueId = Number(parts[1]);
     if (!venueId) return ctx.reply("❌ Napisz tak: /checkin 1");
 
-    const foxId = String(ctx.from.id);
+    const foxId = Number(ctx.from.id); // BIGINT
     const username = ctx.from.username ? String(ctx.from.username) : null;
 
-    // foxes.id must exist (migration ensures it)
+    // Ensure fox exists
     await pool.query(
       `INSERT INTO foxes (id, username) VALUES ($1,$2)
        ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username;`,
@@ -641,11 +552,12 @@ bot.command("checkin", async (ctx) => {
     );
 
     await ctx.reply(
-      `✅ Check-in utworzony (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu.\nPanel: ${PUBLIC_URL}/panel`
+      `✅ Check-in utworzony (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu.\nPanel: ${PUBLIC_URL_NORM}/panel`
     );
   } catch (e) {
     console.error("checkin error:", e);
-    return ctx.reply("❌ Error creating check-in");
+    // give user useful debug without logs
+    await ctx.reply("❌ Error creating check-in\n" + shortErr(e));
   }
 });
 
@@ -654,7 +566,7 @@ bot.command("checkin", async (ctx) => {
   await ensureTablesAndMigrations();
   await ensureTestVenues();
 
-  await bot.telegram.setWebhook(`${PUBLIC_URL}/${WEBHOOK_SECRET}`);
+  await bot.telegram.setWebhook(`${PUBLIC_URL_NORM}/${WEBHOOK_SECRET}`);
 
   app.listen(PORT, () => {
     console.log(`✅ Server listening on ${PORT}`);
