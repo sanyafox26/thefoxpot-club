@@ -13,10 +13,10 @@ const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
 
-// Потрібно, щоб бот міг давати лінк на панель
+// Лінк на твій сервер (щоб бот міг дати повний URL до /panel)
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
 
-// Секрет для кукі панелі (можна не задавати — тоді використає WEBHOOK_SECRET)
+// Секрет для токена панелі (можна не ставити окремо)
 const PANEL_TOKEN_SECRET = (process.env.PANEL_TOKEN_SECRET || WEBHOOK_SECRET || "").trim();
 
 if (!BOT_TOKEN) {
@@ -60,8 +60,7 @@ function random6Digits() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// ===== SIMPLE PIN HASH (без додаткових бібліотек) =====
-// Зберігаємо у БД не PIN, а "salt$hash"
+// ===== PIN HASH =====
 function hashPin(pin) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256").toString("hex");
@@ -78,7 +77,7 @@ function verifyPin(pin, stored) {
   }
 }
 
-// ===== COOKIES + SIGNED TOKEN (панель) =====
+// ===== PANEL TOKEN =====
 function base64urlEncode(obj) {
   return Buffer.from(JSON.stringify(obj)).toString("base64url");
 }
@@ -98,7 +97,6 @@ function readToken(token) {
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
   const expected = sign(body);
-  // захист від підбору
   if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   const payload = base64urlDecode(body);
   if (!payload || !payload.exp || Date.now() > payload.exp) return null;
@@ -208,7 +206,6 @@ function langSwitcherHtml(lang) {
 
 // ===== DB INIT =====
 async function initDb() {
-  // Foxes
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       user_id BIGINT PRIMARY KEY,
@@ -226,7 +223,6 @@ async function initDb() {
     ADD COLUMN IF NOT EXISTS earned_invites INT NOT NULL DEFAULT 0;
   `);
 
-  // Venues
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -237,10 +233,8 @@ async function initDb() {
     );
   `);
 
-  // МІГРАЦІЯ (важливо): якщо venues вже існувала — додай колонку
   await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_hash TEXT;`);
 
-  // Checkins (pending OTP)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
       id SERIAL PRIMARY KEY,
@@ -253,7 +247,6 @@ async function initDb() {
     );
   `);
 
-  // Counted visits (1/day/venue/user)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS counted_visits (
       id SERIAL PRIMARY KEY,
@@ -265,7 +258,6 @@ async function initDb() {
     );
   `);
 
-  // Seed venues
   const c = await pool.query("SELECT COUNT(*)::int AS n FROM venues");
   if ((c.rows[0]?.n || 0) === 0) {
     await pool.query(
@@ -275,9 +267,7 @@ async function initDb() {
     console.log("✅ DB: seeded test venues (2)");
   }
 
-  // Ensure PINs exist
   await ensureVenuePins();
-
   console.log("✅ DB ready");
 }
 
@@ -294,7 +284,6 @@ async function ensureVenuePins() {
     }
   }
 
-  // Показуємо тільки коли генеруємо вперше (або після reset)
   for (const p of createdPins) {
     console.log(`🔐 PIN for "${p.name}" (ID ${p.id}): ${p.pin}`);
   }
@@ -308,7 +297,6 @@ async function getFox(userId) {
   );
   return rows[0] || null;
 }
-
 async function createFoxIfMissing(userId) {
   await pool.query(
     `
@@ -320,17 +308,14 @@ async function createFoxIfMissing(userId) {
   );
   return getFox(userId);
 }
-
 async function getVenueById(venueId) {
   const { rows } = await pool.query("SELECT id, name, city, pin_hash FROM venues WHERE id = $1", [venueId]);
   return rows[0] || null;
 }
-
 async function listVenues() {
   const { rows } = await pool.query("SELECT id, name, city FROM venues ORDER BY id ASC LIMIT 50");
   return rows;
 }
-
 async function expireOldCheckins() {
   await pool.query(`
     UPDATE checkins
@@ -349,7 +334,6 @@ function isAdminId(userId) {
 function isAdmin(ctx) {
   return isAdminId(ctx.from.id);
 }
-
 async function getMaxRatingExcludingAdmin() {
   const r = await pool.query(
     "SELECT COALESCE(MAX(rating), 0) AS max FROM foxes WHERE user_id <> $1",
@@ -357,7 +341,6 @@ async function getMaxRatingExcludingAdmin() {
   );
   return Number(r.rows[0].max || 0);
 }
-
 async function ownerEnsure(userId) {
   if (!isAdminId(userId)) return;
   await createFoxIfMissing(userId);
@@ -388,14 +371,11 @@ async function getXYForVenue(venueId, userId) {
     "SELECT COUNT(*)::int AS x FROM counted_visits WHERE venue_id = $1 AND user_id = $2",
     [venueId, userId]
   );
-  const yq = await pool.query(
-    "SELECT COUNT(*)::int AS y FROM counted_visits WHERE venue_id = $1",
-    [venueId]
-  );
+  const yq = await pool.query("SELECT COUNT(*)::int AS y FROM counted_visits WHERE venue_id = $1", [venueId]);
   return { X: xq.rows[0].x || 0, Y: yq.rows[0].y || 0 };
 }
 
-// ===== CONFIRM CORE (shared: admin + panel) =====
+// ===== CONFIRM CORE =====
 async function confirmOtpForVenue(venueId, otp) {
   await expireOldCheckins();
 
@@ -449,44 +429,52 @@ async function confirmOtpForVenue(venueId, otp) {
 
     if (progress === 0) {
       if (isAdminId(userId)) {
-        await pool.query(
-          "UPDATE foxes SET earned_invites = earned_invites + 1, updated_at = NOW() WHERE user_id = $1",
-          [userId]
-        );
+        await pool.query("UPDATE foxes SET earned_invites = earned_invites + 1, updated_at = NOW() WHERE user_id = $1", [
+          userId,
+        ]);
       } else {
-        await pool.query(
-          "UPDATE foxes SET invites = invites + 1, updated_at = NOW() WHERE user_id = $1",
-          [userId]
-        );
+        await pool.query("UPDATE foxes SET invites = invites + 1, updated_at = NOW() WHERE user_id = $1", [userId]);
       }
     }
   }
 
   const { X, Y } = await getXYForVenue(venueId, userId);
-
   return { ok: true, venue, dayISO, userId, countedAdded, X, Y };
 }
 
 // ===== BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
-// /panel як команда (тепер бот реагує)
 bot.command("panel", async (ctx) => {
   const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
   if (!base) {
     return ctx.reply(
-      "❌ Brak PUBLIC_BASE_URL.\n" +
-      "W Railway → Variables dodaj:\n" +
-      "PUBLIC_BASE_URL = https://twoj-domen.up.railway.app"
+      "❌ Brak PUBLIC_BASE_URL.\nW Railway → Variables dodaj:\nPUBLIC_BASE_URL = https://twoj-domen.up.railway.app"
     );
   }
   return ctx.reply(`🔗 Panel lokalu: ${base}/panel`);
 });
 
-bot.command("admin", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Ти не адмін.");
-  await ownerEnsure(ctx.from.id);
-  return ctx.reply("👑 Ти АДМІН (owner mode).");
+// ✅ NEW: RESET PIN (OWNER ONLY)
+bot.command("resetpin", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Tylko OWNER.");
+
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const venueId = Number(parts[1]);
+
+  if (!Number.isInteger(venueId) || venueId <= 0) {
+    return ctx.reply("❌ Użyj tak: /resetpin 1");
+  }
+
+  const venue = await getVenueById(venueId);
+  if (!venue) return ctx.reply("❌ Nie ma takiego lokalu. /venues");
+
+  const newPin = random6Digits();
+  const newHash = hashPin(newPin);
+  await pool.query("UPDATE venues SET pin_hash = $1 WHERE id = $2", [newHash, venueId]);
+
+  // pokaż OWNER nowy PIN
+  return ctx.reply(`🔐 NOWY PIN dla "${venue.name}" (ID ${venueId}): ${newPin}\n\nWejdź: /panel`);
 });
 
 bot.start(async (ctx) => {
@@ -494,53 +482,8 @@ bot.start(async (ctx) => {
   await createFoxIfMissing(userId);
   await ownerEnsure(userId);
 
-  return ctx.reply(
-    "🦊 FoxPot Club\n\n" +
-    "Zakłady: /venues\n" +
-    "Strona lokalu: /venue 1\n" +
-    "Check-in: /checkin 1\n" +
-    "Panel (link): /panel\n" +
-    "Status: /me\n"
-  );
+  return ctx.reply("🦊 FoxPot Club\n\nZakłady: /venues\nCheck-in: /checkin 1\nPanel: /panel\nReset PIN (OWNER): /resetpin 1");
 });
-
-bot.command("me", async (ctx) => {
-  const userId = ctx.from.id;
-  await ownerEnsure(userId);
-
-  const fox = await getFox(userId);
-  if (!fox) return ctx.reply("❌ Натисни /start");
-
-  const progress = fox.visits % 5;
-  const remaining = progress === 0 ? 0 : 5 - progress;
-
-  if (isAdmin(ctx)) {
-    const maxOther = await getMaxRatingExcludingAdmin();
-    return ctx.reply(
-      "👑 OWNER STATUS\n\n" +
-      `🎟 Invites: ${fox.invites}\n` +
-      `⭐ Rating: ${fox.rating}\n` +
-      `👣 Counted Visits: ${fox.visits}\n` +
-      `🏁 Earned Invites: ${fox.earned_invites}\n\n` +
-      (remaining === 0
-        ? "✅ Next earned invite on multiple of 5.\n"
-        : `📈 Do następnego: jeszcze ${remaining} counted.\n`) +
-      `📌 OWNER = MAX(other=${maxOther}) + ${OWNER_RATING_GAP}`
-    );
-  }
-
-  return ctx.reply(
-    "🦊 Twój status\n\n" +
-    `🎟 Invites: ${fox.invites}\n` +
-    `⭐ Rating: ${fox.rating}\n` +
-    `👣 Counted Visits: ${fox.visits}\n\n` +
-    (remaining === 0
-      ? "✅ Next invite on multiple of 5."
-      : `📈 Do następnego invite: jeszcze ${remaining} counted.`)
-  );
-});
-
-bot.command("id", (ctx) => ctx.reply(`Twój Telegram ID: ${ctx.from.id}`));
 
 bot.command("venues", async (ctx) => {
   await expireOldCheckins();
@@ -549,31 +492,7 @@ bot.command("venues", async (ctx) => {
 
   let text = "🗺 Lokale (test)\n\n";
   for (const v of rows) text += `• ID ${v.id}: ${v.name} (${v.city})\n`;
-  text += "\nStrona: /venue 1";
   return ctx.reply(text);
-});
-
-bot.command("venue", async (ctx) => {
-  await expireOldCheckins();
-  const userId = ctx.from.id;
-  await ownerEnsure(userId);
-
-  const parts = ctx.message.text.trim().split(/\s+/);
-  const venueId = Number(parts[1]);
-
-  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Napisz: /venue 1");
-
-  const venue = await getVenueById(venueId);
-  if (!venue) return ctx.reply("❌ Nie ma takiego lokalu. /venues");
-
-  const { X, Y } = await getXYForVenue(venueId, userId);
-
-  return ctx.reply(
-    `🏪 ${venue.name} (${venue.city})\n\n` +
-    `📊 X/Y: ${X}/${Y}\n\n` +
-    `Check-in: /checkin ${venueId}\n` +
-    `Panel (link): /panel`
-  );
 });
 
 bot.command("checkin", async (ctx) => {
@@ -598,58 +517,13 @@ bot.command("checkin", async (ctx) => {
     [userId, venueId, otp]
   );
 
-  return ctx.reply(
-    `✅ Check-in (10 min)\n\n` +
-    `🏪 ${venue.name}\n` +
-    `🔐 OTP: ${otp}\n\n` +
-    `Personel potwierdza w Panelu: /panel`
-  );
-});
-
-// (залишаємо admin confirm для тестів)
-bot.command("confirm", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Confirm tylko OWNER (test).");
-
-  const parts = ctx.message.text.trim().split(/\s+/);
-  const venueId = Number(parts[1]);
-  const otp = (parts[2] || "").trim();
-
-  if (!Number.isInteger(venueId) || venueId <= 0 || otp.length !== 6) {
-    return ctx.reply("❌ Napisz: /confirm 1 123456");
-  }
-
-  const r = await confirmOtpForVenue(venueId, otp);
-  if (!r.ok) {
-    if (r.reason === "no_pending") return ctx.reply("❌ Brak pending (OTP wygasł po 10 min).");
-    return ctx.reply("❌ Błąd.");
-  }
-
-  const msg =
-    `✅ Confirm OK\nLokal: ${r.venue.name}\n\n` +
-    `Dzień (Warszawa): ${r.dayISO}\n\n` +
-    (r.countedAdded
-      ? `✅ Counted dodano.\n`
-      : `DZIŚ JUŻ BYŁO ✅\nSpróbuj jutro po 00:00 (Warszawa).\n`) +
-    `\nX/Y: ${r.X}/${r.Y}`;
-
-  return ctx.reply(msg);
+  return ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu: /panel`);
 });
 
 // ===== WEB ROUTES =====
 app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
-app.get("/db", async (req, res) => {
-  try {
-    const r = await pool.query("SELECT 1 as ok");
-    res.json({ ok: true, db: r.rows[0] });
-  } catch (e) {
-    console.error("❌ /db error:", e);
-    res.status(500).json({ ok: false });
-  }
-});
-
-// ===== PANEL: language switch =====
 app.get("/panel/lang/:lang", (req, res) => {
   const lang = (req.params.lang || "pl").toLowerCase();
   const safe = I18N[lang] ? lang : "pl";
@@ -657,7 +531,6 @@ app.get("/panel/lang/:lang", (req, res) => {
   res.redirect("/panel");
 });
 
-// ===== PANEL: GET =====
 app.get("/panel", async (req, res) => {
   const lang = getLang(req);
   const t = I18N[lang];
@@ -668,7 +541,6 @@ app.get("/panel", async (req, res) => {
   const venues = await listVenues();
 
   if (!token || !token.venue_id) {
-    // LOGIN PAGE
     return res.status(200).send(`
       <html>
         <head><meta charset="utf-8"><title>${t.titleLogin}</title></head>
@@ -689,15 +561,13 @@ app.get("/panel", async (req, res) => {
           </form>
 
           <p style="margin-top:14px;color:#666;">
-            TIP: to jest strona w przeglądarce: <b>/panel</b><br/>
-            Telegram komenda: <b>/panel</b> (bot wyśle link)
+            Jeśli PIN nie działa: OWNER robi /resetpin 1 w Telegram.
           </p>
         </body>
       </html>
     `);
   }
 
-  // AUTH OK -> PANEL
   const venue = await getVenueById(Number(token.venue_id));
   if (!venue) {
     setCookie(res, "foxpot_panel", "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax" });
@@ -764,7 +634,6 @@ app.get("/panel", async (req, res) => {
   `);
 });
 
-// ===== PANEL: LOGIN =====
 app.post("/panel/login", async (req, res) => {
   const lang = getLang(req);
   const t = I18N[lang];
@@ -782,24 +651,22 @@ app.post("/panel/login", async (req, res) => {
         ${langSwitcherHtml(lang)}
         <h2>${t.titleLogin}</h2>
         <p style="color:red;"><b>${t.wrongPin}</b></p>
+        <p>Jeśli to test: OWNER w Telegram → <b>/resetpin ${venueId}</b></p>
         <a href="/panel">${t.back}</a>
       </body></html>
     `);
   }
 
-  // OK: set cookie for 7 days
   const token = makeToken({ venue_id: venueId, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 });
   setCookie(res, "foxpot_panel", token, { maxAge: 7 * 24 * 60 * 60, httpOnly: true, secure: true, sameSite: "Lax" });
   res.redirect("/panel");
 });
 
-// ===== PANEL: LOGOUT =====
 app.post("/panel/logout", (req, res) => {
   setCookie(res, "foxpot_panel", "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax" });
   res.redirect("/panel");
 });
 
-// ===== PANEL: CONFIRM =====
 app.post("/panel/confirm", async (req, res) => {
   const lang = getLang(req);
   const t = I18N[lang];
