@@ -5,7 +5,7 @@ const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // щоб HTML-форми працювали
+app.use(express.urlencoded({ extended: true }));
 
 // ===== ENV =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -37,7 +37,6 @@ const pool = new Pool({
 
 // ===== TIME (Warsaw) =====
 function warsawDateISO() {
-  // YYYY-MM-DD in Europe/Warsaw
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Warsaw",
     year: "numeric",
@@ -72,13 +71,13 @@ function parseCookies(req) {
 }
 
 // ===== PIN SECURITY (hash + encrypt) =====
-// key for encryption derived from WEBHOOK_SECRET (so you don't need new ENV)
+// Примітка: WEBHOOK_SECRET тут використовується як "ключ" для шифрування/підпису сесії панелі.
+// Це нормально для MVP, бо WEBHOOK_SECRET не публічний (лежить лише в Railway Variables).
 function encKey() {
-  return crypto.createHash("sha256").update(String(WEBHOOK_SECRET)).digest(); // 32 bytes
+  return crypto.createHash("sha256").update(String(WEBHOOK_SECRET)).digest();
 }
 
 function encryptText(plain) {
-  // AES-256-GCM
   const key = encKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
@@ -96,28 +95,20 @@ function decryptText(enc, iv, tag) {
   const key = encKey();
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
   decipher.setAuthTag(Buffer.from(tag, "base64"));
-  const plain = Buffer.concat([
-    decipher.update(Buffer.from(enc, "base64")),
-    decipher.final(),
-  ]);
+  const plain = Buffer.concat([decipher.update(Buffer.from(enc, "base64")), decipher.final()]);
   return plain.toString("utf8");
 }
 
 function hashPin(pin, salt) {
-  // PBKDF2 hash
   const h = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256");
   return h.toString("hex");
 }
 
 // ===== PANEL SESSION TOKEN (cookie) =====
-// token = venueId|ts|hmac
 function signPanelToken(venueId) {
   const ts = Date.now();
   const payload = `${venueId}|${ts}`;
-  const hmac = crypto
-    .createHmac("sha256", String(WEBHOOK_SECRET))
-    .update(payload)
-    .digest("hex");
+  const hmac = crypto.createHmac("sha256", String(WEBHOOK_SECRET)).update(payload).digest("hex");
   return `${payload}|${hmac}`;
 }
 
@@ -125,20 +116,19 @@ function verifyPanelToken(token) {
   if (!token) return null;
   const parts = token.split("|");
   if (parts.length !== 3) return null;
+
   const [venueIdStr, tsStr, sig] = parts;
   const payload = `${venueIdStr}|${tsStr}`;
-  const expected = crypto
-    .createHmac("sha256", String(WEBHOOK_SECRET))
-    .update(payload)
-    .digest("hex");
+  const expected = crypto.createHmac("sha256", String(WEBHOOK_SECRET)).update(payload).digest("hex");
   if (expected !== sig) return null;
 
   const venueId = Number(venueIdStr);
   if (!Number.isInteger(venueId) || venueId <= 0) return null;
 
-  // token valid 30 days
   const ts = Number(tsStr);
   if (!Number.isFinite(ts)) return null;
+
+  // сесія панелі дійсна 30 днів
   const age = Date.now() - ts;
   if (age > 30 * 24 * 60 * 60 * 1000) return null;
 
@@ -153,19 +143,20 @@ async function initDb() {
       user_id BIGINT PRIMARY KEY,
       invites INT NOT NULL DEFAULT 3,
       rating INT NOT NULL DEFAULT 1,
-      visits INT NOT NULL DEFAULT 0, -- total counted visits (Phase 1 progress)
-      earned_invites INT NOT NULL DEFAULT 0, -- для OWNER: скільки “заробив” по правилах
+      visits INT NOT NULL DEFAULT 0, -- total counted visits
+      earned_invites INT NOT NULL DEFAULT 0, -- для OWNER: скільки “заробив”
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
+  // якщо таблиця була створена раніше без earned_invites — додаємо колонку
   await pool.query(`
     ALTER TABLE foxes
     ADD COLUMN IF NOT EXISTS earned_invites INT NOT NULL DEFAULT 0;
   `);
 
-  // Venues (partners)
+  // Venues (partners) + PIN fields (ВАЖЛИВО: може існувати стара таблиця без колонок)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -180,6 +171,13 @@ async function initDb() {
     );
   `);
 
+  // ✅ ОЦЕ І Є ФІКС: додаємо колонки, якщо таблиця вже була створена раніше
+  await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_salt TEXT;`);
+  await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_hash TEXT;`);
+  await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_enc  TEXT;`);
+  await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_iv   TEXT;`);
+  await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_tag  TEXT;`);
+
   // Pending/Confirmed checkins
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
@@ -193,7 +191,7 @@ async function initDb() {
     );
   `);
 
-  // Counted visits: 1/day/venue/user (LOCKED)
+  // Counted visits: 1/day/venue/user
   await pool.query(`
     CREATE TABLE IF NOT EXISTS counted_visits (
       id SERIAL PRIMARY KEY,
@@ -215,16 +213,14 @@ async function initDb() {
     console.log("✅ DB: seeded test venues (2)");
   }
 
-  // Ensure every venue has PIN (generated once)
+  // Створюємо PIN-и для закладів, якщо їх ще нема
   await ensureVenuePins();
 
   console.log("✅ DB ready");
 }
 
 async function ensureVenuePins() {
-  const { rows } = await pool.query(
-    "SELECT id, name, pin_hash FROM venues ORDER BY id ASC"
-  );
+  const { rows } = await pool.query("SELECT id, name, pin_hash FROM venues ORDER BY id ASC");
   for (const v of rows) {
     if (v.pin_hash) continue;
 
@@ -242,7 +238,7 @@ async function ensureVenuePins() {
       [v.id, salt, pinHash, e.enc, e.iv, e.tag]
     );
 
-    // PIN показуємо в логах 1 раз (для тестів)
+    // PIN показуємо тільки в логах (тільки ти бачиш у Railway)
     console.log(`🔐 Venue PIN created: ID ${v.id} "${v.name}" PIN=${pin}`);
   }
 }
@@ -291,6 +287,7 @@ function isAdmin(ctx) {
   return isAdminId(ctx.from.id);
 }
 
+// MAX рейтинг серед всіх, крім адміна
 async function getMaxRatingExcludingAdmin() {
   const r = await pool.query(
     "SELECT COALESCE(MAX(rating), 0) AS max FROM foxes WHERE user_id <> $1",
@@ -299,6 +296,7 @@ async function getMaxRatingExcludingAdmin() {
   return Number(r.rows[0].max || 0);
 }
 
+// Гарантія: OWNER завжди top(інших)+1000, інвайти великі, і не 0
 async function ownerEnsure(userId) {
   if (!isAdminId(userId)) return;
 
@@ -359,7 +357,7 @@ async function getPendingForVenue(venueId) {
   return rows;
 }
 
-// ===== CORE CONFIRM LOGIC (used by OWNER confirm + panel confirm) =====
+// ===== CORE CONFIRM LOGIC (used by OWNER and PANEL) =====
 async function confirmByOtpForVenue(venueId, otp) {
   await expireOldCheckins();
 
@@ -385,7 +383,6 @@ async function confirmByOtpForVenue(venueId, otp) {
     return { ok: false, msg: "❌ Не знайдено pending check-in. Може OTP вже прострочений (10 хв)." };
   }
 
-  // mark checkin confirmed
   await pool.query("UPDATE checkins SET status='confirmed' WHERE id = $1", [row.id]);
 
   const dayISO = warsawDateISO();
@@ -402,19 +399,10 @@ async function confirmByOtpForVenue(venueId, otp) {
   );
 
   const countedAdded = ins.rowCount === 1;
+
   await createFoxIfMissing(userId);
 
-  let info = {
-    ok: true,
-    venueName: venue.name,
-    dayISO,
-    countedAdded,
-    userId,
-    X: 0,
-    Y: 0,
-    inviteText: "",
-  };
-
+  let inviteText = "";
   if (countedAdded) {
     await pool.query(
       "UPDATE foxes SET visits = visits + 1, rating = rating + 1, updated_at = NOW() WHERE user_id = $1",
@@ -431,7 +419,7 @@ async function confirmByOtpForVenue(venueId, otp) {
           [userId]
         );
         const updated = await getFox(userId);
-        info.inviteText =
+        inviteText =
           `🎟 +1 earned invite (за 5 counted visits)\n` +
           `🏁 Earned Invites: ${updated.earned_invites}\n` +
           `👑 OWNER: основні інвайти завжди безлімітні.`;
@@ -440,32 +428,35 @@ async function confirmByOtpForVenue(venueId, otp) {
           "UPDATE foxes SET invites = invites + 1, updated_at = NOW() WHERE user_id = $1",
           [userId]
         );
-        info.inviteText = "🎟 +1 інвайт за 5 counted visits!";
+        inviteText = "🎟 +1 інвайт за 5 counted visits!";
       }
     } else {
-      const remaining = 5 - progress;
-      info.inviteText = `📈 До наступного інвайта: ще ${remaining} counted visit(и).`;
+      inviteText = `📈 До наступного інвайта: ще ${5 - progress} counted visit(и).`;
     }
   }
 
-  const xy = await getXYForVenue(venueId, userId);
-  info.X = xy.X;
-  info.Y = xy.Y;
+  const { X, Y } = await getXYForVenue(venueId, userId);
 
-  return info;
+  return {
+    ok: true,
+    venueName: venue.name,
+    dayISO,
+    countedAdded,
+    X,
+    Y,
+    inviteText,
+  };
 }
 
 // ===== BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
-// ===== ADMIN COMMANDS =====
 bot.command("admin", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔ Ти не адмін.");
   await ownerEnsure(ctx.from.id);
   return ctx.reply("👑 Ти АДМІН (owner mode).");
 });
 
-// Show venue PIN (OWNER only): /venuepin 1
 bot.command("venuepin", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔ Тільки OWNER.");
   const parts = ctx.message.text.trim().split(/\s+/);
@@ -473,14 +464,12 @@ bot.command("venuepin", async (ctx) => {
   if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /venuepin 1");
 
   const v = await getVenueById(venueId);
-  if (!v) return ctx.reply("❌ Немає такого закладу.");
-  if (!v.pin_enc) return ctx.reply("❌ У цього закладу ще немає PIN (дивись логи Railway).");
+  if (!v || !v.pin_enc) return ctx.reply("❌ PIN не знайдено (перевір логи Railway після старту).");
 
   const pin = decryptText(v.pin_enc, v.pin_iv, v.pin_tag);
-  return ctx.reply(`🔐 PIN для "${v.name}" (ID ${v.id}): ${pin}\n\nPanel: /panel (в браузері)`);
+  return ctx.reply(`🔐 PIN для "${v.name}" (ID ${v.id}): ${pin}\n\nPanel: відкрий /panel у браузері`);
 });
 
-// ===== BASIC COMMANDS =====
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
   await createFoxIfMissing(userId);
@@ -491,11 +480,10 @@ bot.start(async (ctx) => {
       "Список закладів: /venues\n" +
       "Сторінка закладу: /venue 1\n" +
       "Check-in: /checkin 1\n" +
-      "Confirm (для тесту OWNER): /confirm 1 123456\n" +
-      "PIN закладу (OWNER): /venuepin 1\n" +
-      "Panel (в браузері): відкрий /panel\n" +
-      "Статус: /me\n" +
-      "Інвайти: /invite"
+      "Confirm (тест OWNER): /confirm 1 123456\n" +
+      "PIN (OWNER): /venuepin 1\n" +
+      "Panel (браузер): /panel\n" +
+      "Статус: /me\n"
   );
 });
 
@@ -535,27 +523,10 @@ bot.command("me", async (ctx) => {
   );
 });
 
-bot.command("invite", async (ctx) => {
-  const userId = ctx.from.id;
-  await ownerEnsure(userId);
-
-  const fox = await getFox(userId);
-  if (!fox) return ctx.reply("❌ Натисни /start");
-
-  if (isAdmin(ctx)) {
-    return ctx.reply(
-      `👑 OWNER\n\n🎟 Інвайти (безліміт): ${fox.invites}\n🏁 Earned Invites: ${fox.earned_invites}`
-    );
-  }
-  return ctx.reply(`🎟 Твої інвайти: ${fox.invites}`);
-});
-
-bot.command("id", (ctx) => ctx.reply(`Твій Telegram ID: ${ctx.from.id}`));
-
-// ===== VENUES =====
 bot.command("venues", async (ctx) => {
   await expireOldCheckins();
   const rows = await listVenues();
+
   if (!rows.length) return ctx.reply("Поки немає закладів.");
 
   let text = "🗺 Заклади (тестові)\n\n";
@@ -586,13 +557,10 @@ bot.command("venue", async (ctx) => {
   return ctx.reply(
     `🏪 ${venue.name} (${venue.city})\n\n` +
       `📊 X/Y: ${X}/${Y}\n\n` +
-      `Check-in: /checkin ${venueId}\n` +
-      `Confirm (для тесту OWNER): /confirm ${venueId} 123456\n` +
-      `Panel: відкрий /panel у браузері (PIN має заклад)`
+      `Check-in: /checkin ${venueId}\n`
   );
 });
 
-// ===== CHECK-IN / CONFIRM (OTP) =====
 bot.command("checkin", async (ctx) => {
   await expireOldCheckins();
   const userId = ctx.from.id;
@@ -621,16 +589,15 @@ bot.command("checkin", async (ctx) => {
     `✅ Check-in створено (10 хв)\n\n` +
       `🏪 ${venue.name}\n` +
       `🔐 OTP: ${otp}\n\n` +
-      `Далі персонал має підтвердити в Panel (через PIN).\n` +
-      `Для тесту OWNER може підтвердити так:\n` +
-      `/confirm ${venueId} ${otp}`
+      `Персонал підтверджує через Panel (браузер) /panel (PIN).\n` +
+      `Для тесту OWNER може: /confirm ${venueId} ${otp}`
   );
 });
 
-// OWNER confirm (for tests)
 bot.command("confirm", async (ctx) => {
+  await expireOldCheckins();
   if (!isAdmin(ctx)) {
-    return ctx.reply("⛔ Confirm команда зараз тільки для OWNER (тест). Реально підтверджує заклад через /panel.");
+    return ctx.reply("⛔ Confirm зараз доступний тільки OWNER (для тесту). Реально підтверджує заклад через /panel.");
   }
 
   const parts = ctx.message.text.trim().split(/\s+/);
@@ -646,9 +613,7 @@ bot.command("confirm", async (ctx) => {
 
   let msg = `✅ Confirm OK\n🏪 ${r.venueName}\n📅 Day (Warsaw): ${r.dayISO}\n\n`;
   if (!r.countedAdded) {
-    msg +=
-      "ℹ️ Counted Visit вже був сьогодні для цього Fox у цьому закладі.\n" +
-      "Правило: max 1 counted/day/venue/Fox.\n\n";
+    msg += "ℹ️ Counted Visit вже був сьогодні для цього Fox у цьому закладі.\nПравило: max 1 counted/day/venue/Fox.\n\n";
   } else {
     msg += `${r.inviteText}\n\n✅ Counted Visit додано і зараховано в статистику.\n\n`;
   }
@@ -656,7 +621,7 @@ bot.command("confirm", async (ctx) => {
   return ctx.reply(msg);
 });
 
-// quick test
+// швидкий тест
 bot.hears(/test/i, (ctx) => ctx.reply("Test OK ✅"));
 
 // ===== ROUTES =====
@@ -676,20 +641,17 @@ app.get("/db", async (req, res) => {
 // ===== PANEL (browser) =====
 app.get("/panel", async (req, res) => {
   const cookies = parseCookies(req);
-  const token = cookies.panel_token;
-  const data = verifyPanelToken(token);
+  const data = verifyPanelToken(cookies.panel_token);
 
   if (!data) {
-    // login page
     return res.status(200).send(`
-      <html><head><meta charset="utf-8"><title>FoxPot Panel</title></head>
+      <html><head><meta charset="utf-8"><title>Panel</title></head>
       <body style="font-family: Arial; max-width: 520px; margin: 30px auto;">
         <h2>THE FOX POT CLUB — Panel Lokalu</h2>
-        <p><b>Що це:</b> сторінка для персоналу закладу.</p>
-        <p><b>PIN</b> = 6 цифр “пароль” закладу.</p>
+        <p>PIN = 6 цифр пароль закладу (для персоналу)</p>
         <form method="POST" action="/panel/login">
-          <label>PIN (6 цифр):</label><br/>
-          <input name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" style="font-size:20px; padding:8px; width: 220px;" required />
+          <input name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                 style="font-size:20px; padding:8px; width:220px;" required />
           <br/><br/>
           <button type="submit" style="font-size:18px; padding:10px 16px;">Увійти</button>
         </form>
@@ -698,38 +660,33 @@ app.get("/panel", async (req, res) => {
   }
 
   const venue = await getVenueById(data.venueId);
-  if (!venue) {
-    res.setHeader("Set-Cookie", "panel_token=; Max-Age=0; Path=/");
-    return res.redirect("/panel");
-  }
-
   const pending = await getPendingForVenue(venue.id);
-  const pendingHtml = pending.length
+
+  const list = pending.length
     ? pending
         .map(
           (p) =>
-            `<li>OTP: <b>${p.otp}</b> (expires: ${new Date(p.expires_at).toLocaleString()})</li>`
+            `<li><b>${p.otp}</b> (expires: ${new Date(p.expires_at).toLocaleString()})</li>`
         )
         .join("")
-    : "<li>Немає pending чек-інів (або вони протухли).</li>";
+    : "<li>Немає pending</li>";
 
   return res.status(200).send(`
-    <html><head><meta charset="utf-8"><title>FoxPot Panel</title></head>
+    <html><head><meta charset="utf-8"><title>Panel</title></head>
     <body style="font-family: Arial; max-width: 720px; margin: 30px auto;">
       <h2>Panel Lokalu</h2>
-      <p><b>Заклад:</b> ${venue.name} (${venue.city})</p>
+      <p><b>Заклад:</b> ${venue.name}</p>
 
-      <h3>Підтвердити візит (15 секунд)</h3>
-      <p><b>OTP</b> = 6 цифр, які показує Fox після /checkin</p>
+      <h3>Confirm OTP</h3>
       <form method="POST" action="/panel/confirm">
-        <label>OTP (6 цифр):</label><br/>
-        <input name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" style="font-size:20px; padding:8px; width: 220px;" required />
+        <input name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+               style="font-size:20px; padding:8px; width:220px;" required />
         <br/><br/>
         <button type="submit" style="font-size:18px; padding:10px 16px;">CONFIRM</button>
       </form>
 
-      <h3>Pending (останні 10 хв)</h3>
-      <ul>${pendingHtml}</ul>
+      <h3>Pending (10 хв)</h3>
+      <ul>${list}</ul>
 
       <p><a href="/panel/logout">Вийти</a></p>
     </body></html>
@@ -742,26 +699,19 @@ app.post("/panel/login", async (req, res) => {
     return res.status(400).send("❌ PIN має бути 6 цифр. <a href='/panel'>Назад</a>");
   }
 
-  // find venue where pin matches (hash check)
-  const { rows } = await pool.query(
-    "SELECT id, pin_salt, pin_hash FROM venues WHERE pin_hash IS NOT NULL"
-  );
+  const { rows } = await pool.query("SELECT id, pin_salt, pin_hash FROM venues WHERE pin_hash IS NOT NULL");
+  let matched = null;
 
-  let matchedVenueId = null;
   for (const v of rows) {
-    const calc = hashPin(pin, v.pin_salt);
-    if (calc === v.pin_hash) {
-      matchedVenueId = v.id;
+    if (hashPin(pin, v.pin_salt) === v.pin_hash) {
+      matched = v.id;
       break;
     }
   }
 
-  if (!matchedVenueId) {
-    return res.status(401).send("❌ Невірний PIN. <a href='/panel'>Спробувати ще раз</a>");
-  }
+  if (!matched) return res.status(401).send("❌ Невірний PIN. <a href='/panel'>Назад</a>");
 
-  const token = signPanelToken(matchedVenueId);
-  // httpOnly cookie
+  const token = signPanelToken(matched);
   res.setHeader(
     "Set-Cookie",
     `panel_token=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${30 * 24 * 60 * 60}`
@@ -780,24 +730,19 @@ app.post("/panel/confirm", async (req, res) => {
   }
 
   const r = await confirmByOtpForVenue(data.venueId, otp);
-  if (!r.ok) {
-    return res.status(400).send(`${r.msg} <br/><br/><a href="/panel">Назад</a>`);
-  }
+  if (!r.ok) return res.status(400).send(`${r.msg} <br/><a href='/panel'>Назад</a>`);
 
-  let msg = `<h2>✅ Confirm OK</h2>
-  <p><b>Заклад:</b> ${r.venueName}</p>
-  <p><b>Day (Warsaw):</b> ${r.dayISO}</p>`;
-
-  if (!r.countedAdded) {
-    msg += `<p>ℹ️ Counted Visit вже був сьогодні для цього Fox у цьому закладі.<br/>Правило: max 1 counted/day/venue/Fox.</p>`;
-  } else {
-    msg += `<p>${r.inviteText}</p><p>✅ Counted Visit додано і зараховано в статистику.</p>`;
-  }
-
-  msg += `<p><b>X/Y:</b> ${r.X}/${r.Y}</p>
-  <p><a href="/panel">Назад у Panel</a></p>`;
-
-  return res.status(200).send(`<html><head><meta charset="utf-8"><title>Confirm</title></head><body style="font-family: Arial; max-width:720px; margin:30px auto;">${msg}</body></html>`);
+  return res.status(200).send(`
+    <html><head><meta charset="utf-8"><title>OK</title></head>
+    <body style="font-family: Arial; max-width: 720px; margin: 30px auto;">
+      <h2>✅ Confirm OK</h2>
+      <p><b>Заклад:</b> ${r.venueName}</p>
+      <p><b>День:</b> ${r.dayISO}</p>
+      <p>${r.countedAdded ? "✅ Counted додано" : "ℹ️ Counted вже був сьогодні"}</p>
+      <p><b>X/Y:</b> ${r.X}/${r.Y}</p>
+      <p><a href="/panel">Назад в Panel</a></p>
+    </body></html>
+  `);
 });
 
 app.get("/panel/logout", (req, res) => {
@@ -812,16 +757,18 @@ app.post(webhookPath, (req, res) => bot.webhookCallback(webhookPath)(req, res));
 // ===== START =====
 const PORT = process.env.PORT || 3000;
 
+// ✅ ВАЖЛИВО: спочатку піднімаємо сервер (щоб Railway healthcheck пройшов),
+// а DB ініціалізацію робимо одразу після старту.
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on ${PORT}`);
+  console.log(`✅ Webhook path: ${webhookPath}`);
+});
+
+// DB init (не блокує старт порту)
 (async () => {
   try {
     await initDb();
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`✅ Server running on ${PORT}`);
-      console.log(`✅ Webhook path: ${webhookPath}`);
-      console.log(`✅ Panel: /panel`);
-    });
   } catch (e) {
     console.error("❌ DB init failed:", e);
-    process.exit(1);
   }
 })();
