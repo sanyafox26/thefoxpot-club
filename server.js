@@ -1,5 +1,5 @@
 /**
- * The FoxPot Club — server.js (FULL FILE, safe migrations + /panel + /venues)
+ * The FoxPot Club — server.js (FULL FILE, fixed foxes user_id NOT NULL issue)
  *
  * ENV required:
  * - DATABASE_URL
@@ -9,7 +9,7 @@
  *
  * Optional:
  * - ADMIN_USER_ID
- * - NODE_ENV=production (можна, але НЕ обов'язково)
+ * - NODE_ENV=production
  */
 
 const express = require("express");
@@ -111,7 +111,7 @@ function shortErr(e) {
   if (!e) return "unknown";
   const code = e.code ? String(e.code) : "";
   const msg = e.message ? String(e.message) : String(e);
-  return `${code ? code + " " : ""}${msg}`.slice(0, 200);
+  return `${code ? code + " " : ""}${msg}`.slice(0, 220);
 }
 
 // ---------------- DB schema helpers ----------------
@@ -166,23 +166,24 @@ END $$;`;
 }
 
 /**
- * Detect which column stores Telegram user id in table foxes.
- * We support legacy: user_id / telegram_id / fox_id / id
+ * Detect correct Telegram id column in foxes.
+ * IMPORTANT: Prefer user_id over id.
  */
 async function detectFoxIdColumn() {
-  if (!(await tableExists("foxes"))) return "id";
+  if (!(await tableExists("foxes"))) return "user_id";
 
-  const candidates = ["id", "user_id", "telegram_id", "fox_id"];
+  // ✅ priority order matters:
+  const candidates = ["user_id", "telegram_id", "fox_id", "id"];
   for (const c of candidates) {
     if (await columnExists("foxes", c)) return c;
   }
 
-  // if no suitable column exists, create id
-  await addColumnIfMissing("foxes", "id", "BIGINT");
-  return "id";
+  // if nothing exists, create user_id
+  await addColumnIfMissing("foxes", "user_id", "BIGINT");
+  return "user_id";
 }
 
-let FOX_ID_COL = "id"; // will be set on boot
+let FOX_ID_COL = "user_id"; // will be set on boot
 
 // ---------------- Migrations ----------------
 async function ensureTablesAndMigrations() {
@@ -198,10 +199,10 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // foxes (create baseline if not exists)
+  // foxes baseline (only if table doesn't exist)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
-      id BIGINT PRIMARY KEY,
+      user_id BIGINT PRIMARY KEY,
       username TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -232,14 +233,13 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // FOX_ID_COL detection + legacy fixes
+  // detect correct column in existing DB
   FOX_ID_COL = await detectFoxIdColumn();
 
-  // If foxes has legacy columns but "id" is not the one used, ensure it exists too (harmless)
+  // ensure columns exist (safe)
   await addColumnIfMissing("foxes", "username", "TEXT");
   await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // Ensure required columns in checkins/counts exist
   await addColumnIfMissing("checkins", "venue_id", "INT");
   await addColumnIfMissing("checkins", "fox_id", "BIGINT");
   await addColumnIfMissing("checkins", "otp", "TEXT");
@@ -259,10 +259,10 @@ async function ensureTablesAndMigrations() {
      FOREIGN KEY (venue_id) REFERENCES venues(id);`
   );
 
-  // This FK references foxes(<FOX_ID_COL>) — but FK needs a fixed target.
-  // We'll keep checkins.fox_id = BIGINT Telegram id and ensure foxes has UNIQUE on that column.
+  // ensure unique on detected fox column (so ON CONFLICT works)
   await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_${FOX_ID_COL}_uniq ON foxes(${FOX_ID_COL});`);
 
+  // unique daily confirmed checkin
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
     ON checkins (venue_id, fox_id, day_warsaw)
@@ -535,11 +535,9 @@ bot.command("checkin", async (ctx) => {
     const foxTelegramId = Number(ctx.from.id);
     const username = ctx.from.username ? String(ctx.from.username) : null;
 
-    // Insert fox into legacy-safe schema
-    // FOX_ID_COL can be "id" OR "user_id" OR something legacy
+    // ✅ insert into correct column (user_id priority)
     const col = FOX_ID_COL;
 
-    // Build dynamic SQL safely (column name is controlled by us)
     await pool.query(
       `INSERT INTO foxes (${col}, username) VALUES ($1,$2)
        ON CONFLICT (${col}) DO UPDATE SET username=EXCLUDED.username;`,
