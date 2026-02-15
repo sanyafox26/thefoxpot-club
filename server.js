@@ -1,5 +1,6 @@
 /**
- * The FoxPot Club — server.js (FULL FILE, fixed foxes user_id NOT NULL issue)
+ * The FoxPot Club — server.js (FULL FILE)
+ * FIXED: DB can have user_id (NOT NULL) instead of fox_id in checkins / counted_visits.
  *
  * ENV required:
  * - DATABASE_URL
@@ -90,7 +91,10 @@ function verifyCookie(cookieVal) {
 }
 function getCookie(req, name) {
   const h = req.headers.cookie || "";
-  const items = h.split(";").map((s) => s.trim()).filter(Boolean);
+  const items = h
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
   for (const it of items) {
     const idx = it.indexOf("=");
     if (idx === -1) continue;
@@ -166,24 +170,25 @@ END $$;`;
 }
 
 /**
- * Detect correct Telegram id column in foxes.
- * IMPORTANT: Prefer user_id over id.
+ * Detect which column stores Telegram user id in a given table.
+ * Whitelist candidates only (safe for dynamic identifiers).
  */
-async function detectFoxIdColumn() {
-  if (!(await tableExists("foxes"))) return "user_id";
+async function detectUserIdColumn(tableName, candidates) {
+  if (!(await tableExists(tableName))) return candidates[0];
 
-  // ✅ priority order matters:
-  const candidates = ["user_id", "telegram_id", "fox_id", "id"];
   for (const c of candidates) {
-    if (await columnExists("foxes", c)) return c;
+    if (await columnExists(tableName, c)) return c;
   }
 
-  // if nothing exists, create user_id
-  await addColumnIfMissing("foxes", "user_id", "BIGINT");
-  return "user_id";
+  // if none exist, create the first candidate
+  await addColumnIfMissing(tableName, candidates[0], "BIGINT");
+  return candidates[0];
 }
 
-let FOX_ID_COL = "user_id"; // will be set on boot
+// These will be detected on boot based on YOUR DB
+let FOXES_UID_COL = "user_id";       // foxes.user_id OR foxes.id
+let CHECKINS_UID_COL = "user_id";    // checkins.user_id OR checkins.fox_id
+let VISITS_UID_COL = "user_id";      // counted_visits.user_id OR counted_visits.fox_id
 
 // ---------------- Migrations ----------------
 async function ensureTablesAndMigrations() {
@@ -199,7 +204,7 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // foxes baseline (only if table doesn't exist)
+  // foxes (create baseline if missing)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       user_id BIGINT PRIMARY KEY,
@@ -208,12 +213,12 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // checkins
+  // checkins (baseline)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
       id SERIAL PRIMARY KEY,
       venue_id INT,
-      fox_id BIGINT,
+      user_id BIGINT,
       otp TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       expires_at TIMESTAMPTZ,
@@ -222,36 +227,36 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // counted_visits
+  // counted_visits (baseline)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS counted_visits (
       id SERIAL PRIMARY KEY,
       venue_id INT,
-      fox_id BIGINT,
+      user_id BIGINT,
       day_warsaw DATE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
-  // detect correct column in existing DB
-  FOX_ID_COL = await detectFoxIdColumn();
+  // ✅ Detect actual columns in YOUR DB
+  FOXES_UID_COL = await detectUserIdColumn("foxes", ["user_id", "id", "telegram_id", "fox_id"]);
+  CHECKINS_UID_COL = await detectUserIdColumn("checkins", ["user_id", "fox_id", "telegram_id"]);
+  VISITS_UID_COL = await detectUserIdColumn("counted_visits", ["user_id", "fox_id", "telegram_id"]);
 
-  // ensure columns exist (safe)
+  // Ensure important columns exist (safe)
   await addColumnIfMissing("foxes", "username", "TEXT");
   await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
   await addColumnIfMissing("checkins", "venue_id", "INT");
-  await addColumnIfMissing("checkins", "fox_id", "BIGINT");
   await addColumnIfMissing("checkins", "otp", "TEXT");
   await addColumnIfMissing("checkins", "expires_at", "TIMESTAMPTZ");
   await addColumnIfMissing("checkins", "day_warsaw", "DATE");
   await addColumnIfMissing("checkins", "confirmed_at", "TIMESTAMPTZ");
 
   await addColumnIfMissing("counted_visits", "venue_id", "INT");
-  await addColumnIfMissing("counted_visits", "fox_id", "BIGINT");
   await addColumnIfMissing("counted_visits", "day_warsaw", "DATE");
 
-  // Foreign keys (soft-safe)
+  // FK venue -> venues (soft-safe)
   await addConstraintIfMissing(
     "checkins_venue_fk",
     `ALTER TABLE checkins
@@ -259,19 +264,20 @@ async function ensureTablesAndMigrations() {
      FOREIGN KEY (venue_id) REFERENCES venues(id);`
   );
 
-  // ensure unique on detected fox column (so ON CONFLICT works)
-  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_${FOX_ID_COL}_uniq ON foxes(${FOX_ID_COL});`);
+  // Unique index for foxes uid col (so ON CONFLICT works)
+  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_uid_uniq ON foxes(${FOXES_UID_COL});`);
 
-  // unique daily confirmed checkin
+  // Unique daily confirmed checkin (use detected column)
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
-    ON checkins (venue_id, fox_id, day_warsaw)
+    ON checkins (venue_id, ${CHECKINS_UID_COL}, day_warsaw)
     WHERE confirmed_at IS NOT NULL;
   `);
 
+  // Unique daily counted visit (use detected column)
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS counted_visits_unique_daily
-    ON counted_visits (venue_id, fox_id, day_warsaw);
+    ON counted_visits (venue_id, ${VISITS_UID_COL}, day_warsaw);
   `);
 }
 
@@ -379,23 +385,25 @@ app.get("/panel", async (req, res) => {
   }
 
   const { rows: pend } = await pool.query(
-    `SELECT c.id, c.otp, c.fox_id, c.expires_at
+    `SELECT c.id, c.otp, c.${CHECKINS_UID_COL} AS uid, c.expires_at
      FROM checkins c
-     WHERE c.venue_id=$1 AND (c.confirmed_at IS NULL) AND c.expires_at >= NOW()
+     WHERE c.venue_id=$1 AND c.confirmed_at IS NULL AND c.expires_at >= NOW()
      ORDER BY c.created_at DESC
      LIMIT 20;`,
     [venue.id]
   );
 
   const pendingHtml = pend.length
-    ? pend.map((p) => {
-        const exp = new Date(p.expires_at).toISOString();
-        return `<div style="padding:10px;border:1px solid #2a2a40;border-radius:12px;margin:8px 0">
-          <div><b>OTP:</b> <code>${p.otp}</code></div>
-          <div class="muted">Fox ID: ${String(p.fox_id).slice(0,4)}****</div>
-          <div class="muted">Expires: ${exp}</div>
-        </div>`;
-      }).join("")
+    ? pend
+        .map((p) => {
+          const exp = new Date(p.expires_at).toISOString();
+          return `<div style="padding:10px;border:1px solid #2a2a40;border-radius:12px;margin:8px 0">
+            <div><b>OTP:</b> <code>${p.otp}</code></div>
+            <div class="muted">Fox ID: ${String(p.uid).slice(0, 4)}****</div>
+            <div class="muted">Expires: ${exp}</div>
+          </div>`;
+        })
+        .join("")
     : `<div class="muted">—</div>`;
 
   const html = panelLayout("Panel lokalu", `
@@ -466,7 +474,7 @@ app.post("/panel/confirm", async (req, res) => {
   if (!/^\d{6}$/.test(otp)) return res.redirect("/panel");
 
   const { rows } = await pool.query(
-    `SELECT id, fox_id, day_warsaw
+    `SELECT id, ${CHECKINS_UID_COL} AS uid, day_warsaw
      FROM checkins
      WHERE venue_id=$1 AND otp=$2 AND confirmed_at IS NULL AND expires_at >= NOW()
      ORDER BY created_at DESC
@@ -477,21 +485,21 @@ app.post("/panel/confirm", async (req, res) => {
   if (!rows.length) return res.redirect("/panel");
 
   const checkinId = rows[0].id;
-  const foxId = rows[0].fox_id;
+  const userId = rows[0].uid;
   const day = rows[0].day_warsaw;
 
   await pool.query(`UPDATE checkins SET confirmed_at=NOW() WHERE id=$1;`, [checkinId]);
 
   await pool.query(
-    `INSERT INTO counted_visits (venue_id, fox_id, day_warsaw)
+    `INSERT INTO counted_visits (venue_id, ${VISITS_UID_COL}, day_warsaw)
      VALUES ($1,$2,$3)
      ON CONFLICT DO NOTHING;`,
-    [venueId, foxId, day]
+    [venueId, userId, day]
   );
 
   try {
     await bot.telegram.sendMessage(
-      foxId,
+      userId,
       `✅ Confirm OK\nLokal: (ID ${venueId})\nDzień (Warszawa): ${day}\n\nDZIŚ JUŻ BYŁO ✅\nSpróbuj jutro po 00:00 (Warszawa).`
     );
   } catch {}
@@ -532,16 +540,14 @@ bot.command("checkin", async (ctx) => {
     const venueId = Number(parts[1]);
     if (!venueId) return ctx.reply("❌ Napisz tak: /checkin 1");
 
-    const foxTelegramId = Number(ctx.from.id);
+    const telegramId = Number(ctx.from.id);
     const username = ctx.from.username ? String(ctx.from.username) : null;
 
-    // ✅ insert into correct column (user_id priority)
-    const col = FOX_ID_COL;
-
+    // ✅ foxes insert using detected uid column
     await pool.query(
-      `INSERT INTO foxes (${col}, username) VALUES ($1,$2)
-       ON CONFLICT (${col}) DO UPDATE SET username=EXCLUDED.username;`,
-      [foxTelegramId, username]
+      `INSERT INTO foxes (${FOXES_UID_COL}, username) VALUES ($1,$2)
+       ON CONFLICT (${FOXES_UID_COL}) DO UPDATE SET username=EXCLUDED.username;`,
+      [telegramId, username]
     );
 
     const { rows } = await pool.query(`SELECT id, name FROM venues WHERE id=$1`, [venueId]);
@@ -552,10 +558,11 @@ bot.command("checkin", async (ctx) => {
     const day = warsawDayISO(new Date());
     const expiresMinutes = 10;
 
+    // ✅ checkins insert using detected uid column (user_id OR fox_id)
     await pool.query(
-      `INSERT INTO checkins (venue_id, fox_id, otp, expires_at, day_warsaw)
+      `INSERT INTO checkins (venue_id, ${CHECKINS_UID_COL}, otp, expires_at, day_warsaw)
        VALUES ($1,$2,$3, NOW() + ($4::int * interval '1 minute'), $5::date);`,
-      [venueId, foxTelegramId, otp, expiresMinutes, day]
+      [venueId, telegramId, otp, expiresMinutes, day]
     );
 
     await ctx.reply(
@@ -577,6 +584,8 @@ bot.command("checkin", async (ctx) => {
   app.listen(PORT, () => {
     console.log(`✅ Server listening on ${PORT}`);
     console.log(`✅ Webhook path ready: /${WEBHOOK_SECRET}`);
-    console.log(`✅ FOX_ID_COL detected: ${FOX_ID_COL}`);
+    console.log(`✅ foxes uid col: ${FOXES_UID_COL}`);
+    console.log(`✅ checkins uid col: ${CHECKINS_UID_COL}`);
+    console.log(`✅ visits uid col: ${VISITS_UID_COL}`);
   });
 })();
