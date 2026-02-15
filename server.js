@@ -34,22 +34,31 @@ const pool = new Pool({
 });
 
 async function initDb() {
+  // базова таблиця
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       user_id BIGINT PRIMARY KEY,
       invites INT NOT NULL DEFAULT 3,
       rating INT NOT NULL DEFAULT 1,
       visits INT NOT NULL DEFAULT 0,
+      earned_invites INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  // якщо таблиця була створена раніше без earned_invites — додаємо колонку
+  await pool.query(`
+    ALTER TABLE foxes
+    ADD COLUMN IF NOT EXISTS earned_invites INT NOT NULL DEFAULT 0;
+  `);
+
   console.log("✅ DB ready");
 }
 
 async function getFox(userId) {
   const { rows } = await pool.query(
-    "SELECT user_id, invites, rating, visits FROM foxes WHERE user_id = $1",
+    "SELECT user_id, invites, rating, visits, earned_invites FROM foxes WHERE user_id = $1",
     [userId]
   );
   return rows[0] || null;
@@ -58,8 +67,8 @@ async function getFox(userId) {
 async function createFoxIfMissing(userId) {
   await pool.query(
     `
-    INSERT INTO foxes (user_id, invites, rating, visits)
-    VALUES ($1, 3, 1, 0)
+    INSERT INTO foxes (user_id, invites, rating, visits, earned_invites)
+    VALUES ($1, 3, 1, 0, 0)
     ON CONFLICT (user_id) DO NOTHING
   `,
     [userId]
@@ -69,7 +78,7 @@ async function createFoxIfMissing(userId) {
 
 // ===== OWNER RULES =====
 const OWNER_INVITES = 999999999; // дуже велике число автоматично
-const OWNER_RATING_GAP = 1000; // адмін завжди +1000 над будь-ким
+const OWNER_RATING_GAP = 1000;   // OWNER = MAX_інших + 1000
 
 function isAdminId(userId) {
   return String(userId) === String(ADMIN_USER_ID);
@@ -87,7 +96,7 @@ async function getMaxRatingExcludingAdmin() {
   return Number(r.rows[0].max || 0);
 }
 
-// Гарантія: адмін завжди top(інших)+1000 + багато інвайтів, і ніколи не 0
+// Гарантія: OWNER завжди top(інших)+1000, інвайти великі, і не 0
 async function ownerEnsure(userId) {
   if (!isAdminId(userId)) return;
 
@@ -136,12 +145,13 @@ bot.command("admin_open", async (ctx) => {
   return ctx.reply(
     "✅ Owner Mode оновлено.\n\n" +
       `🎟 Інвайти: ${fox.invites}\n` +
-      `⭐ Рейтинг: ${fox.rating}\n\n` +
+      `⭐ Рейтинг: ${fox.rating}\n` +
+      `🏁 Earned Invites: ${fox.earned_invites}\n\n` +
       `📌 Правило: OWNER = MAX_інших(${maxOther}) + ${OWNER_RATING_GAP} = ${wantedRating}`
   );
 });
 
-// Ручні (на випадок тестів)
+// ручні (для тестів)
 bot.command("admin_invites", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
 
@@ -157,34 +167,6 @@ bot.command("admin_invites", async (ctx) => {
   await pool.query("UPDATE foxes SET invites = $2 WHERE user_id = $1", [userId, n]);
 
   return ctx.reply(`✅ Інвайти встановлено: ${n}`);
-});
-
-bot.command("admin_rating", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
-
-  const parts = ctx.message.text.trim().split(/\s+/);
-  const n = Number(parts[1]);
-
-  if (!Number.isInteger(n) || n < 1 || n > 2000000000) {
-    return ctx.reply("❌ Напиши так: /admin_rating 999");
-  }
-
-  const userId = ctx.from.id;
-  await createFoxIfMissing(userId);
-  await pool.query("UPDATE foxes SET rating = $2 WHERE user_id = $1", [userId, n]);
-
-  return ctx.reply(`✅ Рейтинг встановлено: ${n}`);
-});
-
-bot.command("admin_unban", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Доступ тільки для адміна.");
-
-  const userId = ctx.from.id;
-  await createFoxIfMissing(userId);
-  await pool.query("UPDATE foxes SET rating = 1 WHERE user_id = $1", [userId]);
-
-  await ownerEnsure(userId);
-  return ctx.reply("✅ Готово. Owner відновлено.");
 });
 
 // ===== BASIC COMMANDS =====
@@ -208,13 +190,20 @@ bot.command("me", async (ctx) => {
   const fox = await getFox(userId);
   if (!fox) return ctx.reply("❌ Натисни /start");
 
+  const progress = fox.visits % 5;
+  const remaining = progress === 0 ? 0 : 5 - progress;
+
   if (isAdmin(ctx)) {
     const maxOther = await getMaxRatingExcludingAdmin();
     return ctx.reply(
       "👑 OWNER STATUS\n\n" +
         `🎟 Інвайти: ${fox.invites}\n` +
         `⭐ Рейтинг: ${fox.rating}\n` +
-        `👣 Візити: ${fox.visits}\n\n` +
+        `👣 Візити: ${fox.visits}\n` +
+        `🏁 Earned Invites: ${fox.earned_invites}\n\n` +
+        (remaining === 0
+          ? "✅ Наступний інвайт вже нарахований на 5-му візиті.\n"
+          : `📈 До наступного earned invite: ще ${remaining} візит(и).\n`) +
         `📌 Правило: OWNER = MAX_інших(${maxOther}) + ${OWNER_RATING_GAP}`
     );
   }
@@ -223,7 +212,10 @@ bot.command("me", async (ctx) => {
     "🦊 Твій статус\n\n" +
       `🎟 Інвайти: ${fox.invites}\n` +
       `⭐ Рейтинг: ${fox.rating}\n` +
-      `👣 Візити: ${fox.visits}`
+      `👣 Візити: ${fox.visits}\n\n` +
+      (remaining === 0
+        ? "✅ Наступний інвайт вже нарахований на 5-му візиті."
+        : `📈 До наступного інвайта: ще ${remaining} візит(и).`)
   );
 });
 
@@ -233,30 +225,50 @@ bot.command("visit", async (ctx) => {
 
   await createFoxIfMissing(userId);
 
+  // +1 visit, +1 rating
   await pool.query(
-    "UPDATE foxes SET visits = visits + 1, rating = rating + 1 WHERE user_id = $1",
+    "UPDATE foxes SET visits = visits + 1, rating = rating + 1, updated_at = NOW() WHERE user_id = $1",
     [userId]
   );
 
+  // ще раз гарантуємо OWNER правила після апдейту
   await ownerEnsure(userId);
 
   const fox = await getFox(userId);
+
+  const progress = fox.visits % 5;
+  const remaining = 5 - progress;
 
   let message =
     "🦊 Візит зараховано!\n\n" +
     `Візити: ${fox.visits}\n` +
     `Рейтинг: ${fox.rating}\n\n`;
 
-  const progress = fox.visits % 5;
-  const remaining = 5 - progress;
-
   if (progress === 0) {
-    await pool.query("UPDATE foxes SET invites = invites + 1 WHERE user_id = $1", [
-      userId,
-    ]);
-    message += "🎟 +1 інвайт за 5 візитів!";
+    // 5-й, 10-й, 15-й...
+    if (isAdmin(ctx)) {
+      await pool.query(
+        "UPDATE foxes SET earned_invites = earned_invites + 1, updated_at = NOW() WHERE user_id = $1",
+        [userId]
+      );
+      const updated = await getFox(userId);
+      message +=
+        "🎟 +1 earned invite (за 5 візитів)\n" +
+        `🏁 Earned Invites: ${updated.earned_invites}\n\n` +
+        "👑 OWNER: основні інвайти завжди безлімітні.";
+    } else {
+      await pool.query(
+        "UPDATE foxes SET invites = invites + 1, updated_at = NOW() WHERE user_id = $1",
+        [userId]
+      );
+      message += "🎟 +1 інвайт за 5 візитів!";
+    }
   } else {
-    message += `📈 До наступного інвайта: ще ${remaining} візит(и).`;
+    if (isAdmin(ctx)) {
+      message += `📈 До наступного earned invite: ще ${remaining} візит(и).`;
+    } else {
+      message += `📈 До наступного інвайта: ще ${remaining} візит(и).`;
+    }
   }
 
   return ctx.reply(message);
@@ -268,6 +280,12 @@ bot.command("invite", async (ctx) => {
 
   const fox = await getFox(userId);
   if (!fox) return ctx.reply("❌ Натисни /start");
+
+  if (isAdmin(ctx)) {
+    return ctx.reply(
+      `👑 OWNER\n\n🎟 Інвайти (безліміт): ${fox.invites}\n🏁 Earned Invites: ${fox.earned_invites}`
+    );
+  }
 
   return ctx.reply(`🎟 Твої інвайти: ${fox.invites}`);
 });
