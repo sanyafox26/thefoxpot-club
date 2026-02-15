@@ -1,18 +1,18 @@
 const express = require("express");
-const { Telegraf } = require("telegraf");
+const { Telegraf, Markup } = require("telegraf");
 const { Pool } = require("pg");
 const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // для форм Panel (PIN/OTP)
+app.use(express.urlencoded({ extended: true }));
 
 // ===== ENV =====
 const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim();
 const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "").trim();
 const DATABASE_URL = (process.env.DATABASE_URL || "").trim();
-const ADMIN_USER_ID = (process.env.ADMIN_USER_ID || "").trim(); // важливо: trim()
-const PUBLIC_URL = (process.env.PUBLIC_URL || "").trim().replace(/\/+$/, ""); // напр: https://xxx.up.railway.app
+const ADMIN_USER_ID = (process.env.ADMIN_USER_ID || "").trim();
+const PUBLIC_URL = (process.env.PUBLIC_URL || "").trim().replace(/\/+$/, "");
 
 if (!BOT_TOKEN) {
   console.error("❌ BOT_TOKEN not set");
@@ -28,7 +28,11 @@ if (!DATABASE_URL) {
 }
 if (!ADMIN_USER_ID) {
   console.error("❌ ADMIN_USER_ID not set (Railway Variables)");
-  // не exit — просто попередження (але OWNER не працюватиме)
+}
+
+function panelLink() {
+  if (!PUBLIC_URL) return null;
+  return `${PUBLIC_URL}/panel`;
 }
 
 // ===== POSTGRES =====
@@ -49,17 +53,14 @@ function warsawDateISO() {
   const y = parts.find((p) => p.type === "year").value;
   const m = parts.find((p) => p.type === "month").value;
   const d = parts.find((p) => p.type === "day").value;
-  return `${y}-${m}-${d}`; // YYYY-MM-DD
+  return `${y}-${m}-${d}`;
 }
 
 function randomOtp6() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// ===== SECURITY HELPERS (PIN HASH) =====
-// Пояснення просто:
-// PIN ми НЕ зберігаємо як цифри.
-// Ми зберігаємо "відбиток" (hash). Це безпечніше.
+// ===== SECURITY HELPERS =====
 function hashPin(pin) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256").toString("hex");
@@ -71,14 +72,12 @@ function verifyPin(pin, stored) {
   const calc = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256").toString("hex");
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(calc, "hex"));
 }
-
 function hmac(data) {
   return crypto.createHmac("sha256", WEBHOOK_SECRET).update(data).digest("hex");
 }
 
 // ===== DB INIT =====
 async function initDb() {
-  // Foxes
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       user_id BIGINT PRIMARY KEY,
@@ -91,7 +90,6 @@ async function initDb() {
     );
   `);
 
-  // Venues
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -101,13 +99,11 @@ async function initDb() {
     );
   `);
 
-  // ВАЖЛИВО: додаємо колонку pin_hash ПІСЛЯ створення таблиці
   await pool.query(`
     ALTER TABLE venues
     ADD COLUMN IF NOT EXISTS pin_hash TEXT;
   `);
 
-  // Pending checkins
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
       id SERIAL PRIMARY KEY,
@@ -120,7 +116,6 @@ async function initDb() {
     );
   `);
 
-  // Counted visits: 1/day/venue/user
   await pool.query(`
     CREATE TABLE IF NOT EXISTS counted_visits (
       id SERIAL PRIMARY KEY,
@@ -132,7 +127,6 @@ async function initDb() {
     );
   `);
 
-  // Seed venues
   const c = await pool.query("SELECT COUNT(*)::int AS n FROM venues");
   if ((c.rows[0]?.n || 0) === 0) {
     await pool.query(
@@ -142,15 +136,14 @@ async function initDb() {
     console.log("✅ DB: seeded test venues (2)");
   }
 
-  // Гарантуємо, що у всіх venue є pin_hash (якщо нема — створюємо)
   await ensureVenuePins();
-
   console.log("✅ DB ready");
 }
 
 async function ensureVenuePins() {
-  // Знайти venues без pin_hash
-  const r = await pool.query("SELECT id FROM venues WHERE pin_hash IS NULL OR pin_hash = '' ORDER BY id ASC");
+  const r = await pool.query(
+    "SELECT id FROM venues WHERE pin_hash IS NULL OR pin_hash = '' ORDER BY id ASC"
+  );
   for (const row of r.rows) {
     const newPin = String(Math.floor(100000 + Math.random() * 900000));
     const ph = hashPin(newPin);
@@ -341,6 +334,28 @@ async function confirmOtpForVenue({ venueId, otp }) {
 // ===== BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
+function panelButton() {
+  const link = panelLink();
+  if (!link) return null;
+  return Markup.inlineKeyboard([
+    Markup.button.url("Otwórz Panel", link),
+  ]);
+}
+
+// /panel — завжди лінк + кнопка
+bot.command("panel", async (ctx) => {
+  const link = panelLink();
+  if (!link) {
+    return ctx.reply(
+      "❌ Brak PUBLIC_URL.\n" +
+        "Dodaj w Railway Variables:\n" +
+        "PUBLIC_URL = https://twoj-domen.up.railway.app\n" +
+        "Potem Deploy."
+    );
+  }
+  return ctx.reply(`🔗 Panel lokalu:\n${link}`, panelButton());
+});
+
 bot.command("admin", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔ Ти не адмін. (Перевір ADMIN_USER_ID у Railway Variables)");
   await ownerEnsure(ctx.from.id);
@@ -352,20 +367,23 @@ bot.start(async (ctx) => {
   await createFoxIfMissing(userId);
   await ownerEnsure(userId);
 
-  const panelLink = PUBLIC_URL ? `${PUBLIC_URL}/panel` : "(додай PUBLIC_URL у Railway Variables)";
-  return ctx.reply(
+  const link = panelLink();
+
+  const text =
     "🦊 THE FOX POT CLUB\n\n" +
-      "Команди:\n" +
-      "• /venues — список закладів\n" +
-      "• /venue 1 — сторінка закладу + X/Y\n" +
-      "• /checkin 1 — чек-ін + OTP\n" +
-      "• /me — статус\n" +
-      "• /panel — лінк на Panel lokalu\n\n" +
-      `Panel: ${panelLink}\n\n` +
-      "Тест (тільки OWNER):\n" +
-      "• /confirm 1 123456\n" +
-      "• /resetpin 1"
-  );
+    "Komendy:\n" +
+    "• /venues — lista lokali\n" +
+    "• /venue 1 — strona lokalu + X/Y\n" +
+    "• /checkin 1 — check-in + OTP\n" +
+    "• /me — status Foxa\n" +
+    "• /panel — Panel lokalu\n\n" +
+    (link ? `Panel: ${link}\n\n` : "Panel: (dodaj PUBLIC_URL w Railway Variables)\n\n") +
+    "Test (tylko OWNER):\n" +
+    "• /confirm 1 123456\n" +
+    "• /resetpin 1";
+
+  if (link) return ctx.reply(text, panelButton());
+  return ctx.reply(text);
 });
 
 bot.command("id", (ctx) => ctx.reply(`Твій Telegram ID: ${ctx.from.id}`));
@@ -384,29 +402,29 @@ bot.command("me", async (ctx) => {
     const maxOther = await getMaxRatingExcludingAdmin();
     return ctx.reply(
       "👑 OWNER STATUS\n\n" +
-        `🎟 Інвайти: ${fox.invites}\n` +
-        `⭐ Рейтинг: ${fox.rating}\n` +
+        `🎟 Invites: ${fox.invites}\n` +
+        `⭐ Rating: ${fox.rating}\n` +
         `👣 Counted Visits (total): ${fox.visits}\n` +
         `🏁 Earned Invites: ${fox.earned_invites}\n\n` +
         (remaining === 0
-          ? "✅ Наступний earned invite буде нарахований на кратному 5.\n"
-          : `📈 До наступного earned invite: ще ${remaining} counted visit(и).\n`) +
-        `📌 Правило: OWNER = MAX_інших(${maxOther}) + ${OWNER_RATING_GAP}`
+          ? "✅ Next earned invite on multiple of 5.\n"
+          : `📈 To next earned invite: ${remaining} counted visit(s).\n`) +
+        `📌 OWNER = MAX_others(${maxOther}) + ${OWNER_RATING_GAP}`
     );
   }
 
   return ctx.reply(
-    "🦊 Твій статус\n\n" +
-      `🎟 Інвайти: ${fox.invites}\n` +
-      `⭐ Рейтинг: ${fox.rating}\n` +
-      `👣 Counted Visits (total): ${fox.visits}\n\n` +
+    "🦊 Twój status\n\n" +
+      `🎟 Invites: ${fox.invites}\n` +
+      `⭐ Rating: ${fox.rating}\n` +
+      `👣 Counted Visits: ${fox.visits}\n\n` +
       (remaining === 0
-        ? "✅ Наступний інвайт буде нарахований на кратному 5."
-        : `📈 До наступного інвайта: ще ${remaining} counted visit(и).`)
+        ? "✅ Następny invite na wielokrotności 5."
+        : `📈 Do następnego invite: ${remaining} counted visit(s).`)
   );
 });
 
-// /visit — щоб ти міг писати як звик (показує те саме що /me)
+// /visit — alias na /me
 bot.command("visit", async (ctx) => {
   return bot.handleUpdate({ ...ctx.update, message: { ...ctx.update.message, text: "/me" } });
 });
@@ -414,12 +432,12 @@ bot.command("visit", async (ctx) => {
 bot.command("venues", async (ctx) => {
   await expireOldCheckins();
   const rows = await listVenues();
-  if (!rows.length) return ctx.reply("Поки немає закладів.");
+  if (!rows.length) return ctx.reply("Brak lokali.");
 
-  let text = "🗺 Заклади (тестові)\n\n";
+  let text = "🗺 Lokale (test)\n\n";
   for (const v of rows) text += `• ID ${v.id}: ${v.name} (${v.city})\n`;
-  text += "\nСторінка: /venue 1";
-  return ctx.reply(text);
+  text += "\nStrona: /venue 1\nPanel: /panel";
+  return ctx.reply(text, panelButton());
 });
 
 bot.command("venue", async (ctx) => {
@@ -429,21 +447,20 @@ bot.command("venue", async (ctx) => {
 
   const parts = ctx.message.text.trim().split(/\s+/);
   const venueId = Number(parts[1]);
-
-  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /venue 1");
+  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Napisz tak: /venue 1");
 
   const venue = await getVenueById(venueId);
-  if (!venue) return ctx.reply("❌ Немає такого закладу. Подивись /venues");
+  if (!venue) return ctx.reply("❌ Brak takiego lokalu. Zobacz /venues");
 
   const { X, Y } = await getXYForVenue(venueId, userId);
 
-  return ctx.reply(
+  const msg =
     `🏪 ${venue.name} (${venue.city})\n\n` +
-      `📊 X/Y: ${X}/${Y}\n\n` +
-      `Check-in: /checkin ${venueId}\n` +
-      `Panel: /panel\n` +
-      `Confirm (тільки OWNER, тест): /confirm ${venueId} 123456`
-  );
+    `📊 X/Y: ${X}/${Y}\n\n` +
+    `Check-in: /checkin ${venueId}\n` +
+    `Panel: /panel`;
+
+  return ctx.reply(msg, panelButton());
 });
 
 bot.command("checkin", async (ctx) => {
@@ -453,11 +470,10 @@ bot.command("checkin", async (ctx) => {
 
   const parts = ctx.message.text.trim().split(/\s+/);
   const venueId = Number(parts[1]);
-
-  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /checkin 1");
+  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Napisz tak: /checkin 1");
 
   const venue = await getVenueById(venueId);
-  if (!venue) return ctx.reply("❌ Немає такого закладу. Подивись /venues");
+  if (!venue) return ctx.reply("❌ Brak takiego lokalu. Zobacz /venues");
 
   const otp = randomOtp6();
   await pool.query(
@@ -468,85 +484,73 @@ bot.command("checkin", async (ctx) => {
     [userId, venueId, otp]
   );
 
-  return ctx.reply(
-    `✅ Check-in створено (10 хв)\n\n` +
-      `🏪 ${venue.name}\n` +
-      `🔐 OTP: ${otp}\n\n` +
-      `Підтвердження має зробити заклад у Panel.\n` +
-      `Panel: ${PUBLIC_URL ? `${PUBLIC_URL}/panel` : "додай PUBLIC_URL у Railway Variables"}\n\n` +
-      `Тест (тільки OWNER): /confirm ${venueId} ${otp}`
-  );
+  const link = panelLink();
+  const text =
+    `✅ Check-in utworzony (10 min)\n\n` +
+    `🏪 ${venue.name}\n` +
+    `🔐 OTP: ${otp}\n\n` +
+    `Personel potwierdza w Panelu.\n` +
+    (link ? `Panel: ${link}\n\n` : `Panel: (dodaj PUBLIC_URL w Railway)\n\n`) +
+    `Test (OWNER): /confirm ${venueId} ${otp}`;
+
+  if (link) return ctx.reply(text, panelButton());
+  return ctx.reply(text);
 });
 
-// /panel — бот дає лінк
-bot.command("panel", async (ctx) => {
-  const link = PUBLIC_URL ? `${PUBLIC_URL}/panel` : null;
-  if (!link) {
-    return ctx.reply(
-      "❌ Не задано PUBLIC_URL.\n\n" +
-        "Зроби так:\n" +
-        "Railway → Variables → додай PUBLIC_URL = https://твій-домен.up.railway.app\n" +
-        "Потім Deploy.\n"
-    );
-  }
-  return ctx.reply(`🔗 Panel lokalu: ${link}`);
-});
-
-// /resetpin <venueId> — тільки OWNER (дає новий PIN)
 bot.command("resetpin", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Тільки OWNER.");
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Tylko OWNER.");
   const parts = ctx.message.text.trim().split(/\s+/);
   const venueId = Number(parts[1]);
-  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /resetpin 1");
+  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Napisz tak: /resetpin 1");
 
   const venue = await getVenueById(venueId);
-  if (!venue) return ctx.reply("❌ Немає такого закладу.");
+  if (!venue) return ctx.reply("❌ Brak takiego lokalu.");
 
   const newPin = String(Math.floor(100000 + Math.random() * 900000));
   const ph = hashPin(newPin);
   await pool.query("UPDATE venues SET pin_hash = $2 WHERE id = $1", [venueId, ph]);
 
-  return ctx.reply(`🔐 PIN для "${venue.name}" (ID ${venueId}): ${newPin}`);
+  return ctx.reply(`🔐 PIN dla "${venue.name}" (ID ${venueId}): ${newPin}`);
 });
 
-// /confirm <venueId> <otp> — тест (тільки OWNER), щоб не блокуватись
 bot.command("confirm", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Confirm зараз доступний тільки OWNER (для тесту).");
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Confirm тільки OWNER (test).");
   const parts = ctx.message.text.trim().split(/\s+/);
   const venueId = Number(parts[1]);
   const otp = (parts[2] || "").trim();
   if (!Number.isInteger(venueId) || venueId <= 0 || otp.length !== 6) {
-    return ctx.reply("❌ Напиши так: /confirm 1 123456");
+    return ctx.reply("❌ Napisz tak: /confirm 1 123456");
   }
 
   const r = await confirmOtpForVenue({ venueId, otp });
   if (!r.ok) {
-    if (r.reason === "NO_VENUE") return ctx.reply("❌ Немає такого закладу.");
-    return ctx.reply("❌ Не знайдено pending check-in (може OTP прострочився або вже підтверджений).");
+    if (r.reason === "NO_VENUE") return ctx.reply("❌ Brak takiego lokalu.");
+    return ctx.reply("❌ Brak pending check-in (OTP wygasł lub już potwierdzony).");
   }
 
   if (!r.countedAdded) {
     return ctx.reply(
       `✅ Confirm OK\n` +
-        `🏪 ${r.venueName}\n` +
-        `📅 Day (Warszawa): ${r.dayISO}\n\n` +
+        `Lokal: ${r.venueName}\n\n` +
+        `Dzień (Warszawa): ${r.dayISO}\n\n` +
         `DZIŚ JUŻ BYŁO ✅\n` +
+        `Spróbuj jutro po 00:00 (Warszawa).\n` +
         `X/Y: ${r.X}/${r.Y}`
     );
   }
 
   return ctx.reply(
     `✅ Confirm OK\n` +
-      `🏪 ${r.venueName}\n` +
-      `📅 Day (Warszawa): ${r.dayISO}\n\n` +
-      `✅ Counted doliczone\n` +
+      `Lokal: ${r.venueName}\n\n` +
+      `Dzień (Warszawa): ${r.dayISO}\n\n` +
+      `ZALICZONO ✅\n` +
       `X/Y: ${r.X}/${r.Y}`
   );
 });
 
 bot.hears(/test/i, (ctx) => ctx.reply("Test OK ✅"));
 
-// ===== PANEL (3 languages: PL/EN/UA) =====
+// ===== PANEL (PL/EN/UA) =====
 const T = {
   pl: {
     title: "Panel lokalu",
@@ -722,7 +726,6 @@ app.get("/panel", async (req, res) => {
     return res.status(200).send(pageShell(t.title, body));
   }
 
-  // Authed view
   const pending = await pool.query(
     `
     SELECT id, otp, user_id, expires_at
