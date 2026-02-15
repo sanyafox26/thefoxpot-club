@@ -5,25 +5,20 @@ const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true })); // для форм Panel (PIN/OTP)
 
 // ===== ENV =====
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
-const DATABASE_URL = process.env.DATABASE_URL;
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
-
-// Лінк на твій сервер (щоб бот міг дати повний URL до /panel)
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim();
-
-// Секрет для токена панелі (можна не ставити окремо)
-const PANEL_TOKEN_SECRET = (process.env.PANEL_TOKEN_SECRET || WEBHOOK_SECRET || "").trim();
+const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim();
+const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "").trim();
+const DATABASE_URL = (process.env.DATABASE_URL || "").trim();
+const ADMIN_USER_ID = (process.env.ADMIN_USER_ID || "").trim(); // важливо: trim()
+const PUBLIC_URL = (process.env.PUBLIC_URL || "").trim().replace(/\/+$/, ""); // напр: https://xxx.up.railway.app
 
 if (!BOT_TOKEN) {
   console.error("❌ BOT_TOKEN not set");
   process.exit(1);
 }
-if (!WEBHOOK_SECRET || WEBHOOK_SECRET.trim().length < 8) {
+if (!WEBHOOK_SECRET || WEBHOOK_SECRET.length < 8) {
   console.error("❌ WEBHOOK_SECRET missing/too short");
   process.exit(1);
 }
@@ -32,7 +27,8 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 if (!ADMIN_USER_ID) {
-  console.error("❌ ADMIN_USER_ID not set (add it in Railway Variables)");
+  console.error("❌ ADMIN_USER_ID not set (Railway Variables)");
+  // не exit — просто попередження (але OWNER не працюватиме)
 }
 
 // ===== POSTGRES =====
@@ -53,159 +49,36 @@ function warsawDateISO() {
   const y = parts.find((p) => p.type === "year").value;
   const m = parts.find((p) => p.type === "month").value;
   const d = parts.find((p) => p.type === "day").value;
-  return `${y}-${m}-${d}`;
+  return `${y}-${m}-${d}`; // YYYY-MM-DD
 }
 
-function random6Digits() {
+function randomOtp6() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// ===== PIN HASH =====
+// ===== SECURITY HELPERS (PIN HASH) =====
+// Пояснення просто:
+// PIN ми НЕ зберігаємо як цифри.
+// Ми зберігаємо "відбиток" (hash). Це безпечніше.
 function hashPin(pin) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256").toString("hex");
   return `${salt}$${hash}`;
 }
 function verifyPin(pin, stored) {
-  try {
-    const [salt, hash] = String(stored || "").split("$");
-    if (!salt || !hash) return false;
-    const test = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256").toString("hex");
-    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(test, "hex"));
-  } catch {
-    return false;
-  }
+  if (!stored || typeof stored !== "string" || !stored.includes("$")) return false;
+  const [salt, hash] = stored.split("$");
+  const calc = crypto.pbkdf2Sync(pin, salt, 120000, 32, "sha256").toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(calc, "hex"));
 }
 
-// ===== PANEL TOKEN =====
-function base64urlEncode(obj) {
-  return Buffer.from(JSON.stringify(obj)).toString("base64url");
-}
-function base64urlDecode(str) {
-  return JSON.parse(Buffer.from(str, "base64url").toString("utf8"));
-}
-function sign(data) {
-  return crypto.createHmac("sha256", PANEL_TOKEN_SECRET).update(data).digest("base64url");
-}
-function makeToken(payload) {
-  const body = base64urlEncode(payload);
-  const sig = sign(body);
-  return `${body}.${sig}`;
-}
-function readToken(token) {
-  if (!token) return null;
-  const [body, sig] = token.split(".");
-  if (!body || !sig) return null;
-  const expected = sign(body);
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-  const payload = base64urlDecode(body);
-  if (!payload || !payload.exp || Date.now() > payload.exp) return null;
-  return payload;
-}
-function parseCookies(req) {
-  const header = req.headers.cookie || "";
-  const out = {};
-  header.split(";").forEach((part) => {
-    const [k, ...v] = part.trim().split("=");
-    if (!k) return;
-    out[k] = decodeURIComponent(v.join("=") || "");
-  });
-  return out;
-}
-function setCookie(res, name, value, opts = {}) {
-  const parts = [`${name}=${encodeURIComponent(value)}`];
-  if (opts.maxAge != null) parts.push(`Max-Age=${opts.maxAge}`);
-  if (opts.httpOnly) parts.push("HttpOnly");
-  if (opts.secure) parts.push("Secure");
-  parts.push(`SameSite=${opts.sameSite || "Lax"}`);
-  parts.push(`Path=${opts.path || "/"}`);
-  res.setHeader("Set-Cookie", parts.join("; "));
-}
-
-// ===== I18N (PL / EN / UA) =====
-const I18N = {
-  pl: {
-    langName: "PL",
-    titleLogin: "Panel lokalu",
-    selectVenue: "Wybierz lokal",
-    pin: "PIN (6 cyfr)",
-    login: "Zaloguj",
-    logout: "Wyloguj",
-    otp: "OTP (6 cyfr)",
-    confirm: "Confirm",
-    pending: "Pending (ostatnie 10 min)",
-    noPending: "Brak pending.",
-    wrongPin: "Błędny PIN.",
-    wrongOtp: "Nie znaleziono pending z tym OTP (może minęło 10 min).",
-    resultTitle: "✅ Confirm OK",
-    day: "Dzień (Warszawa)",
-    already: "DZIŚ JUŻ BYŁO ✅",
-    tryTomorrow: "Spróbuj jutro po 00:00 (Warszawa).",
-    countedAdded: "✅ Counted Visit dodano.",
-    back: "Wróć do Panelu",
-    xy: "X/Y",
-  },
-  en: {
-    langName: "EN",
-    titleLogin: "Venue Panel",
-    selectVenue: "Select venue",
-    pin: "PIN (6 digits)",
-    login: "Login",
-    logout: "Logout",
-    otp: "OTP (6 digits)",
-    confirm: "Confirm",
-    pending: "Pending (last 10 min)",
-    noPending: "No pending.",
-    wrongPin: "Wrong PIN.",
-    wrongOtp: "No pending found for this OTP (maybe expired after 10 min).",
-    resultTitle: "✅ Confirm OK",
-    day: "Day (Warsaw)",
-    already: "ALREADY TODAY ✅",
-    tryTomorrow: "Try tomorrow after 00:00 (Warsaw).",
-    countedAdded: "✅ Counted Visit added.",
-    back: "Back to Panel",
-    xy: "X/Y",
-  },
-  ua: {
-    langName: "UA",
-    titleLogin: "Панель закладу",
-    selectVenue: "Вибери заклад",
-    pin: "PIN (6 цифр)",
-    login: "Увійти",
-    logout: "Вийти",
-    otp: "OTP (6 цифр)",
-    confirm: "Підтвердити",
-    pending: "Очікують (останні 10 хв)",
-    noPending: "Немає очікуючих.",
-    wrongPin: "Неправильний PIN.",
-    wrongOtp: "Не знайдено pending з таким OTP (можливо пройшло 10 хв).",
-    resultTitle: "✅ Confirm OK",
-    day: "День (Варшава)",
-    already: "СЬОГОДНІ ВЖЕ БУЛО ✅",
-    tryTomorrow: "Спробуй завтра після 00:00 (Варшава).",
-    countedAdded: "✅ Counted Visit додано.",
-    back: "Назад в Panel",
-    xy: "X/Y",
-  },
-};
-
-function getLang(req) {
-  const q = (req.query.lang || "").toString().toLowerCase();
-  const cookies = parseCookies(req);
-  const c = (cookies.panel_lang || "").toLowerCase();
-  const lang = (q || c || "pl");
-  return I18N[lang] ? lang : "pl";
-}
-function langSwitcherHtml(lang) {
-  const mk = (code) => {
-    const active = code === lang ? "font-weight:bold;text-decoration:underline;" : "";
-    return `<a href="/panel/lang/${code}" style="margin-right:10px;${active}">${I18N[code].langName}</a>`;
-  };
-  return `<div style="margin-bottom:10px;">${mk("pl")}${mk("en")}${mk("ua")}</div>`;
+function hmac(data) {
+  return crypto.createHmac("sha256", WEBHOOK_SECRET).update(data).digest("hex");
 }
 
 // ===== DB INIT =====
 async function initDb() {
+  // Foxes
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       user_id BIGINT PRIMARY KEY,
@@ -218,23 +91,23 @@ async function initDb() {
     );
   `);
 
-  await pool.query(`
-    ALTER TABLE foxes
-    ADD COLUMN IF NOT EXISTS earned_invites INT NOT NULL DEFAULT 0;
-  `);
-
+  // Venues
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       city TEXT NOT NULL DEFAULT 'Warsaw',
-      pin_hash TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
-  await pool.query(`ALTER TABLE venues ADD COLUMN IF NOT EXISTS pin_hash TEXT;`);
+  // ВАЖЛИВО: додаємо колонку pin_hash ПІСЛЯ створення таблиці
+  await pool.query(`
+    ALTER TABLE venues
+    ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+  `);
 
+  // Pending checkins
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
       id SERIAL PRIMARY KEY,
@@ -247,6 +120,7 @@ async function initDb() {
     );
   `);
 
+  // Counted visits: 1/day/venue/user
   await pool.query(`
     CREATE TABLE IF NOT EXISTS counted_visits (
       id SERIAL PRIMARY KEY,
@@ -258,6 +132,7 @@ async function initDb() {
     );
   `);
 
+  // Seed venues
   const c = await pool.query("SELECT COUNT(*)::int AS n FROM venues");
   if ((c.rows[0]?.n || 0) === 0) {
     await pool.query(
@@ -267,29 +142,23 @@ async function initDb() {
     console.log("✅ DB: seeded test venues (2)");
   }
 
+  // Гарантуємо, що у всіх venue є pin_hash (якщо нема — створюємо)
   await ensureVenuePins();
+
   console.log("✅ DB ready");
 }
 
 async function ensureVenuePins() {
-  const { rows } = await pool.query("SELECT id, name, pin_hash FROM venues ORDER BY id ASC");
-  const createdPins = [];
-
-  for (const v of rows) {
-    if (!v.pin_hash) {
-      const pin = random6Digits();
-      const pin_hash = hashPin(pin);
-      await pool.query("UPDATE venues SET pin_hash = $1 WHERE id = $2", [pin_hash, v.id]);
-      createdPins.push({ id: v.id, name: v.name, pin });
-    }
-  }
-
-  for (const p of createdPins) {
-    console.log(`🔐 PIN for "${p.name}" (ID ${p.id}): ${p.pin}`);
+  // Знайти venues без pin_hash
+  const r = await pool.query("SELECT id FROM venues WHERE pin_hash IS NULL OR pin_hash = '' ORDER BY id ASC");
+  for (const row of r.rows) {
+    const newPin = String(Math.floor(100000 + Math.random() * 900000));
+    const ph = hashPin(newPin);
+    await pool.query("UPDATE venues SET pin_hash = $2 WHERE id = $1", [row.id, ph]);
+    console.log(`✅ Venue ${row.id}: PIN generated (use /resetpin ${row.id} to get a fresh one in Telegram)`);
   }
 }
 
-// ===== DB HELPERS =====
 async function getFox(userId) {
   const { rows } = await pool.query(
     "SELECT user_id, invites, rating, visits, earned_invites FROM foxes WHERE user_id = $1",
@@ -297,6 +166,7 @@ async function getFox(userId) {
   );
   return rows[0] || null;
 }
+
 async function createFoxIfMissing(userId) {
   await pool.query(
     `
@@ -308,20 +178,20 @@ async function createFoxIfMissing(userId) {
   );
   return getFox(userId);
 }
+
 async function getVenueById(venueId) {
+  const { rows } = await pool.query("SELECT id, name, city FROM venues WHERE id = $1", [venueId]);
+  return rows[0] || null;
+}
+
+async function getVenueWithPin(venueId) {
   const { rows } = await pool.query("SELECT id, name, city, pin_hash FROM venues WHERE id = $1", [venueId]);
   return rows[0] || null;
 }
+
 async function listVenues() {
-  const { rows } = await pool.query("SELECT id, name, city FROM venues ORDER BY id ASC LIMIT 50");
+  const { rows } = await pool.query("SELECT id, name, city FROM venues ORDER BY id ASC LIMIT 200");
   return rows;
-}
-async function expireOldCheckins() {
-  await pool.query(`
-    UPDATE checkins
-    SET status = 'expired'
-    WHERE status = 'pending' AND expires_at < NOW()
-  `);
 }
 
 // ===== OWNER RULES =====
@@ -329,22 +199,25 @@ const OWNER_INVITES = 999999999;
 const OWNER_RATING_GAP = 1000;
 
 function isAdminId(userId) {
+  if (!ADMIN_USER_ID) return false;
   return String(userId) === String(ADMIN_USER_ID);
 }
 function isAdmin(ctx) {
   return isAdminId(ctx.from.id);
 }
+
 async function getMaxRatingExcludingAdmin() {
+  if (!ADMIN_USER_ID) return 0;
   const r = await pool.query(
     "SELECT COALESCE(MAX(rating), 0) AS max FROM foxes WHERE user_id <> $1",
     [ADMIN_USER_ID]
   );
   return Number(r.rows[0].max || 0);
 }
+
 async function ownerEnsure(userId) {
   if (!isAdminId(userId)) return;
   await createFoxIfMissing(userId);
-
   const maxOther = await getMaxRatingExcludingAdmin();
   const wantedRating = maxOther + OWNER_RATING_GAP;
 
@@ -365,22 +238,32 @@ async function ownerEnsure(userId) {
   );
 }
 
-// ===== X/Y =====
+// ===== X/Y helpers =====
 async function getXYForVenue(venueId, userId) {
   const xq = await pool.query(
     "SELECT COUNT(*)::int AS x FROM counted_visits WHERE venue_id = $1 AND user_id = $2",
     [venueId, userId]
   );
-  const yq = await pool.query("SELECT COUNT(*)::int AS y FROM counted_visits WHERE venue_id = $1", [venueId]);
+  const yq = await pool.query(
+    "SELECT COUNT(*)::int AS y FROM counted_visits WHERE venue_id = $1",
+    [venueId]
+  );
   return { X: xq.rows[0].x || 0, Y: yq.rows[0].y || 0 };
 }
 
-// ===== CONFIRM CORE =====
-async function confirmOtpForVenue(venueId, otp) {
+async function expireOldCheckins() {
+  await pool.query(`
+    UPDATE checkins
+    SET status = 'expired'
+    WHERE status = 'pending' AND expires_at < NOW()
+  `);
+}
+
+async function confirmOtpForVenue({ venueId, otp }) {
   await expireOldCheckins();
 
   const venue = await getVenueById(venueId);
-  if (!venue) return { ok: false, reason: "no_venue" };
+  if (!venue) return { ok: false, reason: "NO_VENUE" };
 
   const q = await pool.query(
     `
@@ -397,7 +280,7 @@ async function confirmOtpForVenue(venueId, otp) {
   );
 
   const row = q.rows[0];
-  if (!row) return { ok: false, reason: "no_pending" };
+  if (!row) return { ok: false, reason: "NO_PENDING" };
 
   await pool.query("UPDATE checkins SET status='confirmed' WHERE id = $1", [row.id]);
 
@@ -429,52 +312,39 @@ async function confirmOtpForVenue(venueId, otp) {
 
     if (progress === 0) {
       if (isAdminId(userId)) {
-        await pool.query("UPDATE foxes SET earned_invites = earned_invites + 1, updated_at = NOW() WHERE user_id = $1", [
-          userId,
-        ]);
+        await pool.query(
+          "UPDATE foxes SET earned_invites = earned_invites + 1, updated_at = NOW() WHERE user_id = $1",
+          [userId]
+        );
       } else {
-        await pool.query("UPDATE foxes SET invites = invites + 1, updated_at = NOW() WHERE user_id = $1", [userId]);
+        await pool.query(
+          "UPDATE foxes SET invites = invites + 1, updated_at = NOW() WHERE user_id = $1",
+          [userId]
+        );
       }
     }
   }
 
   const { X, Y } = await getXYForVenue(venueId, userId);
-  return { ok: true, venue, dayISO, userId, countedAdded, X, Y };
+
+  return {
+    ok: true,
+    venueName: venue.name,
+    dayISO,
+    countedAdded,
+    userId,
+    X,
+    Y,
+  };
 }
 
 // ===== BOT =====
 const bot = new Telegraf(BOT_TOKEN);
 
-bot.command("panel", async (ctx) => {
-  const base = PUBLIC_BASE_URL.replace(/\/+$/, "");
-  if (!base) {
-    return ctx.reply(
-      "❌ Brak PUBLIC_BASE_URL.\nW Railway → Variables dodaj:\nPUBLIC_BASE_URL = https://twoj-domen.up.railway.app"
-    );
-  }
-  return ctx.reply(`🔗 Panel lokalu: ${base}/panel`);
-});
-
-// ✅ NEW: RESET PIN (OWNER ONLY)
-bot.command("resetpin", async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply("⛔ Tylko OWNER.");
-
-  const parts = ctx.message.text.trim().split(/\s+/);
-  const venueId = Number(parts[1]);
-
-  if (!Number.isInteger(venueId) || venueId <= 0) {
-    return ctx.reply("❌ Użyj tak: /resetpin 1");
-  }
-
-  const venue = await getVenueById(venueId);
-  if (!venue) return ctx.reply("❌ Nie ma takiego lokalu. /venues");
-
-  const newPin = random6Digits();
-  const newHash = hashPin(newPin);
-  await pool.query("UPDATE venues SET pin_hash = $1 WHERE id = $2", [newHash, venueId]);
-
-  // pokaż OWNER nowy PIN
-  return ctx.reply(`🔐 NOWY PIN dla "${venue.name}" (ID ${venueId}): ${newPin}\n\nWejdź: /panel`);
+bot.command("admin", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Ти не адмін. (Перевір ADMIN_USER_ID у Railway Variables)");
+  await ownerEnsure(ctx.from.id);
+  return ctx.reply("👑 Ти АДМІН (owner mode).");
 });
 
 bot.start(async (ctx) => {
@@ -482,17 +352,98 @@ bot.start(async (ctx) => {
   await createFoxIfMissing(userId);
   await ownerEnsure(userId);
 
-  return ctx.reply("🦊 FoxPot Club\n\nZakłady: /venues\nCheck-in: /checkin 1\nPanel: /panel\nReset PIN (OWNER): /resetpin 1");
+  const panelLink = PUBLIC_URL ? `${PUBLIC_URL}/panel` : "(додай PUBLIC_URL у Railway Variables)";
+  return ctx.reply(
+    "🦊 THE FOX POT CLUB\n\n" +
+      "Команди:\n" +
+      "• /venues — список закладів\n" +
+      "• /venue 1 — сторінка закладу + X/Y\n" +
+      "• /checkin 1 — чек-ін + OTP\n" +
+      "• /me — статус\n" +
+      "• /panel — лінк на Panel lokalu\n\n" +
+      `Panel: ${panelLink}\n\n` +
+      "Тест (тільки OWNER):\n" +
+      "• /confirm 1 123456\n" +
+      "• /resetpin 1"
+  );
+});
+
+bot.command("id", (ctx) => ctx.reply(`Твій Telegram ID: ${ctx.from.id}`));
+
+bot.command("me", async (ctx) => {
+  const userId = ctx.from.id;
+  await ownerEnsure(userId);
+
+  const fox = await getFox(userId);
+  if (!fox) return ctx.reply("❌ Натисни /start");
+
+  const progress = fox.visits % 5;
+  const remaining = progress === 0 ? 0 : 5 - progress;
+
+  if (isAdmin(ctx)) {
+    const maxOther = await getMaxRatingExcludingAdmin();
+    return ctx.reply(
+      "👑 OWNER STATUS\n\n" +
+        `🎟 Інвайти: ${fox.invites}\n` +
+        `⭐ Рейтинг: ${fox.rating}\n` +
+        `👣 Counted Visits (total): ${fox.visits}\n` +
+        `🏁 Earned Invites: ${fox.earned_invites}\n\n` +
+        (remaining === 0
+          ? "✅ Наступний earned invite буде нарахований на кратному 5.\n"
+          : `📈 До наступного earned invite: ще ${remaining} counted visit(и).\n`) +
+        `📌 Правило: OWNER = MAX_інших(${maxOther}) + ${OWNER_RATING_GAP}`
+    );
+  }
+
+  return ctx.reply(
+    "🦊 Твій статус\n\n" +
+      `🎟 Інвайти: ${fox.invites}\n` +
+      `⭐ Рейтинг: ${fox.rating}\n` +
+      `👣 Counted Visits (total): ${fox.visits}\n\n` +
+      (remaining === 0
+        ? "✅ Наступний інвайт буде нарахований на кратному 5."
+        : `📈 До наступного інвайта: ще ${remaining} counted visit(и).`)
+  );
+});
+
+// /visit — щоб ти міг писати як звик (показує те саме що /me)
+bot.command("visit", async (ctx) => {
+  return bot.handleUpdate({ ...ctx.update, message: { ...ctx.update.message, text: "/me" } });
 });
 
 bot.command("venues", async (ctx) => {
   await expireOldCheckins();
   const rows = await listVenues();
-  if (!rows.length) return ctx.reply("Póki co brak lokali.");
+  if (!rows.length) return ctx.reply("Поки немає закладів.");
 
-  let text = "🗺 Lokale (test)\n\n";
+  let text = "🗺 Заклади (тестові)\n\n";
   for (const v of rows) text += `• ID ${v.id}: ${v.name} (${v.city})\n`;
+  text += "\nСторінка: /venue 1";
   return ctx.reply(text);
+});
+
+bot.command("venue", async (ctx) => {
+  await expireOldCheckins();
+  const userId = ctx.from.id;
+  await ownerEnsure(userId);
+
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const venueId = Number(parts[1]);
+
+  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /venue 1");
+
+  const venue = await getVenueById(venueId);
+  if (!venue) return ctx.reply("❌ Немає такого закладу. Подивись /venues");
+
+  const { X, Y } = await getXYForVenue(venueId, userId);
+
+  return ctx.reply(
+    `🏪 ${venue.name} (${venue.city})\n\n` +
+      `📊 X/Y: ${X}/${Y}\n\n` +
+      `Check-in: /checkin ${venueId}\n` +
+      `Panel: /panel\n` +
+      `Confirm (тільки OWNER, тест): /confirm ${venueId} 123456`
+  );
 });
 
 bot.command("checkin", async (ctx) => {
@@ -503,12 +454,12 @@ bot.command("checkin", async (ctx) => {
   const parts = ctx.message.text.trim().split(/\s+/);
   const venueId = Number(parts[1]);
 
-  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Napisz: /checkin 1");
+  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /checkin 1");
 
   const venue = await getVenueById(venueId);
-  if (!venue) return ctx.reply("❌ Nie ma takiego lokalu. /venues");
+  if (!venue) return ctx.reply("❌ Немає такого закладу. Подивись /venues");
 
-  const otp = random6Digits();
+  const otp = randomOtp6();
   await pool.query(
     `
     INSERT INTO checkins (user_id, venue_id, otp, status, expires_at)
@@ -517,203 +468,390 @@ bot.command("checkin", async (ctx) => {
     [userId, venueId, otp]
   );
 
-  return ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu: /panel`);
+  return ctx.reply(
+    `✅ Check-in створено (10 хв)\n\n` +
+      `🏪 ${venue.name}\n` +
+      `🔐 OTP: ${otp}\n\n` +
+      `Підтвердження має зробити заклад у Panel.\n` +
+      `Panel: ${PUBLIC_URL ? `${PUBLIC_URL}/panel` : "додай PUBLIC_URL у Railway Variables"}\n\n` +
+      `Тест (тільки OWNER): /confirm ${venueId} ${otp}`
+  );
 });
 
-// ===== WEB ROUTES =====
-app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
-app.get("/health", (req, res) => res.status(200).json({ ok: true }));
-
-app.get("/panel/lang/:lang", (req, res) => {
-  const lang = (req.params.lang || "pl").toLowerCase();
-  const safe = I18N[lang] ? lang : "pl";
-  setCookie(res, "panel_lang", safe, { maxAge: 60 * 60 * 24 * 365, httpOnly: false, secure: true, sameSite: "Lax" });
-  res.redirect("/panel");
+// /panel — бот дає лінк
+bot.command("panel", async (ctx) => {
+  const link = PUBLIC_URL ? `${PUBLIC_URL}/panel` : null;
+  if (!link) {
+    return ctx.reply(
+      "❌ Не задано PUBLIC_URL.\n\n" +
+        "Зроби так:\n" +
+        "Railway → Variables → додай PUBLIC_URL = https://твій-домен.up.railway.app\n" +
+        "Потім Deploy.\n"
+    );
+  }
+  return ctx.reply(`🔗 Panel lokalu: ${link}`);
 });
+
+// /resetpin <venueId> — тільки OWNER (дає новий PIN)
+bot.command("resetpin", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Тільки OWNER.");
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const venueId = Number(parts[1]);
+  if (!Number.isInteger(venueId) || venueId <= 0) return ctx.reply("❌ Напиши так: /resetpin 1");
+
+  const venue = await getVenueById(venueId);
+  if (!venue) return ctx.reply("❌ Немає такого закладу.");
+
+  const newPin = String(Math.floor(100000 + Math.random() * 900000));
+  const ph = hashPin(newPin);
+  await pool.query("UPDATE venues SET pin_hash = $2 WHERE id = $1", [venueId, ph]);
+
+  return ctx.reply(`🔐 PIN для "${venue.name}" (ID ${venueId}): ${newPin}`);
+});
+
+// /confirm <venueId> <otp> — тест (тільки OWNER), щоб не блокуватись
+bot.command("confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔ Confirm зараз доступний тільки OWNER (для тесту).");
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const venueId = Number(parts[1]);
+  const otp = (parts[2] || "").trim();
+  if (!Number.isInteger(venueId) || venueId <= 0 || otp.length !== 6) {
+    return ctx.reply("❌ Напиши так: /confirm 1 123456");
+  }
+
+  const r = await confirmOtpForVenue({ venueId, otp });
+  if (!r.ok) {
+    if (r.reason === "NO_VENUE") return ctx.reply("❌ Немає такого закладу.");
+    return ctx.reply("❌ Не знайдено pending check-in (може OTP прострочився або вже підтверджений).");
+  }
+
+  if (!r.countedAdded) {
+    return ctx.reply(
+      `✅ Confirm OK\n` +
+        `🏪 ${r.venueName}\n` +
+        `📅 Day (Warszawa): ${r.dayISO}\n\n` +
+        `DZIŚ JUŻ BYŁO ✅\n` +
+        `X/Y: ${r.X}/${r.Y}`
+    );
+  }
+
+  return ctx.reply(
+    `✅ Confirm OK\n` +
+      `🏪 ${r.venueName}\n` +
+      `📅 Day (Warszawa): ${r.dayISO}\n\n` +
+      `✅ Counted doliczone\n` +
+      `X/Y: ${r.X}/${r.Y}`
+  );
+});
+
+bot.hears(/test/i, (ctx) => ctx.reply("Test OK ✅"));
+
+// ===== PANEL (3 languages: PL/EN/UA) =====
+const T = {
+  pl: {
+    title: "Panel lokalu",
+    chooseVenue: "Wybierz lokal",
+    pin: "PIN",
+    login: "Zaloguj",
+    wrongPin: "Błędny PIN.",
+    hintReset: "Jeśli to test: OWNER w Telegram → /resetpin 1",
+    otp: "OTP (6 cyfr)",
+    confirm: "Potwierdź",
+    pending: "Pending check-ins (10 min)",
+    logout: "Wyloguj",
+    todayAlready: "DZIŚ JUŻ BYŁO ✅",
+    tryTomorrow: "Spróbuj jutro po 00:00 (Warszawa).",
+    countedOk: "ZALICZONO ✅",
+    back: "Wróć do Panelu",
+    noPending: "Brak pending check-in (OTP wygasł albo już potwierdzony).",
+  },
+  en: {
+    title: "Venue Panel",
+    chooseVenue: "Choose venue",
+    pin: "PIN",
+    login: "Login",
+    wrongPin: "Wrong PIN.",
+    hintReset: "If test: OWNER in Telegram → /resetpin 1",
+    otp: "OTP (6 digits)",
+    confirm: "Confirm",
+    pending: "Pending check-ins (10 min)",
+    logout: "Logout",
+    todayAlready: "TODAY ALREADY ✅",
+    tryTomorrow: "Try tomorrow after 00:00 (Warsaw).",
+    countedOk: "COUNTED ✅",
+    back: "Back to Panel",
+    noPending: "No pending check-in (OTP expired or already confirmed).",
+  },
+  ua: {
+    title: "Панель закладу",
+    chooseVenue: "Обери заклад",
+    pin: "ПІН",
+    login: "Увійти",
+    wrongPin: "Невірний ПІН.",
+    hintReset: "Якщо тест: OWNER в Telegram → /resetpin 1",
+    otp: "OTP (6 цифр)",
+    confirm: "Підтвердити",
+    pending: "Очікують підтвердження (10 хв)",
+    logout: "Вийти",
+    todayAlready: "СЬОГОДНІ ВЖЕ БУЛО ✅",
+    tryTomorrow: "Спробуй завтра після 00:00 (Варшава).",
+    countedOk: "ЗАРАХОВАНО ✅",
+    back: "Назад в Panel",
+    noPending: "Немає pending check-in (OTP прострочився або вже підтверджений).",
+  },
+};
+
+function pickLang(q) {
+  const v = String(q || "").toLowerCase();
+  if (v === "en") return "en";
+  if (v === "ua" || v === "uk") return "ua";
+  return "pl";
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function parseCookies(cookieHeader) {
+  const out = {};
+  const parts = String(cookieHeader || "").split(";");
+  for (const p of parts) {
+    const i = p.indexOf("=");
+    if (i === -1) continue;
+    const k = p.slice(0, i).trim();
+    const v = p.slice(i + 1).trim();
+    out[k] = decodeURIComponent(v);
+  }
+  return out;
+}
+
+function setCookie(res, name, value, opts = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`];
+  parts.push("Path=/");
+  parts.push("HttpOnly");
+  parts.push("SameSite=Lax");
+  if (opts.maxAge === 0) parts.push("Max-Age=0");
+  res.setHeader("Set-Cookie", [
+    ...(res.getHeader("Set-Cookie") ? [].concat(res.getHeader("Set-Cookie")) : []),
+    parts.join("; "),
+  ]);
+}
+
+async function getAuthedVenue(req) {
+  const c = parseCookies(req.headers.cookie || "");
+  const vid = Number(c.panel_vid);
+  const sig = c.panel_sig;
+  if (!Number.isInteger(vid) || vid <= 0 || !sig) return null;
+
+  const venue = await getVenueWithPin(vid);
+  if (!venue || !venue.pin_hash) return null;
+
+  const expected = hmac(`vid=${vid}|pin_hash=${venue.pin_hash}`);
+  if (expected !== sig) return null;
+
+  return venue;
+}
+
+function pageShell(title, body) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body{font-family:Arial, sans-serif; padding:16px; max-width:720px; margin:0 auto;}
+    .card{border:1px solid #ddd; border-radius:12px; padding:14px; margin:12px 0;}
+    input,select,button{font-size:16px; padding:10px; width:100%; margin:6px 0; box-sizing:border-box;}
+    button{cursor:pointer;}
+    .big{font-size:22px; font-weight:700;}
+    .ok{background:#e9ffe9;}
+    .bad{background:#ffe9e9;}
+    .muted{color:#666;}
+    .row{display:flex; gap:10px;}
+    .row > *{flex:1;}
+    a{color:#0b63ce; text-decoration:none;}
+    a:hover{text-decoration:underline;}
+  </style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
 
 app.get("/panel", async (req, res) => {
-  const lang = getLang(req);
-  const t = I18N[lang];
+  const lang = pickLang(req.query.lang);
+  const t = T[lang];
 
-  const cookies = parseCookies(req);
-  const token = readToken(cookies.foxpot_panel || "");
-
+  const venue = await getAuthedVenue(req);
   const venues = await listVenues();
 
-  if (!token || !token.venue_id) {
-    return res.status(200).send(`
-      <html>
-        <head><meta charset="utf-8"><title>${t.titleLogin}</title></head>
-        <body style="font-family:Arial;max-width:520px;margin:30px auto;">
-          ${langSwitcherHtml(lang)}
-          <h2>${t.titleLogin}</h2>
-
-          <form method="POST" action="/panel/login">
-            <label>${t.selectVenue}</label><br/>
-            <select name="venue_id" style="width:100%;padding:10px;margin:6px 0;">
-              ${venues.map(v => `<option value="${v.id}">${v.id} — ${v.name}</option>`).join("")}
-            </select>
-
-            <label>${t.pin}</label><br/>
-            <input name="pin" inputmode="numeric" maxlength="6" style="width:100%;padding:10px;margin:6px 0;" />
-
-            <button type="submit" style="width:100%;padding:12px;">${t.login}</button>
-          </form>
-
-          <p style="margin-top:14px;color:#666;">
-            Jeśli PIN nie działa: OWNER robi /resetpin 1 w Telegram.
-          </p>
-        </body>
-      </html>
-    `);
-  }
-
-  const venue = await getVenueById(Number(token.venue_id));
   if (!venue) {
-    setCookie(res, "foxpot_panel", "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax" });
-    return res.redirect("/panel");
+    const options = venues
+      .map((v) => `<option value="${v.id}">${escapeHtml(v.name)} (ID ${v.id})</option>`)
+      .join("");
+
+    const body = `
+      <h2>${escapeHtml(t.title)}</h2>
+
+      <div class="card">
+        <form method="POST" action="/panel/login">
+          <label>${escapeHtml(t.chooseVenue)}</label>
+          <select name="venue_id" required>${options}</select>
+
+          <label>${escapeHtml(t.pin)}</label>
+          <input name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+
+          <div class="row">
+            <select name="lang">
+              <option value="pl"${lang === "pl" ? " selected" : ""}>PL</option>
+              <option value="en"${lang === "en" ? " selected" : ""}>EN</option>
+              <option value="ua"${lang === "ua" ? " selected" : ""}>UA</option>
+            </select>
+            <button type="submit">${escapeHtml(t.login)}</button>
+          </div>
+        </form>
+        ${req.query.err ? `<div class="card bad"><div class="big">${escapeHtml(t.wrongPin)}</div><div class="muted">${escapeHtml(t.hintReset)}</div></div>` : ""}
+      </div>
+    `;
+    return res.status(200).send(pageShell(t.title, body));
   }
 
-  await expireOldCheckins();
+  // Authed view
   const pending = await pool.query(
     `
-    SELECT otp, expires_at
+    SELECT id, otp, user_id, expires_at
     FROM checkins
-    WHERE venue_id = $1 AND status='pending' AND expires_at > NOW()
+    WHERE venue_id = $1 AND status = 'pending' AND expires_at > NOW()
     ORDER BY id DESC
     LIMIT 20
   `,
     [venue.id]
   );
 
-  const pendingRows = pending.rows || [];
+  const pendingRows =
+    pending.rows.length === 0
+      ? `<div class="muted">—</div>`
+      : pending.rows
+          .map(
+            (r) =>
+              `<div class="card"><b>OTP:</b> ${escapeHtml(r.otp)} <span class="muted">(user ${r.user_id})</span></div>`
+          )
+          .join("");
 
-  res.status(200).send(`
-    <html>
-      <head><meta charset="utf-8"><title>${t.titleLogin}</title></head>
-      <body style="font-family:Arial;max-width:720px;margin:30px auto;">
-        ${langSwitcherHtml(lang)}
-        <h2>${t.titleLogin}: ${venue.name}</h2>
-
-        <form method="POST" action="/panel/confirm" style="margin:18px 0;padding:14px;border:1px solid #ddd;">
-          <label><b>${t.otp}</b></label><br/>
-          <input name="otp" inputmode="numeric" maxlength="6" style="width:260px;padding:10px;margin:8px 0;" />
-          <button type="submit" style="padding:12px 18px;margin-left:8px;">${t.confirm}</button>
+  const body = `
+    <h2>${escapeHtml(t.title)}</h2>
+    <div class="card">
+      <div class="big">🏪 ${escapeHtml(venue.name)} (ID ${venue.id})</div>
+      <div class="muted">City: ${escapeHtml(venue.city)}</div>
+      <div style="margin-top:8px" class="row">
+        <form method="POST" action="/panel/confirm" style="flex:2">
+          <input type="hidden" name="lang" value="${lang}" />
+          <label>${escapeHtml(t.otp)}</label>
+          <input name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+          <button type="submit">${escapeHtml(t.confirm)}</button>
         </form>
-
-        <div style="padding:14px;border:1px solid #ddd;">
-          <h3 style="margin-top:0;">${t.pending}</h3>
-          ${pendingRows.length === 0 ? `<p>${t.noPending}</p>` : `
-            <table cellpadding="8" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
-              <tr style="background:#f6f6f6;">
-                <th align="left">OTP</th>
-                <th align="left">TTL</th>
-                <th></th>
-              </tr>
-              ${pendingRows.map(r => `
-                <tr style="border-top:1px solid #eee;">
-                  <td><b>${r.otp}</b></td>
-                  <td>${new Date(r.expires_at).toLocaleString("pl-PL")}</td>
-                  <td>
-                    <form method="POST" action="/panel/confirm" style="margin:0;">
-                      <input type="hidden" name="otp" value="${r.otp}" />
-                      <button type="submit">${t.confirm}</button>
-                    </form>
-                  </td>
-                </tr>
-              `).join("")}
-            </table>
-          `}
-        </div>
-
-        <form method="POST" action="/panel/logout" style="margin-top:18px;">
-          <button type="submit" style="padding:10px 14px;">${t.logout}</button>
+        <form method="GET" action="/panel/logout" style="flex:1">
+          <input type="hidden" name="lang" value="${lang}" />
+          <button type="submit">${escapeHtml(t.logout)}</button>
         </form>
-      </body>
-    </html>
-  `);
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="big">${escapeHtml(t.pending)}</div>
+      ${pendingRows}
+    </div>
+  `;
+
+  return res.status(200).send(pageShell(t.title, body));
 });
 
 app.post("/panel/login", async (req, res) => {
-  const lang = getLang(req);
-  const t = I18N[lang];
-
   const venueId = Number(req.body.venue_id);
   const pin = String(req.body.pin || "").trim();
+  const lang = pickLang(req.body.lang);
 
-  const venue = await getVenueById(venueId);
-  if (!venue) return res.status(400).send("No venue");
-
-  if (!pin || pin.length !== 6 || !verifyPin(pin, venue.pin_hash)) {
-    return res.status(200).send(`
-      <html><head><meta charset="utf-8"><title>${t.titleLogin}</title></head>
-      <body style="font-family:Arial;max-width:520px;margin:30px auto;">
-        ${langSwitcherHtml(lang)}
-        <h2>${t.titleLogin}</h2>
-        <p style="color:red;"><b>${t.wrongPin}</b></p>
-        <p>Jeśli to test: OWNER w Telegram → <b>/resetpin ${venueId}</b></p>
-        <a href="/panel">${t.back}</a>
-      </body></html>
-    `);
+  if (!Number.isInteger(venueId) || venueId <= 0 || pin.length !== 6) {
+    return res.redirect(`/panel?lang=${lang}&err=1`);
   }
 
-  const token = makeToken({ venue_id: venueId, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 });
-  setCookie(res, "foxpot_panel", token, { maxAge: 7 * 24 * 60 * 60, httpOnly: true, secure: true, sameSite: "Lax" });
-  res.redirect("/panel");
-});
+  const venue = await getVenueWithPin(venueId);
+  if (!venue || !venue.pin_hash) return res.redirect(`/panel?lang=${lang}&err=1`);
 
-app.post("/panel/logout", (req, res) => {
-  setCookie(res, "foxpot_panel", "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax" });
-  res.redirect("/panel");
+  if (!verifyPin(pin, venue.pin_hash)) return res.redirect(`/panel?lang=${lang}&err=1`);
+
+  const sig = hmac(`vid=${venueId}|pin_hash=${venue.pin_hash}`);
+  setCookie(res, "panel_vid", String(venueId));
+  setCookie(res, "panel_sig", sig);
+
+  return res.redirect(`/panel?lang=${lang}`);
 });
 
 app.post("/panel/confirm", async (req, res) => {
-  const lang = getLang(req);
-  const t = I18N[lang];
+  const lang = pickLang(req.body.lang);
+  const t = T[lang];
 
-  const cookies = parseCookies(req);
-  const token = readToken(cookies.foxpot_panel || "");
-  if (!token || !token.venue_id) return res.redirect("/panel");
+  const venue = await getAuthedVenue(req);
+  if (!venue) return res.redirect(`/panel?lang=${lang}`);
 
-  const venueId = Number(token.venue_id);
   const otp = String(req.body.otp || "").trim();
+  if (!/^\d{6}$/.test(otp)) return res.redirect(`/panel?lang=${lang}`);
 
-  if (!otp || otp.length !== 6) return res.redirect("/panel");
+  const r = await confirmOtpForVenue({ venueId: venue.id, otp });
 
-  const r = await confirmOtpForVenue(venueId, otp);
   if (!r.ok) {
-    return res.status(200).send(`
-      <html><head><meta charset="utf-8"><title>${t.titleLogin}</title></head>
-      <body style="font-family:Arial;max-width:520px;margin:30px auto;">
-        ${langSwitcherHtml(lang)}
-        <h2>${t.titleLogin}</h2>
-        <p style="color:red;"><b>${t.wrongOtp}</b></p>
-        <a href="/panel">${t.back}</a>
-      </body></html>
-    `);
+    const body = `
+      <h2>${escapeHtml(t.title)}</h2>
+      <div class="card bad">
+        <div class="big">❌ ${escapeHtml(t.noPending)}</div>
+      </div>
+      <a href="/panel?lang=${lang}">${escapeHtml(t.back)}</a>
+    `;
+    return res.status(200).send(pageShell(t.title, body));
   }
 
-  const big = r.countedAdded
-    ? `<div style="padding:14px;background:#e9ffe9;border:1px solid #bde5bd;"><b>${t.countedAdded}</b></div>`
-    : `<div style="padding:14px;background:#fff3cd;border:1px solid #ffeeba;"><b>${t.already}</b><br/>${t.tryTomorrow}</div>`;
+  const headline = r.countedAdded ? t.countedOk : t.todayAlready;
+  const extra = r.countedAdded ? "" : `<div class="muted">${escapeHtml(t.tryTomorrow)}</div>`;
 
-  return res.status(200).send(`
-    <html>
-      <head><meta charset="utf-8"><title>${t.resultTitle}</title></head>
-      <body style="font-family:Arial;max-width:720px;margin:30px auto;">
-        ${langSwitcherHtml(lang)}
-        <h2>${t.resultTitle}</h2>
-        <p><b>Lokal:</b> ${r.venue.name}</p>
-        <p><b>${t.day}:</b> ${r.dayISO}</p>
+  const body = `
+    <h2>${escapeHtml(t.title)}</h2>
+    <div class="card ${r.countedAdded ? "ok" : "bad"}">
+      <div class="big">${escapeHtml(headline)}</div>
+      <div><b>Lokal:</b> ${escapeHtml(r.venueName)}</div>
+      <div><b>Dzień (Warszawa):</b> ${escapeHtml(r.dayISO)}</div>
+      ${extra}
+      <div style="margin-top:10px"><b>X/Y:</b> ${r.X}/${r.Y}</div>
+    </div>
+    <a href="/panel?lang=${lang}">${escapeHtml(t.back)}</a>
+  `;
+  return res.status(200).send(pageShell(t.title, body));
+});
 
-        ${big}
+app.get("/panel/logout", async (req, res) => {
+  const lang = pickLang(req.query.lang);
+  setCookie(res, "panel_vid", "", { maxAge: 0 });
+  setCookie(res, "panel_sig", "", { maxAge: 0 });
+  return res.redirect(`/panel?lang=${lang}`);
+});
 
-        <p style="margin-top:16px;"><b>${t.xy}:</b> ${r.X}/${r.Y}</p>
+// ===== ROUTES =====
+app.get("/", (req, res) => res.status(200).send("The FoxPot Club backend OK"));
+app.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
-        <a href="/panel" style="display:inline-block;margin-top:14px;">${t.back}</a>
-      </body>
-    </html>
-  `);
+app.get("/db", async (req, res) => {
+  try {
+    const r = await pool.query("SELECT 1 as ok");
+    res.json({ ok: true, db: r.rows[0] });
+  } catch (e) {
+    console.error("❌ /db error:", e);
+    res.status(500).json({ ok: false });
+  }
 });
 
 // ===== WEBHOOK =====
@@ -729,8 +867,7 @@ const PORT = process.env.PORT || 3000;
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ Server running on ${PORT}`);
       console.log(`✅ Webhook path: ${webhookPath}`);
-      if (PUBLIC_BASE_URL) console.log(`✅ Panel URL: ${PUBLIC_BASE_URL.replace(/\/+$/, "")}/panel`);
-      else console.log(`ℹ️ Set PUBLIC_BASE_URL to show Panel link in Telegram /panel`);
+      if (PUBLIC_URL) console.log(`✅ Panel: ${PUBLIC_URL}/panel`);
     });
   } catch (e) {
     console.error("❌ DB init failed:", e);
