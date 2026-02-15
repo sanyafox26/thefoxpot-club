@@ -1,10 +1,10 @@
 /**
- * The FoxPot Club — server.js (FULL FILE, HARDENED MIGRATIONS)
+ * The FoxPot Club — server.js (FULL FILE, HARDENED MIGRATIONS + FIXED CHECKIN INSERT)
  *
- * Fixes your issue:
- * - If DB already has older tables: auto-add missing columns (fox_id, confirmed_at, etc.)
- * - Create indexes only after columns exist
- * - Never crash the whole server just because an index can't be created (logs + continue)
+ * Fixes:
+ * - Auto-add missing columns (fox_id, confirmed_at, etc.) in existing tables
+ * - Create indexes only after columns exist (non-fatal)
+ * - FIX: expires_at interval calculation (prevents "Error creating check-in")
  *
  * Required ENV:
  * - DATABASE_URL
@@ -72,11 +72,6 @@ function pbkdf2Hex(pin, saltHex) {
   return crypto.pbkdf2Sync(String(pin), salt, 120000, 32, "sha256").toString("hex");
 }
 
-function isAdminTelegramId(tgId) {
-  if (!ADMIN_USER_ID) return false;
-  return String(tgId) === String(ADMIN_USER_ID);
-}
-
 // simple cookie signing
 function signCookie(payload) {
   const raw = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -116,17 +111,6 @@ function clearCookie(res, name) {
 }
 
 // ---------------- DB schema helpers ----------------
-async function tableExists(tableName) {
-  const q = `
-    SELECT 1
-    FROM information_schema.tables
-    WHERE table_schema='public' AND table_name=$1
-    LIMIT 1;
-  `;
-  const { rows } = await pool.query(q, [tableName]);
-  return rows.length > 0;
-}
-
 async function columnExists(tableName, columnName) {
   const q = `
     SELECT 1
@@ -153,7 +137,7 @@ async function safeQuery(sql) {
 }
 
 async function ensureTablesAndMigrations() {
-  // 1) Create tables if missing (baseline)
+  // baseline tables
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -229,20 +213,16 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // 2) HARD migrations for older schemas (add missing columns everywhere)
-
-  // venues
+  // hard migrations for older schemas
   await addColumnIfMissing("venues", "pin_salt", "TEXT");
   await addColumnIfMissing("venues", "pin_hash", "TEXT");
   await addColumnIfMissing("venues", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
   await addColumnIfMissing("venues", "city", "TEXT");
   await addColumnIfMissing("venues", "name", "TEXT");
 
-  // foxes
   await addColumnIfMissing("foxes", "username", "TEXT");
   await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // checkins (your previous errors were here)
   await addColumnIfMissing("checkins", "venue_id", "INT");
   await addColumnIfMissing("checkins", "fox_id", "BIGINT");
   await addColumnIfMissing("checkins", "otp", "TEXT");
@@ -251,13 +231,11 @@ async function ensureTablesAndMigrations() {
   await addColumnIfMissing("checkins", "confirmed_at", "TIMESTAMPTZ");
   await addColumnIfMissing("checkins", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // counted_visits (your current error likely here)
   await addColumnIfMissing("counted_visits", "venue_id", "INT");
   await addColumnIfMissing("counted_visits", "fox_id", "BIGINT");
   await addColumnIfMissing("counted_visits", "day_warsaw", "DATE");
   await addColumnIfMissing("counted_visits", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // venue_status_events
   await addColumnIfMissing("venue_status_events", "venue_id", "INT");
   await addColumnIfMissing("venue_status_events", "kind", "TEXT");
   await addColumnIfMissing("venue_status_events", "reason", "TEXT");
@@ -265,21 +243,18 @@ async function ensureTablesAndMigrations() {
   await addColumnIfMissing("venue_status_events", "ends_at", "TIMESTAMPTZ");
   await addColumnIfMissing("venue_status_events", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // venue_stamps
   await addColumnIfMissing("venue_stamps", "venue_id", "INT");
   await addColumnIfMissing("venue_stamps", "fox_id", "BIGINT");
   await addColumnIfMissing("venue_stamps", "balance", "INT NOT NULL DEFAULT 0");
   await addColumnIfMissing("venue_stamps", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // venue_stamp_events
   await addColumnIfMissing("venue_stamp_events", "venue_id", "INT");
   await addColumnIfMissing("venue_stamp_events", "fox_id", "BIGINT");
   await addColumnIfMissing("venue_stamp_events", "delta", "INT NOT NULL DEFAULT 0");
   await addColumnIfMissing("venue_stamp_events", "note", "TEXT");
   await addColumnIfMissing("venue_stamp_events", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // 3) Add constraints (SAFE: only if table exists; errors won't crash)
-  // Foreign keys (optional, but good). We do them as non-fatal because old data might block constraints.
+  // constraints + indexes (non-fatal)
   await safeQuery(`
     ALTER TABLE checkins
     ADD CONSTRAINT IF NOT EXISTS checkins_venue_fk
@@ -302,21 +277,17 @@ async function ensureTablesAndMigrations() {
     FOREIGN KEY (fox_id) REFERENCES foxes(id);
   `);
 
-  // 4) Indexes — only after columns exist (and non-fatal)
-  // checkins unique daily only when confirmed
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
     ON checkins (venue_id, fox_id, day_warsaw)
     WHERE confirmed_at IS NOT NULL;
   `);
 
-  // counted_visits unique daily
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS counted_visits_unique_daily
     ON counted_visits (venue_id, fox_id, day_warsaw);
   `);
 
-  // venue_stamps unique per venue/fox
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS venue_stamps_unique
     ON venue_stamps (venue_id, fox_id);
@@ -354,7 +325,7 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// ---------------- PANEL helpers ----------------
+// ---------------- PANEL ----------------
 async function getVenueById(venueId) {
   const { rows } = await pool.query(
     `SELECT id, name, city, pin_salt, pin_hash FROM venues WHERE id=$1`,
@@ -408,7 +379,6 @@ function panelLayout(title, innerHtml) {
 </html>`;
 }
 
-// ---------------- PANEL routes ----------------
 app.get("/panel", async (req, res) => {
   const sess = verifyCookie(getCookie(req, "fp_panel"));
   if (!sess || !sess.venue_id) {
@@ -607,9 +577,10 @@ bot.command("checkin", async (ctx) => {
     const day = warsawDayISO(new Date());
     const expiresMinutes = 10;
 
+    // ✅ FIXED interval math
     await pool.query(
       `INSERT INTO checkins (venue_id, fox_id, otp, expires_at, day_warsaw)
-       VALUES ($1,$2,$3, NOW() + ($4 || ' minutes')::interval, $5::date);`,
+       VALUES ($1,$2,$3, NOW() + ($4::int * interval '1 minute'), $5::date);`,
       [venueId, foxId, otp, expiresMinutes, day]
     );
 
@@ -617,7 +588,7 @@ bot.command("checkin", async (ctx) => {
       `✅ Check-in utworzony (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu.\nPanel: ${PUBLIC_URL}/panel`
     );
   } catch (e) {
-    console.error("checkin error:", e);
+    console.error("checkin error:", e); // важливо: у Railway logs буде точна причина
     return ctx.reply("❌ Error creating check-in");
   }
 });
