@@ -1,10 +1,11 @@
 /**
- * The FoxPot Club — server.js (FULL FILE, HARDENED MIGRATIONS + FIXED CHECKIN INSERT)
+ * The FoxPot Club — server.js (FULL FILE, FIXED MIGRATIONS)
  *
  * Fixes:
- * - Auto-add missing columns (fox_id, confirmed_at, etc.) in existing tables
- * - Create indexes only after columns exist (non-fatal)
- * - FIX: expires_at interval calculation (prevents "Error creating check-in")
+ * - Postgres DOES NOT support: ALTER TABLE ... ADD CONSTRAINT IF NOT EXISTS
+ *   -> replaced with DO $$ BEGIN ... END $$ checks via pg_constraint
+ * - Auto-migrate foxes table to have column "id" BIGINT (rename from fox_id / telegram_id if exists)
+ * - Keeps /health stable
  *
  * Required ENV:
  * - DATABASE_URL
@@ -93,7 +94,7 @@ function verifyCookie(cookieVal) {
 }
 function getCookie(req, name) {
   const h = req.headers.cookie || "";
-  const items = h.split(";").map(s => s.trim()).filter(Boolean);
+  const items = h.split(";").map((s) => s.trim()).filter(Boolean);
   for (const it of items) {
     const idx = it.indexOf("=");
     if (idx === -1) continue;
@@ -122,6 +123,17 @@ async function columnExists(tableName, columnName) {
   return rows.length > 0;
 }
 
+async function tableExists(tableName) {
+  const q = `
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema='public' AND table_name=$1
+    LIMIT 1;
+  `;
+  const { rows } = await pool.query(q, [tableName]);
+  return rows.length > 0;
+}
+
 async function addColumnIfMissing(tableName, columnName, columnTypeSQL) {
   const exists = await columnExists(tableName, columnName);
   if (exists) return;
@@ -136,8 +148,25 @@ async function safeQuery(sql) {
   }
 }
 
+/**
+ * Add constraint ONLY if it's missing (Postgres-safe).
+ * Uses pg_constraint check (works on all supported PG versions).
+ */
+async function addConstraintIfMissing(constraintName, alterSql) {
+  const sql = `
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = '${constraintName}'
+  ) THEN
+    ${alterSql}
+  END IF;
+END $$;`;
+  await safeQuery(sql);
+}
+
 async function ensureTablesAndMigrations() {
-  // baseline tables
+  // ----- Create tables if missing (baseline) -----
   await pool.query(`
     CREATE TABLE IF NOT EXISTS venues (
       id SERIAL PRIMARY KEY,
@@ -149,6 +178,7 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
+  // IMPORTANT: create foxes with id BIGINT
   await pool.query(`
     CREATE TABLE IF NOT EXISTS foxes (
       id BIGINT PRIMARY KEY,
@@ -213,16 +243,40 @@ async function ensureTablesAndMigrations() {
     );
   `);
 
-  // hard migrations for older schemas
+  // ----- Migrate venues -----
   await addColumnIfMissing("venues", "pin_salt", "TEXT");
   await addColumnIfMissing("venues", "pin_hash", "TEXT");
   await addColumnIfMissing("venues", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
   await addColumnIfMissing("venues", "city", "TEXT");
   await addColumnIfMissing("venues", "name", "TEXT");
 
-  await addColumnIfMissing("foxes", "username", "TEXT");
-  await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  // ----- Migrate foxes: ensure column "id" exists -----
+  // If older foxes table had "fox_id" or "telegram_id", rename to "id"
+  if (await tableExists("foxes")) {
+    const hasId = await columnExists("foxes", "id");
+    const hasFoxId = await columnExists("foxes", "fox_id");
+    const hasTelegramId = await columnExists("foxes", "telegram_id");
 
+    if (!hasId && hasFoxId) {
+      await safeQuery(`ALTER TABLE foxes RENAME COLUMN fox_id TO id;`);
+    } else if (!hasId && hasTelegramId) {
+      await safeQuery(`ALTER TABLE foxes RENAME COLUMN telegram_id TO id;`);
+    }
+
+    // if still no id, add it (best-effort)
+    if (!(await columnExists("foxes", "id"))) {
+      await addColumnIfMissing("foxes", "id", "BIGINT");
+    }
+
+    await addColumnIfMissing("foxes", "username", "TEXT");
+    await addColumnIfMissing("foxes", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+
+    // Ensure UNIQUE on foxes.id so ON CONFLICT (id) works.
+    // If table already has PK on another column, this may fail -> non-fatal.
+    await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS foxes_id_unique ON foxes(id);`);
+  }
+
+  // ----- Migrate checkins / visits -----
   await addColumnIfMissing("checkins", "venue_id", "INT");
   await addColumnIfMissing("checkins", "fox_id", "BIGINT");
   await addColumnIfMissing("checkins", "otp", "TEXT");
@@ -246,7 +300,7 @@ async function ensureTablesAndMigrations() {
   await addColumnIfMissing("venue_stamps", "venue_id", "INT");
   await addColumnIfMissing("venue_stamps", "fox_id", "BIGINT");
   await addColumnIfMissing("venue_stamps", "balance", "INT NOT NULL DEFAULT 0");
-  await addColumnIfMissing("venue_stamps", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await addColumnIfMissing("venue_stamps", "updated_at", "TIMESTAMPTAMPTZ NOT NULL DEFAULT NOW()`.replace("TIMESTAMPTAMPTZ", "TIMESTAMPTZ"));
 
   await addColumnIfMissing("venue_stamp_events", "venue_id", "INT");
   await addColumnIfMissing("venue_stamp_events", "fox_id", "BIGINT");
@@ -254,29 +308,36 @@ async function ensureTablesAndMigrations() {
   await addColumnIfMissing("venue_stamp_events", "note", "TEXT");
   await addColumnIfMissing("venue_stamp_events", "created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()");
 
-  // constraints + indexes (non-fatal)
-  await safeQuery(`
-    ALTER TABLE checkins
-    ADD CONSTRAINT IF NOT EXISTS checkins_venue_fk
-    FOREIGN KEY (venue_id) REFERENCES venues(id);
-  `);
-  await safeQuery(`
-    ALTER TABLE checkins
-    ADD CONSTRAINT IF NOT EXISTS checkins_fox_fk
-    FOREIGN KEY (fox_id) REFERENCES foxes(id);
-  `);
+  // ----- Constraints (Postgres-safe) -----
+  await addConstraintIfMissing(
+    "checkins_venue_fk",
+    `ALTER TABLE checkins
+     ADD CONSTRAINT checkins_venue_fk
+     FOREIGN KEY (venue_id) REFERENCES venues(id);`
+  );
 
-  await safeQuery(`
-    ALTER TABLE counted_visits
-    ADD CONSTRAINT IF NOT EXISTS counted_visits_venue_fk
-    FOREIGN KEY (venue_id) REFERENCES venues(id);
-  `);
-  await safeQuery(`
-    ALTER TABLE counted_visits
-    ADD CONSTRAINT IF NOT EXISTS counted_visits_fox_fk
-    FOREIGN KEY (fox_id) REFERENCES foxes(id);
-  `);
+  await addConstraintIfMissing(
+    "checkins_fox_fk",
+    `ALTER TABLE checkins
+     ADD CONSTRAINT checkins_fox_fk
+     FOREIGN KEY (fox_id) REFERENCES foxes(id);`
+  );
 
+  await addConstraintIfMissing(
+    "counted_visits_venue_fk",
+    `ALTER TABLE counted_visits
+     ADD CONSTRAINT counted_visits_venue_fk
+     FOREIGN KEY (venue_id) REFERENCES venues(id);`
+  );
+
+  await addConstraintIfMissing(
+    "counted_visits_fox_fk",
+    `ALTER TABLE counted_visits
+     ADD CONSTRAINT counted_visits_fox_fk
+     FOREIGN KEY (fox_id) REFERENCES foxes(id);`
+  );
+
+  // ----- Indexes (ok with IF NOT EXISTS) -----
   await safeQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS checkins_unique_daily
     ON checkins (venue_id, fox_id, day_warsaw)
@@ -343,8 +404,8 @@ async function getCurrentStatus(venueId) {
      LIMIT 10;`,
     [venueId]
   );
-  const reserve = rows.find(r => r.kind === "reserve") || null;
-  const limited = rows.find(r => r.kind === "limited") || null;
+  const reserve = rows.find((r) => r.kind === "reserve") || null;
+  const limited = rows.find((r) => r.kind === "limited") || null;
   return { reserve, limited };
 }
 
@@ -416,7 +477,7 @@ app.get("/panel", async (req, res) => {
   const { rows: pend } = await pool.query(
     `SELECT c.id, c.otp, c.fox_id, c.expires_at, f.username
      FROM checkins c
-     JOIN foxes f ON f.id=c.fox_id
+     LEFT JOIN foxes f ON f.id=c.fox_id
      WHERE c.venue_id=$1 AND (c.confirmed_at IS NULL) AND c.expires_at >= NOW()
      ORDER BY c.created_at DESC
      LIMIT 20;`,
@@ -424,7 +485,7 @@ app.get("/panel", async (req, res) => {
   );
 
   const pendingHtml = pend.length
-    ? pend.map(p => {
+    ? pend.map((p) => {
         const uname = p.username ? `@${p.username}` : "(no username)";
         const exp = new Date(p.expires_at).toISOString();
         return `<div style="padding:10px;border:1px solid #2a2a40;border-radius:12px;margin:8px 0">
@@ -461,11 +522,6 @@ app.get("/panel", async (req, res) => {
         <button type="submit" style="background:#2a2a40;border-color:#2a2a40">Wyloguj</button>
       </form>
     </div>
-
-    <div class="sep"></div>
-
-    <h2>Statusy lokalu</h2>
-    <div class="muted">Rezerwa: ${status.reserve ? "ON" : "—"} | Dziś ograniczone: ${status.limited ? "ON" : "—"}</div>
 
     <div class="sep"></div>
 
@@ -536,7 +592,7 @@ app.post("/panel/confirm", async (req, res) => {
   try {
     await bot.telegram.sendMessage(
       foxId,
-      `✅ Confirm OK\nLokal: Test (ID ${venueId})\nDzień (Warszawa): ${day}\n\nDZIŚ JUŻ BYŁO ✅\nSpróbuj jutro po 00:00 (Warszawa).`
+      `✅ Confirm OK\nLokal: (ID ${venueId})\nDzień (Warszawa): ${day}\n\nDZIŚ JUŻ BYŁO ✅\nSpróbuj jutro po 00:00 (Warszawa).`
     );
   } catch {}
 
@@ -563,6 +619,7 @@ bot.command("checkin", async (ctx) => {
     const foxId = String(ctx.from.id);
     const username = ctx.from.username ? String(ctx.from.username) : null;
 
+    // foxes.id must exist (migration ensures it)
     await pool.query(
       `INSERT INTO foxes (id, username) VALUES ($1,$2)
        ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username;`,
@@ -577,7 +634,6 @@ bot.command("checkin", async (ctx) => {
     const day = warsawDayISO(new Date());
     const expiresMinutes = 10;
 
-    // ✅ FIXED interval math
     await pool.query(
       `INSERT INTO checkins (venue_id, fox_id, otp, expires_at, day_warsaw)
        VALUES ($1,$2,$3, NOW() + ($4::int * interval '1 minute'), $5::date);`,
@@ -588,7 +644,7 @@ bot.command("checkin", async (ctx) => {
       `✅ Check-in utworzony (10 min)\n\n🏪 ${venue.name}\n🔐 OTP: ${otp}\n\nPersonel potwierdza w Panelu.\nPanel: ${PUBLIC_URL}/panel`
     );
   } catch (e) {
-    console.error("checkin error:", e); // важливо: у Railway logs буде точна причина
+    console.error("checkin error:", e);
     return ctx.reply("❌ Error creating check-in");
   }
 });
