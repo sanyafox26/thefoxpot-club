@@ -1,12 +1,16 @@
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js (V4)
- * Keeps your full logic + adds:
- * - /version (prove correct deploy)
- * - /tg (getWebhookInfo)
- * - /admin/webhook (force deleteWebhook(true)+setWebhook)
- * - webhook route mounted as POST /<WEBHOOK_SECRET> for reliability
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js (V6)
+ * Based on your full working code (panel + checkin + counted + reserve/limited + war_day fix)
  *
- * Dependencies: express, telegraf, pg, crypto
+ * FIX:
+ * - Telegram webhook 404 -> handle POST /<WEBHOOK_SECRET> via bot.handleUpdate(req.body,res)
+ *
+ * ADD:
+ * - GET /version -> proves correct deploy
+ * - GET /tg -> getWebhookInfo()
+ * - GET /admin/webhook?secret=... -> deleteWebhook(true) + setWebhook() and return info
+ *
+ * Dependencies only: express, telegraf, pg, crypto
  */
 
 const express = require("express");
@@ -98,6 +102,7 @@ async function ensureColumn(table, col, ddl) {
   }
 }
 
+// IMPORTANT: do not kill server if index creation fails (risk-first)
 async function ensureIndexSafe(sql) {
   try {
     await pool.query(sql);
@@ -112,6 +117,7 @@ function pinHash(pin, salt) {
 
 /* ---------------- MIGRATIONS (SAFE) ---------------- */
 async function migrate() {
+  // Core tables
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_venues (
       id BIGSERIAL PRIMARY KEY,
@@ -186,9 +192,11 @@ async function migrate() {
     )
   `);
 
+  // Ensure columns exist even if tables were created earlier
   await ensureColumn("fp1_counted_visits", "war_day", "TEXT");
   await ensureColumn("fp1_checkins", "war_day", "TEXT");
 
+  // Backfill war_day for old rows (Warsaw date from created_at)
   await pool.query(`
     UPDATE fp1_counted_visits
     SET war_day = to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD')
@@ -201,6 +209,7 @@ async function migrate() {
     WHERE war_day IS NULL
   `);
 
+  // Seed test venues if none
   const v = await pool.query("SELECT COUNT(*)::int AS c FROM fp1_venues");
   if (v.rows[0].c === 0) {
     const pin = "123456";
@@ -215,6 +224,7 @@ async function migrate() {
     );
   }
 
+  // Indexes (adaptive, safe)
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp ON fp1_checkins(otp)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires ON fp1_checkins(expires_at)`);
 
@@ -234,9 +244,7 @@ async function migrate() {
   await ensureIndexSafe(
     `CREATE INDEX IF NOT EXISTS idx_fp1_reserve_logs ON fp1_venue_reserve_logs(venue_id, created_at)`
   );
-  await ensureIndexSafe(
-    `CREATE INDEX IF NOT EXISTS idx_fp1_limited_logs ON fp1_venue_limited_logs(venue_id, week_key)`
-  );
+  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_limited_logs ON fp1_venue_limited_logs(venue_id, week_key)`);
 
   console.log("✅ Migrations OK");
 }
@@ -413,11 +421,13 @@ async function confirmOtp(venueId, otp) {
   const userId = String(row.user_id);
   const warDay = row.war_day || warsawDayKey(new Date());
 
+  // mark confirmed
   await pool.query(
     `UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`,
     [venueId, row.id]
   );
 
+  // counted insert only if not exists for today
   const exists = await pool.query(
     `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND war_day=$2 AND user_id=$3 LIMIT 1`,
     [venueId, warDay, userId]
@@ -430,6 +440,8 @@ async function confirmOtp(venueId, otp) {
       [venueId, userId, warDay]
     );
     countedAdded = true;
+
+    // rating +1 on counted visit
     await pool.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
   }
 
@@ -449,7 +461,7 @@ async function setReserve(venueId, startIso, hours) {
   const dur = Math.max(1, Math.min(24, parseInt(hours, 10) || 24));
   const end = new Date(start.getTime() + dur * 60 * 60 * 1000);
 
-  const monthKey = warsawDayKey(now).slice(0, 7);
+  const monthKey = warsawDayKey(now).slice(0, 7); // YYYY-MM
   const c = await pool.query(
     `SELECT COUNT(*)::int AS c
      FROM fp1_venue_reserve_logs
@@ -508,8 +520,7 @@ async function clearLimited(venueId) {
 
 /* ---------------- Routes ---------------- */
 app.get("/", (req, res) => res.send("OK"));
-
-app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V4_OK"));
+app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V6_OK"));
 
 app.get("/health", async (req, res) => {
   try {
@@ -517,38 +528,6 @@ app.get("/health", async (req, res) => {
     res.json({ ok: true, db: true, now, tz: "Europe/Warsaw", day_warsaw: warsawDayKey(new Date()) });
   } catch (e) {
     res.status(500).json({ ok: false, db: false, error: String(e && e.message ? e.message : e) });
-  }
-});
-
-/* ---- Telegram debug endpoints (NEW) ---- */
-let bot = null;
-
-app.get("/tg", async (req, res) => {
-  try {
-    if (!bot) return res.status(500).json({ ok: false, error: "bot_not_initialized" });
-    const info = await bot.telegram.getWebhookInfo();
-    res.json({ ok: true, webhook: info });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
-  }
-});
-
-app.get("/admin/webhook", async (req, res) => {
-  try {
-    const secret = String(req.query.secret || "").trim();
-    if (secret !== WEBHOOK_SECRET) return res.status(403).json({ ok: false, error: "forbidden" });
-    if (!bot) return res.status(500).json({ ok: false, error: "bot_not_initialized" });
-    if (!PUBLIC_URL) return res.status(500).json({ ok: false, error: "PUBLIC_URL missing" });
-
-    const hookUrl = `${PUBLIC_URL}/${WEBHOOK_SECRET}`;
-
-    await bot.telegram.deleteWebhook(true);
-    await bot.telegram.setWebhook(hookUrl);
-
-    const info = await bot.telegram.getWebhookInfo();
-    res.json({ ok: true, set_to: hookUrl, webhook: info });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
   }
 });
 
@@ -742,6 +721,8 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   );
 });
 
+let bot = null;
+
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
   const otp = String(req.body.otp || "").trim();
@@ -749,6 +730,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const r = await confirmOtp(venueId, otp);
     if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP nie znaleziono albo wygasł.")}`);
 
+    // notify telegram (safe)
     if (bot) {
       try {
         const v = await getVenue(venueId);
@@ -827,6 +809,35 @@ app.post("/panel/limited/clear", requirePanelAuth, async (req, res) => {
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
+  // DEBUG: webhook info
+  app.get("/tg", async (req, res) => {
+    try {
+      const info = await bot.telegram.getWebhookInfo();
+      res.json({ ok: true, webhook: info });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
+    }
+  });
+
+  // DEBUG: force reset webhook
+  app.get("/admin/webhook", async (req, res) => {
+    try {
+      const secret = String(req.query.secret || "").trim();
+      if (secret !== WEBHOOK_SECRET) return res.status(403).json({ ok: false, error: "forbidden" });
+      if (!PUBLIC_URL) return res.status(500).json({ ok: false, error: "PUBLIC_URL missing" });
+
+      const hookUrl = `${PUBLIC_URL}/${WEBHOOK_SECRET}`;
+
+      await bot.telegram.deleteWebhook(true);
+      await bot.telegram.setWebhook(hookUrl);
+
+      const info = await bot.telegram.getWebhookInfo();
+      res.json({ ok: true, set_to: hookUrl, webhook: info });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
+    }
+  });
+
   bot.start(async (ctx) => {
     try {
       const fox = await upsertFox(ctx);
@@ -900,27 +911,33 @@ Panel: ${PUBLIC_URL}/panel`
     }
   });
 
-  // RELIABLE webhook mount: POST /<secret>
-  app.post(`/${WEBHOOK_SECRET}`, bot.webhookCallback(`/${WEBHOOK_SECRET}`));
+  // ✅ MAIN FIX: Telegram sends POST -> handleUpdate directly (no 404)
+  app.post(`/${WEBHOOK_SECRET}`, (req, res) => bot.handleUpdate(req.body, res));
+
+  // Optional: quick manual check in browser (Telegram still uses POST)
+  app.get(`/${WEBHOOK_SECRET}`, (req, res) => res.type("text/plain").send("WEBHOOK_ENDPOINT_OK"));
 }
 
 /* ---------------- BOOT ---------------- */
 (async () => {
-  await migrate();
+  try {
+    await migrate();
 
-  // IMPORTANT: do not kill server if webhook set fails — show error in logs
-  if (bot && PUBLIC_URL) {
-    const hookUrl = `${PUBLIC_URL}/${WEBHOOK_SECRET}`;
-    try {
-      await bot.telegram.deleteWebhook(true);
-      await bot.telegram.setWebhook(hookUrl);
-      console.log("✅ Webhook set:", hookUrl);
-    } catch (e) {
-      console.error("WEBHOOK_SET_ERR", e && e.message ? e.message : e);
+    // Do NOT kill server if webhook set fails
+    if (bot && PUBLIC_URL) {
+      const hookUrl = `${PUBLIC_URL}/${WEBHOOK_SECRET}`;
+      try {
+        await bot.telegram.deleteWebhook(true);
+        await bot.telegram.setWebhook(hookUrl);
+        console.log("✅ Webhook set:", hookUrl);
+      } catch (e) {
+        console.error("WEBHOOK_SET_ERR", e && e.message ? e.message : e);
+      }
     }
-  } else {
-    console.log("ℹ️ Bot not initialized or PUBLIC_URL missing");
-  }
 
-  app.listen(PORT, () => console.log(`✅ Server listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server listening on ${PORT}`));
+  } catch (e) {
+    console.error("BOOT_ERR", e);
+    process.exit(1);
+  }
 })();
