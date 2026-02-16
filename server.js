@@ -1,16 +1,17 @@
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js (V6)
- * Based on your full working code (panel + checkin + counted + reserve/limited + war_day fix)
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js (V7)
+ * Adds INVITES:
+ * - fp1_invites + fp1_invite_uses tables
+ * - /invite -> generates 1-time code, costs 1 invite
+ * - /start <code> -> redeems code (1-time), links invited_by in fp1_foxes
  *
- * FIX:
- * - Telegram webhook 404 -> handle POST /<WEBHOOK_SECRET> via bot.handleUpdate(req.body,res)
+ * Keeps all existing logic:
+ * - check-in OTP 10 min, panel confirm -> counted/day + X/Y + DZIŚ JUŻ BYŁO
+ * - reserve/limited statuses
+ * - safe migrations + war_day fix
+ * - webhook fix (handleUpdate) + /tg + /admin/webhook + /version
  *
- * ADD:
- * - GET /version -> proves correct deploy
- * - GET /tg -> getWebhookInfo()
- * - GET /admin/webhook?secret=... -> deleteWebhook(true) + setWebhook() and return info
- *
- * Dependencies only: express, telegraf, pg, crypto
+ * Dependencies: express, telegraf, pg, crypto
  */
 
 const express = require("express");
@@ -74,7 +75,7 @@ function warsawWeekKey(d = new Date()) {
   const base = new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
   const dow = warsawDow(base);
   const monday = new Date(base.getTime() - (dow - 1) * 86400000);
-  return warsawDayKey(monday); // monday date as bucket
+  return warsawDayKey(monday);
 }
 
 /* ---------------- schema helpers ---------------- */
@@ -102,7 +103,6 @@ async function ensureColumn(table, col, ddl) {
   }
 }
 
-// IMPORTANT: do not kill server if index creation fails (risk-first)
 async function ensureIndexSafe(sql) {
   try {
     await pool.query(sql);
@@ -113,6 +113,16 @@ async function ensureIndexSafe(sql) {
 
 function pinHash(pin, salt) {
   return crypto.createHmac("sha256", salt).update(pin).digest("hex");
+}
+
+/* ---------------- INVITE helpers ---------------- */
+function genInviteCode(len = 10) {
+  // base32-ish alphabet (без плутанини O/0, I/1)
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  const bytes = crypto.randomBytes(len);
+  for (let i = 0; i < len; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
 }
 
 /* ---------------- MIGRATIONS (SAFE) ---------------- */
@@ -192,11 +202,38 @@ async function migrate() {
     )
   `);
 
-  // Ensure columns exist even if tables were created earlier
+  // ✅ INVITES tables
+  await ensureTable(`
+    CREATE TABLE IF NOT EXISTS fp1_invites (
+      id BIGSERIAL PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      created_by_user_id BIGINT NOT NULL,
+      max_uses INT NOT NULL DEFAULT 1,
+      uses INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await ensureTable(`
+    CREATE TABLE IF NOT EXISTS fp1_invite_uses (
+      id BIGSERIAL PRIMARY KEY,
+      invite_id BIGINT NOT NULL REFERENCES fp1_invites(id) ON DELETE CASCADE,
+      used_by_user_id BIGINT NOT NULL,
+      used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(invite_id, used_by_user_id)
+    )
+  `);
+
+  // Add fox columns for invite linkage (safe)
+  await ensureColumn("fp1_foxes", "invited_by_user_id", "BIGINT");
+  await ensureColumn("fp1_foxes", "invite_code_used", "TEXT");
+  await ensureColumn("fp1_foxes", "invite_used_at", "TIMESTAMPTZ");
+
+  // Ensure war_day columns (fix schema drift)
   await ensureColumn("fp1_counted_visits", "war_day", "TEXT");
   await ensureColumn("fp1_checkins", "war_day", "TEXT");
 
-  // Backfill war_day for old rows (Warsaw date from created_at)
+  // Backfill war_day for old rows
   await pool.query(`
     UPDATE fp1_counted_visits
     SET war_day = to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD')
@@ -224,27 +261,19 @@ async function migrate() {
     );
   }
 
-  // Indexes (adaptive, safe)
+  // Indexes (safe)
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp ON fp1_checkins(otp)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires ON fp1_checkins(expires_at)`);
 
-  const hasUser = await hasColumn("fp1_counted_visits", "user_id");
-  const hasFox = await hasColumn("fp1_counted_visits", "fox_id");
-  if (hasUser) {
-    await ensureIndexSafe(
-      `CREATE INDEX IF NOT EXISTS idx_fp1_counted_u ON fp1_counted_visits(venue_id, war_day, user_id)`
-    );
-  }
-  if (hasFox) {
-    await ensureIndexSafe(
-      `CREATE INDEX IF NOT EXISTS idx_fp1_counted_f ON fp1_counted_visits(venue_id, war_day, fox_id)`
-    );
-  }
-
   await ensureIndexSafe(
-    `CREATE INDEX IF NOT EXISTS idx_fp1_reserve_logs ON fp1_venue_reserve_logs(venue_id, created_at)`
+    `CREATE INDEX IF NOT EXISTS idx_fp1_counted_u ON fp1_counted_visits(venue_id, war_day, user_id)`
   );
+  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_reserve_logs ON fp1_venue_reserve_logs(venue_id, created_at)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_limited_logs ON fp1_venue_limited_logs(venue_id, week_key)`);
+
+  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_invites_creator ON fp1_invites(created_by_user_id, created_at)`);
+  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_invites_code ON fp1_invites(code)`);
+  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_invite_uses_usedby ON fp1_invite_uses(used_by_user_id, used_at)`);
 
   console.log("✅ Migrations OK");
 }
@@ -421,13 +450,11 @@ async function confirmOtp(venueId, otp) {
   const userId = String(row.user_id);
   const warDay = row.war_day || warsawDayKey(new Date());
 
-  // mark confirmed
-  await pool.query(
-    `UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`,
-    [venueId, row.id]
-  );
+  await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [
+    venueId,
+    row.id,
+  ]);
 
-  // counted insert only if not exists for today
   const exists = await pool.query(
     `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND war_day=$2 AND user_id=$3 LIMIT 1`,
     [venueId, warDay, userId]
@@ -435,17 +462,101 @@ async function confirmOtp(venueId, otp) {
 
   let countedAdded = false;
   if (exists.rowCount === 0) {
-    await pool.query(
-      `INSERT INTO fp1_counted_visits(venue_id, user_id, war_day) VALUES ($1,$2,$3)`,
-      [venueId, userId, warDay]
-    );
+    await pool.query(`INSERT INTO fp1_counted_visits(venue_id, user_id, war_day) VALUES ($1,$2,$3)`, [
+      venueId,
+      userId,
+      warDay,
+    ]);
     countedAdded = true;
 
-    // rating +1 on counted visit
+    // rating +1
     await pool.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
   }
 
   return { ok: true, userId, warDay, countedAdded };
+}
+
+/* ---------------- Invite core (DB) ---------------- */
+async function redeemInviteCode(userId, codeRaw) {
+  const code = String(codeRaw || "").trim().toUpperCase();
+  if (!code) return { ok: false, reason: "NO_CODE" };
+
+  // Must exist
+  const inv = await pool.query(`SELECT * FROM fp1_invites WHERE code=$1 LIMIT 1`, [code]);
+  if (inv.rowCount === 0) return { ok: false, reason: "NOT_FOUND" };
+  const invite = inv.rows[0];
+
+  // Not already used by this user
+  const usedByThis = await pool.query(
+    `SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`,
+    [invite.id, String(userId)]
+  );
+  if (usedByThis.rowCount > 0) return { ok: false, reason: "ALREADY_USED_BY_YOU", invite };
+
+  // Has remaining uses
+  if (Number(invite.uses) >= Number(invite.max_uses)) return { ok: false, reason: "EXHAUSTED", invite };
+
+  // Apply: insert use + increment uses
+  await pool.query(`INSERT INTO fp1_invite_uses(invite_id, used_by_user_id) VALUES ($1,$2)`, [invite.id, String(userId)]);
+  await pool.query(`UPDATE fp1_invites SET uses = uses + 1 WHERE id=$1`, [invite.id]);
+
+  // Link to fox profile (only if not already linked)
+  await pool.query(
+    `
+    UPDATE fp1_foxes
+    SET invited_by_user_id = COALESCE(invited_by_user_id, $1),
+        invite_code_used   = COALESCE(invite_code_used, $2),
+        invite_used_at     = COALESCE(invite_used_at, NOW())
+    WHERE user_id = $3
+  `,
+    [String(invite.created_by_user_id), code, String(userId)]
+  );
+
+  return { ok: true, invite };
+}
+
+async function createInviteFromFox(userId) {
+  // Check fox + invites > 0
+  const foxR = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
+  if (foxR.rowCount === 0) return { ok: false, reason: "NO_FOX" };
+  const fox = foxR.rows[0];
+  if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES", fox };
+
+  // Create unique code (retry a few times)
+  let code = null;
+  for (let i = 0; i < 8; i++) {
+    const c = genInviteCode(10);
+    const exists = await pool.query(`SELECT 1 FROM fp1_invites WHERE code=$1 LIMIT 1`, [c]);
+    if (exists.rowCount === 0) {
+      code = c;
+      break;
+    }
+  }
+  if (!code) return { ok: false, reason: "CODE_GEN_FAIL" };
+
+  // Transaction: decrement invites + insert invite
+  await pool.query("BEGIN");
+  try {
+    const dec = await pool.query(`UPDATE fp1_foxes SET invites = invites - 1 WHERE user_id=$1 AND invites > 0 RETURNING invites`, [
+      String(userId),
+    ]);
+    if (dec.rowCount === 0) {
+      await pool.query("ROLLBACK");
+      return { ok: false, reason: "NO_INVITES" };
+    }
+
+    await pool.query(
+      `INSERT INTO fp1_invites(code, created_by_user_id, max_uses, uses)
+       VALUES ($1,$2,1,0)`,
+      [code, String(userId)]
+    );
+
+    await pool.query("COMMIT");
+    return { ok: true, code, invites_left: dec.rows[0].invites };
+  } catch (e) {
+    await pool.query("ROLLBACK");
+    throw e;
+  }
 }
 
 /* ---------------- Venue statuses ---------------- */
@@ -461,7 +572,7 @@ async function setReserve(venueId, startIso, hours) {
   const dur = Math.max(1, Math.min(24, parseInt(hours, 10) || 24));
   const end = new Date(start.getTime() + dur * 60 * 60 * 1000);
 
-  const monthKey = warsawDayKey(now).slice(0, 7); // YYYY-MM
+  const monthKey = warsawDayKey(now).slice(0, 7);
   const c = await pool.query(
     `SELECT COUNT(*)::int AS c
      FROM fp1_venue_reserve_logs
@@ -475,10 +586,11 @@ async function setReserve(venueId, startIso, hours) {
     end.toISOString(),
     venueId,
   ]);
-  await pool.query(
-    `INSERT INTO fp1_venue_reserve_logs(venue_id,reserve_start,reserve_end) VALUES ($1,$2,$3)`,
-    [venueId, start.toISOString(), end.toISOString()]
-  );
+  await pool.query(`INSERT INTO fp1_venue_reserve_logs(venue_id,reserve_start,reserve_end) VALUES ($1,$2,$3)`, [
+    venueId,
+    start.toISOString(),
+    end.toISOString(),
+  ]);
   return { ok: true };
 }
 
@@ -495,17 +607,13 @@ async function setLimited(venueId, reason, hours) {
   const until = new Date(now.getTime() + dur * 60 * 60 * 1000);
 
   const wk = warsawWeekKey(now);
-  const c = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM fp1_venue_limited_logs WHERE venue_id=$1 AND week_key=$2`,
-    [venueId, wk]
-  );
+  const c = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_venue_limited_logs WHERE venue_id=$1 AND week_key=$2`, [
+    venueId,
+    wk,
+  ]);
   if (c.rows[0].c >= 2) return { ok: false, msg: "Limit: max 2 / tydzień (Mon–Sun Warsaw)." };
 
-  await pool.query(`UPDATE fp1_venues SET limited_reason=$1,limited_until=$2 WHERE id=$3`, [
-    r,
-    until.toISOString(),
-    venueId,
-  ]);
+  await pool.query(`UPDATE fp1_venues SET limited_reason=$1,limited_until=$2 WHERE id=$3`, [r, until.toISOString(), venueId]);
   await pool.query(
     `INSERT INTO fp1_venue_limited_logs(venue_id,week_key,reason,until_at) VALUES ($1,$2,$3,$4)`,
     [venueId, wk, r, until.toISOString()]
@@ -520,7 +628,7 @@ async function clearLimited(venueId) {
 
 /* ---------------- Routes ---------------- */
 app.get("/", (req, res) => res.send("OK"));
-app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V6_OK"));
+app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V7_OK"));
 
 app.get("/health", async (req, res) => {
   try {
@@ -634,11 +742,15 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
 
   const reserveStatus =
     v.reserve_start && v.reserve_end
-      ? `ZAPLANOWANA: ${new Intl.DateTimeFormat("pl-PL", { timeZone: "Europe/Warsaw", dateStyle: "short", timeStyle: "medium" }).format(
-          new Date(v.reserve_start)
-        )} → ${new Intl.DateTimeFormat("pl-PL", { timeZone: "Europe/Warsaw", dateStyle: "short", timeStyle: "medium" }).format(
-          new Date(v.reserve_end)
-        )}`
+      ? `ZAPLANOWANA: ${new Intl.DateTimeFormat("pl-PL", {
+          timeZone: "Europe/Warsaw",
+          dateStyle: "short",
+          timeStyle: "medium",
+        }).format(new Date(v.reserve_start))} → ${new Intl.DateTimeFormat("pl-PL", {
+          timeZone: "Europe/Warsaw",
+          dateStyle: "short",
+          timeStyle: "medium",
+        }).format(new Date(v.reserve_end))}`
       : "Brak";
 
   const limitedStatus =
@@ -730,7 +842,6 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const r = await confirmOtp(venueId, otp);
     if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP nie znaleziono albo wygasł.")}`);
 
-    // notify telegram (safe)
     if (bot) {
       try {
         const v = await getVenue(venueId);
@@ -838,20 +949,51 @@ if (BOT_TOKEN) {
     }
   });
 
+  // /start OR /start CODE (redeem)
   bot.start(async (ctx) => {
     try {
       const fox = await upsertFox(ctx);
+
+      // Parse invite code from /start payload
+      const text = String(ctx.message && ctx.message.text ? ctx.message.text : "").trim();
+      const parts = text.split(/\s+/);
+      const maybeCode = parts[1] ? String(parts[1]).trim() : "";
+
+      let inviteMsg = "";
+      if (maybeCode) {
+        const rr = await redeemInviteCode(String(ctx.from.id), maybeCode);
+        if (rr.ok) {
+          inviteMsg = `\n✅ Інвайт-код прийнято: ${String(maybeCode).toUpperCase()}\nТепер ти можеш оформити участь у клубі.\n`;
+        } else if (rr.reason === "ALREADY_USED_BY_YOU") {
+          inviteMsg = `\nℹ️ Ти вже використовував цей код.\n`;
+        } else if (rr.reason === "EXHAUSTED") {
+          inviteMsg = `\n❌ Цей код уже використано.\n`;
+        } else {
+          inviteMsg = `\n❌ Невірний інвайт-код.\n`;
+        }
+      }
+
       const total = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [
         String(ctx.from.id),
       ]);
+
+      // refresh fox after possible invite link
+      const fox2 = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(ctx.from.id)]);
+      const f = fox2.rows[0] || fox;
+
+      const invitedByLine = f.invited_by_user_id
+        ? `Invited by: ${f.invited_by_user_id}\n`
+        : "";
+
       await ctx.reply(
         `🦊 Твій профіль
-Rating: ${fox.rating}
-Invites: ${fox.invites}
-Місто: ${fox.city}
+Rating: ${f.rating}
+Invites: ${f.invites}
+Місто: ${f.city}
 Counted visits всього: ${total.rows[0].c}
-
+${invitedByLine}${inviteMsg}
 Команди:
+/invite   (згенерувати інвайт-код)
 /checkin <venue_id>
 /venues
 /panel`
@@ -868,6 +1010,36 @@ Counted visits всього: ${total.rows[0].c}
     const r = await pool.query(`SELECT id,name,city FROM fp1_venues ORDER BY id ASC LIMIT 50`);
     const lines = r.rows.map((v) => `• ID ${v.id}: ${v.name} (${v.city})`);
     await ctx.reply(`🏪 Lokale:\n${lines.join("\n")}\n\nCheck-in: /checkin <venue_id>`);
+  });
+
+  // ✅ NEW: /invite
+  bot.command("invite", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      await upsertFox(ctx);
+
+      const created = await createInviteFromFox(userId);
+      if (!created.ok) {
+        if (created.reason === "NO_INVITES") {
+          return ctx.reply("❌ У тебе зараз 0 інвайтів.\nОтримаєш +1 інвайт за кожні 5 підтверджених візитів.");
+        }
+        return ctx.reply("❌ Не вдалося створити інвайт. Спробуй ще раз.");
+      }
+
+      return ctx.reply(
+        `✅ Інвайт-код створено (1 раз):
+${created.code}
+
+Як використовувати:
+Нехай новий Fox напише боту:
+ /start ${created.code}
+
+У тебе залишилось інвайтів: ${created.invites_left}`
+      );
+    } catch (e) {
+      console.error("INVITE_ERR", e);
+      await ctx.reply("❌ Помилка створення інвайту.");
+    }
   });
 
   bot.command("checkin", async (ctx) => {
@@ -911,10 +1083,8 @@ Panel: ${PUBLIC_URL}/panel`
     }
   });
 
-  // ✅ MAIN FIX: Telegram sends POST -> handleUpdate directly (no 404)
+  // ✅ MAIN webhook route (no 404)
   app.post(`/${WEBHOOK_SECRET}`, (req, res) => bot.handleUpdate(req.body, res));
-
-  // Optional: quick manual check in browser (Telegram still uses POST)
   app.get(`/${WEBHOOK_SECRET}`, (req, res) => res.type("text/plain").send("WEBHOOK_ENDPOINT_OK"));
 }
 
@@ -923,7 +1093,6 @@ Panel: ${PUBLIC_URL}/panel`
   try {
     await migrate();
 
-    // Do NOT kill server if webhook set fails
     if (bot && PUBLIC_URL) {
       const hookUrl = `${PUBLIC_URL}/${WEBHOOK_SECRET}`;
       try {
