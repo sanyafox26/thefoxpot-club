@@ -272,8 +272,11 @@ async function ensureSchema() {
   await db(`CREATE INDEX IF NOT EXISTS fp1_idx_checkins_expires
             ON ${T.checkins}(expires_at);`);
 
-  // UNIQUE constraint required for ON CONFLICT DO NOTHING (race condition fix)
-  await db(`CREATE UNIQUE INDEX IF NOT EXISTS fp1_idx_counted_unique
+  // Migration fix: drop old non-unique index created by v1 (if exists)
+  await db(`DROP INDEX IF EXISTS fp1_idx_counted_unique;`);
+
+  // Create proper UNIQUE index (required for ON CONFLICT DO NOTHING)
+  await db(`CREATE UNIQUE INDEX IF NOT EXISTS fp1_uniq_counted
             ON ${T.counted}(venue_id, user_id, day_key);`);
 
   // Seed 2 test venues if table is empty
