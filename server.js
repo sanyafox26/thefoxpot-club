@@ -1084,3 +1084,25 @@ Panel: ${PUBLIC_URL}/panel`
     process.exit(1);
   }
 })();
+app.get("/fix-invites", async (req, res) => {
+  try {
+    await pool.query(`
+      ALTER TABLE fp1_invites
+      ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT;
+    `);
+
+    await pool.query(`
+      ALTER TABLE fp1_invites
+      ADD COLUMN IF NOT EXISTS max_uses INT NOT NULL DEFAULT 1;
+    `);
+
+    await pool.query(`
+      ALTER TABLE fp1_invites
+      ADD COLUMN IF NOT EXISTS uses INT NOT NULL DEFAULT 0;
+    `);
+
+    res.json({ ok: true, msg: "Invites table fixed" });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message) });
+  }
+});
