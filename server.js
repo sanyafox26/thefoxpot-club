@@ -953,3 +953,15 @@ app.get("/reset-pin", async (req, res) => {
     res.status(500).json({ ok: false, error: String(e.message) });
   }
 });
+app.get("/debug-counted-structure", async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_name='fp1_counted_visits'
+    `);
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
