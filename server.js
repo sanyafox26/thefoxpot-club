@@ -943,11 +943,11 @@ app.get("/reset-pin", async (req, res) => {
     const salt = crypto.randomBytes(16).toString("hex");
     const hash = crypto.createHmac("sha256", salt).update(newPin).digest("hex");
 
-    await pool.query(
-      `UPDATE fp1_venues SET pin_hash=$1, pin_salt=$2 WHERE id=$3`,
-      [hash, salt, venueId]
-    );
-
+await pool.query(
+  `INSERT INTO fp1_counted_visits(venue_id, user_id, war_day, day_key)
+   VALUES ($1,$2,$3,$3)`,
+  [venueId, userId, warDay]
+);
     res.json({ ok: true, msg: "PIN reset to 123456 for venue 1" });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message) });
