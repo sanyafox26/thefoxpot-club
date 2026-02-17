@@ -948,6 +948,7 @@ await pool.query(
    VALUES ($1,$2,$3,$3)`,
   [venueId, userId, warDay]
 );
+  
     res.json({ ok: true, msg: "PIN reset to 123456 for venue 1" });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message) });
