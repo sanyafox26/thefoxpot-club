@@ -1,13 +1,9 @@
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9)
- * FULL MVP + FIX:
- * - /invite uses ONE pg client transaction (pool.connect()) => no Pool transaction bug
- * - /start <CODE> redeems 1-time invite
- * - checkin OTP (10 min) + panel confirm + counted/day + DZIŚ JUŻ BYŁO ✅
- * - X/Y lifetime
- * - reserve + limited statuses (with limits & logs)
- * - webhook endpoint OK (no 404)
- * - auto +1 invite per each 5 counted visits (safe, no duplicates)
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.1)
+ * FIX/ADD:
+ * - Better diagnostics for /invite (returns PG error code + message in Telegram)
+ * - /myid command
+ * - Rest = FULL Phase 1 MVP (panel/checkin/X/Y/reserve/limited/invites)
  *
  * Dependencies: express, telegraf, pg, crypto
  */
@@ -103,7 +99,6 @@ async function ensureColumn(table, col, ddl) {
   }
 }
 
-// IMPORTANT: do not kill server if index creation fails
 async function ensureIndexSafe(sql) {
   try {
     await pool.query(sql);
@@ -127,7 +122,6 @@ function genInviteCode(len = 10) {
 
 /* ---------------- MIGRATIONS (SAFE) ---------------- */
 async function migrate() {
-  // Core tables
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_venues (
       id BIGSERIAL PRIMARY KEY,
@@ -206,7 +200,6 @@ async function migrate() {
     )
   `);
 
-  // Invites
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_invites (
       id BIGSERIAL PRIMARY KEY,
@@ -228,7 +221,6 @@ async function migrate() {
     )
   `);
 
-  // Ensure columns (for older schemas)
   await ensureColumn("fp1_counted_visits", "war_day", "TEXT");
   await ensureColumn("fp1_checkins", "war_day", "TEXT");
   await ensureColumn("fp1_foxes", "invites_from_5visits", "INT NOT NULL DEFAULT 0");
@@ -236,7 +228,6 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "invite_code_used", "TEXT");
   await ensureColumn("fp1_foxes", "invite_used_at", "TIMESTAMPTZ");
 
-  // Backfill war_day for old rows
   await pool.query(`
     UPDATE fp1_counted_visits
     SET war_day = to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD')
@@ -249,7 +240,6 @@ async function migrate() {
     WHERE war_day IS NULL
   `);
 
-  // Seed test venues
   const v = await pool.query("SELECT COUNT(*)::int AS c FROM fp1_venues");
   if (v.rows[0].c === 0) {
     const pin = "123456";
@@ -264,7 +254,6 @@ async function migrate() {
     );
   }
 
-  // Indexes
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp ON fp1_checkins(otp)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires ON fp1_checkins(expires_at)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_counted_u ON fp1_counted_visits(venue_id, war_day, user_id)`);
@@ -434,7 +423,6 @@ async function listPending(venueId) {
 }
 
 async function awardInvitesFrom5VisitsIfNeeded(userId) {
-  // Safe: grants only missing invites based on total_counted/5, tracked in invites_from_5visits
   const totalR = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [String(userId)]);
   const total = totalR.rows[0].c;
 
@@ -487,10 +475,8 @@ async function confirmOtp(venueId, otp) {
     ]);
     countedAdded = true;
 
-    // rating +1 on counted visit
     await pool.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
 
-    // +1 invite per 5 counted visits (safe)
     const aw = await awardInvitesFrom5VisitsIfNeeded(userId);
     inviteAutoAdded = aw.added || 0;
   }
@@ -538,7 +524,6 @@ async function createInviteFromFox(userId) {
   const fox = foxR.rows[0];
   if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES", fox };
 
-  // generate unique code
   let code = null;
   for (let i = 0; i < 12; i++) {
     const c = genInviteCode(10);
@@ -550,7 +535,6 @@ async function createInviteFromFox(userId) {
   }
   if (!code) return { ok: false, reason: "CODE_GEN_FAIL" };
 
-  // ✅ FIX: transaction on ONE client connection
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -595,7 +579,7 @@ async function setReserve(venueId, startIso, hours) {
   const dur = Math.max(1, Math.min(24, parseInt(hours, 10) || 24));
   const end = new Date(start.getTime() + dur * 60 * 60 * 1000);
 
-  const monthKey = warsawDayKey(now).slice(0, 7); // YYYY-MM
+  const monthKey = warsawDayKey(now).slice(0, 7);
   const c = await pool.query(
     `SELECT COUNT(*)::int AS c
      FROM fp1_venue_reserve_logs
@@ -651,7 +635,7 @@ async function clearLimited(venueId) {
 
 /* ---------------- Routes ---------------- */
 app.get("/", (req, res) => res.send("OK"));
-app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_OK"));
+app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_1_OK"));
 
 app.get("/health", async (req, res) => {
   try {
@@ -662,7 +646,7 @@ app.get("/health", async (req, res) => {
   }
 });
 
-/* ---------------- Panel ---------------- */
+/* ---------------- Panel (same as V9) ---------------- */
 app.get("/panel", async (req, res) => {
   const sess = verifySession(getCookie(req));
   if (sess) return res.redirect("/panel/dashboard");
@@ -852,7 +836,6 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   );
 });
 
-/* Panel actions */
 let bot = null;
 
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
@@ -942,9 +925,13 @@ app.post("/panel/limited/clear", requirePanelAuth, async (req, res) => {
   }
 });
 
-/* ---------------- Telegram bot ---------------- */
+/* ---------------- Telegram ---------------- */
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
+
+  bot.command("myid", async (ctx) => {
+    await ctx.reply(`Ваш TG ID: ${ctx.from.id}`);
+  });
 
   bot.start(async (ctx) => {
     try {
@@ -1006,7 +993,7 @@ Counted visits всього: ${total.rows[0].c}${inviteMsg}
         if (created.reason === "NO_INVITES") {
           return ctx.reply("❌ У тебе зараз 0 інвайтів.\nОтримаєш +1 інвайт за кожні 5 підтверджених візитів.");
         }
-        return ctx.reply("❌ Не вдалося створити інвайт. Спробуй ще раз.");
+        return ctx.reply(`❌ Не вдалося створити інвайт. Причина: ${created.reason || "UNKNOWN"}`);
       }
 
       return ctx.reply(
@@ -1019,8 +1006,14 @@ ${created.code}
 У тебе залишилось інвайтів: ${created.invites_left}`
       );
     } catch (e) {
-      console.error("INVITE_ERR", e);
-      await ctx.reply("❌ Помилка створення інвайту.");
+      // ✅ DIAGNOSTICS
+      const pgCode = e && e.code ? String(e.code) : "NO_PG_CODE";
+      const msg = e && e.message ? String(e.message) : String(e);
+      const short = msg.length > 200 ? msg.slice(0, 200) + "…" : msg;
+
+      console.error("INVITE_ERR", { pgCode, msg }, e);
+
+      await ctx.reply(`❌ Помилка створення інвайту.\nPG: ${pgCode}\nMSG: ${short}`);
     }
   });
 
@@ -1065,10 +1058,7 @@ Panel: ${PUBLIC_URL}/panel`
     }
   });
 
-  // webhook handler (Telegraf)
   app.use(bot.webhookCallback(`/${WEBHOOK_SECRET}`));
-
-  // extra GET for debugging (so Telegram never sees 404 if you open it)
   app.get(`/${WEBHOOK_SECRET}`, (req, res) => res.type("text/plain").send("WEBHOOK_ENDPOINT_OK"));
 }
 
