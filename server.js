@@ -898,9 +898,11 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           <div>
             <label>Emoji</label>
             <select name="emoji">
-              <option>⭐</option><option>🍕</option><option>🍜</option><option>🥩</option>
-              <option>🍺</option><option>☕</option><option>🎁</option><option>🔥</option>
-              <option>💎</option><option>🦊</option>
+              <option>⭐</option><option>🦊</option><option>🔥</option><option>🎁</option><option>💎</option><option>🏆</option><option>👑</option><option>❤️</option>
+              <option>🍕</option><option>🍔</option><option>🌭</option><option>🍟</option><option>🍣</option><option>🍱</option><option>🍜</option><option>🍝</option>
+              <option>🥩</option><option>🍗</option><option>🥗</option><option>🥪</option><option>🌮</option><option>🌯</option><option>🥐</option><option>🍰</option>
+              <option>🎂</option><option>🧁</option><option>🍩</option><option>🍪</option><option>🍦</option><option>🍫</option>
+              <option>🍺</option><option>🍻</option><option>🍷</option><option>🍸</option><option>☕</option><option>🧋</option><option>🥤</option><option>🍹</option>
             </select>
           </div>
           <div>
@@ -1029,7 +1031,7 @@ app.post("/panel/status/cancel", requirePanelAuth, async (req, res) => {
 app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
   const userId  = String(req.body.user_id || "").trim();
-  const emoji   = ["⭐","🍕","🍜","🥩","🍺","☕","🎁","🔥","💎","🦊"].includes(req.body.emoji)
+  const emoji   = ["⭐","🦊","🔥","🎁","💎","🏆","👑","❤️","🍕","🍔","🌭","🍟","🍣","🍱","🍜","🍝","🥩","🍗","🥗","🥪","🌮","🌯","🥐","🍰","🎂","🧁","🍩","🍪","🍦","🍫","🍺","🍻","🍷","🍸","☕","🧋","🥤","🍹"].includes(req.body.emoji)
     ? req.body.emoji : "⭐";
   const delta   = Number(req.body.delta) === -1 ? -1 : 1;
   const note    = String(req.body.note || "").trim().slice(0, 100);
