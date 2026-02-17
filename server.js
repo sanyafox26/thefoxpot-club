@@ -1,9 +1,10 @@
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.3)
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.4)
  * FIX:
- * - /invite now respects REAL DB constraints:
- *   If fp1_invites has NOT NULL column created_by_tg -> we always write it (tg id).
- *   Also supports created_by_fox_id and created_by_user_id if present.
+ * - Confirm OTP works with REAL fp1_counted_visits schema (day_key NOT NULL case).
+ * - Auto-detects which day column is used: day_key OR war_day.
+ * - Inserts both day_key and war_day if present.
+ * - Panel confirm shows PG error code/message for fast debugging.
  *
  * Dependencies: express, telegraf, pg, crypto
  */
@@ -56,21 +57,6 @@ function warsawDayKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-function warsawDow(d = new Date()) {
-  const w = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Warsaw", weekday: "short" }).format(d);
-  const map = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-  return map[w] || 1;
-}
-
-function warsawWeekKey(d = new Date()) {
-  const key = warsawDayKey(d);
-  const [yy, mm, dd] = key.split("-").map((x) => parseInt(x, 10));
-  const base = new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
-  const dow = warsawDow(base);
-  const monday = new Date(base.getTime() - (dow - 1) * 86400000);
-  return warsawDayKey(monday);
-}
-
 /* ---------------- schema helpers ---------------- */
 async function hasColumn(table, col) {
   const r = await pool.query(
@@ -115,6 +101,9 @@ function genInviteCode(len = 10) {
   return out;
 }
 
+/* ---------------- Globals detected at runtime ---------------- */
+let COUNTED_DAY_COL = "war_day"; // will be detected in migrate()
+
 /* ---------------- MIGRATIONS ---------------- */
 async function migrate() {
   await ensureTable(`
@@ -124,10 +113,6 @@ async function migrate() {
       city TEXT NOT NULL DEFAULT 'Warsaw',
       pin_hash TEXT,
       pin_salt TEXT,
-      reserve_start TIMESTAMPTZ,
-      reserve_end TIMESTAMPTZ,
-      limited_reason TEXT,
-      limited_until TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
@@ -153,7 +138,6 @@ async function migrate() {
       id BIGSERIAL PRIMARY KEY,
       venue_id BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
       user_id BIGINT,
-      fox_id BIGINT,
       otp TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       expires_at TIMESTAMPTZ NOT NULL,
@@ -167,35 +151,13 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS fp1_counted_visits (
       id BIGSERIAL PRIMARY KEY,
       venue_id BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
-      user_id BIGINT,
-      fox_id BIGINT,
+      user_id BIGINT NOT NULL,
       war_day TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
-  await ensureTable(`
-    CREATE TABLE IF NOT EXISTS fp1_venue_reserve_logs (
-      id BIGSERIAL PRIMARY KEY,
-      venue_id BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
-      reserve_start TIMESTAMPTZ NOT NULL,
-      reserve_end TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await ensureTable(`
-    CREATE TABLE IF NOT EXISTS fp1_venue_limited_logs (
-      id BIGSERIAL PRIMARY KEY,
-      venue_id BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
-      week_key TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      until_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  // Invites tables (may already exist with different schema — we adapt at runtime)
+  // Invites (adaptive)
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_invites (
       id BIGSERIAL PRIMARY KEY,
@@ -216,24 +178,33 @@ async function migrate() {
     )
   `);
 
-  await ensureColumn("fp1_counted_visits", "war_day", "TEXT");
+  // Ensure columns
   await ensureColumn("fp1_checkins", "war_day", "TEXT");
+  await ensureColumn("fp1_counted_visits", "war_day", "TEXT");
   await ensureColumn("fp1_foxes", "invites_from_5visits", "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes", "invited_by_user_id", "BIGINT");
   await ensureColumn("fp1_foxes", "invite_code_used", "TEXT");
   await ensureColumn("fp1_foxes", "invite_used_at", "TIMESTAMPTZ");
 
+  // Backfill war_day safely (if column exists)
   await pool.query(`
     UPDATE fp1_counted_visits
     SET war_day = to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD')
     WHERE war_day IS NULL
   `);
+
   await pool.query(`
     UPDATE fp1_checkins
     SET war_day = to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD')
     WHERE war_day IS NULL
   `);
 
+  // Detect which day column is mandatory in counted visits
+  const hasDayKey = await hasColumn("fp1_counted_visits", "day_key");
+  COUNTED_DAY_COL = hasDayKey ? "day_key" : "war_day";
+  console.log("✅ COUNTED_DAY_COL =", COUNTED_DAY_COL);
+
+  // Seed venues if empty (does NOT override existing)
   const v = await pool.query("SELECT COUNT(*)::int AS c FROM fp1_venues");
   if (v.rows[0].c === 0) {
     const pin = "123456";
@@ -250,10 +221,7 @@ async function migrate() {
 
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp ON fp1_checkins(otp)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires ON fp1_checkins(expires_at)`);
-  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_counted_u ON fp1_counted_visits(venue_id, war_day, user_id)`);
   await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_invites_code ON fp1_invites(code)`);
-  await ensureIndexSafe(`CREATE INDEX IF NOT EXISTS idx_fp1_invite_uses_usedby ON fp1_invite_uses(used_by_user_id, used_at)`);
-
   console.log("✅ Migrations OK");
 }
 
@@ -330,7 +298,7 @@ body{margin:0;font-family:system-ui;background:#0f1220;color:#fff}
 .card{background:#14182b;border:1px solid #2a2f49;border-radius:14px;padding:16px;margin:12px 0}
 h1{font-size:18px;margin:0 0 10px}
 label{display:block;font-size:12px;opacity:.8;margin:10px 0 6px}
-input,select,button{width:100%;padding:10px;border-radius:10px;border:1px solid #2a2f49;background:#0b0e19;color:#fff}
+input,button{width:100%;padding:10px;border-radius:10px;border:1px solid #2a2f49;background:#0b0e19;color:#fff}
 button{background:#6e56ff;border:none;font-weight:700;cursor:pointer}
 .muted{opacity:.75;font-size:12px}
 .topbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -372,9 +340,11 @@ async function upsertFox(ctx) {
 
 async function hasCountedToday(venueId, userId) {
   const day = warsawDayKey(new Date());
+  const col = COUNTED_DAY_COL; // day_key OR war_day
+
   const r = await pool.query(
-    `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND war_day=$2 AND user_id=$3 LIMIT 1`,
-    [venueId, day, userId]
+    `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${col}=$2 AND user_id=$3 LIMIT 1`,
+    [venueId, day, String(userId)]
   );
   return r.rowCount > 0;
 }
@@ -382,7 +352,7 @@ async function hasCountedToday(venueId, userId) {
 async function countXY(venueId, userId) {
   const x = await pool.query(
     `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND user_id=$2`,
-    [venueId, userId]
+    [venueId, String(userId)]
   );
   const y = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
   return { X: x.rows[0].c, Y: y.rows[0].c };
@@ -397,7 +367,7 @@ async function createCheckin(venueId, userId) {
   const r = await pool.query(
     `INSERT INTO fp1_checkins(venue_id, user_id, otp, expires_at, war_day)
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [venueId, userId, otp, expires.toISOString(), warDay]
+    [venueId, String(userId), otp, expires.toISOString(), warDay]
   );
   return r.rows[0];
 }
@@ -436,146 +406,100 @@ async function awardInvitesFrom5VisitsIfNeeded(userId) {
   return { added: 0, total };
 }
 
+async function insertCountedVisit(venueId, userId, day) {
+  // Insert must satisfy REAL schema. If day_key exists and NOT NULL -> write it.
+  const hasDayKey = COUNTED_DAY_COL === "day_key";
+  const hasWarDay = await hasColumn("fp1_counted_visits", "war_day");
+
+  const cols = ["venue_id", "user_id"];
+  const vals = [venueId, String(userId)];
+  let i = 3;
+
+  if (hasDayKey) {
+    cols.push("day_key");
+    vals.push(day);
+    i++;
+  }
+  if (hasWarDay) {
+    cols.push("war_day");
+    vals.push(day);
+    i++;
+  }
+
+  const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(",");
+  const sql = `INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES (${placeholders})`;
+  await pool.query(sql, vals);
+}
+
 async function confirmOtp(venueId, otp) {
   const now = await dbNow();
   const pending = await pool.query(
     `SELECT * FROM fp1_checkins
      WHERE venue_id=$1 AND otp=$2 AND confirmed_at IS NULL AND expires_at > $3
      ORDER BY created_at DESC LIMIT 1`,
-    [venueId, otp, now]
+    [venueId, String(otp), now]
   );
   if (pending.rowCount === 0) return { ok: false, code: "NOT_FOUND" };
 
   const row = pending.rows[0];
   const userId = String(row.user_id);
-  const warDay = row.war_day || warsawDayKey(new Date());
+  const day = row.war_day || warsawDayKey(new Date());
 
-  await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
-
-  const exists = await pool.query(
-    `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND war_day=$2 AND user_id=$3 LIMIT 1`,
-    [venueId, warDay, userId]
-  );
-
-  let countedAdded = false;
-  let inviteAutoAdded = 0;
-
-  if (exists.rowCount === 0) {
-    await pool.query(`INSERT INTO fp1_counted_visits(venue_id, user_id, war_day) VALUES ($1,$2,$3)`, [
-      venueId,
-      userId,
-      warDay,
-    ]);
-    countedAdded = true;
-
-    await pool.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
-
-    const aw = await awardInvitesFrom5VisitsIfNeeded(userId);
-    inviteAutoAdded = aw.added || 0;
-  }
-
-  return { ok: true, userId, warDay, countedAdded, inviteAutoAdded };
-}
-
-/* ---------------- Invite logic (ADAPTIVE to REAL schema) ---------------- */
-async function redeemInviteCode(userId, codeRaw) {
-  const code = String(codeRaw || "").trim().toUpperCase();
-  if (!code) return { ok: false, reason: "NO_CODE" };
-
-  const inv = await pool.query(`SELECT * FROM fp1_invites WHERE code=$1 LIMIT 1`, [code]);
-  if (inv.rowCount === 0) return { ok: false, reason: "NOT_FOUND" };
-  const invite = inv.rows[0];
-
-  const usedByThis = await pool.query(
-    `SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`,
-    [invite.id, String(userId)]
-  );
-  if (usedByThis.rowCount > 0) return { ok: false, reason: "ALREADY_USED_BY_YOU", invite };
-
-  if (Number(invite.uses) >= Number(invite.max_uses)) return { ok: false, reason: "EXHAUSTED", invite };
-
-  await pool.query(`INSERT INTO fp1_invite_uses(invite_id, used_by_user_id) VALUES ($1,$2)`, [invite.id, String(userId)]);
-  await pool.query(`UPDATE fp1_invites SET uses = uses + 1 WHERE id=$1`, [invite.id]);
-
-  const createdByUser = invite.created_by_user_id ? String(invite.created_by_user_id) : null;
-  await pool.query(
-    `
-    UPDATE fp1_foxes
-    SET invited_by_user_id = COALESCE(invited_by_user_id, $1),
-        invite_code_used   = COALESCE(invite_code_used, $2),
-        invite_used_at     = COALESCE(invite_used_at, NOW())
-    WHERE user_id = $3
-  `,
-    [createdByUser, code, String(userId)]
-  );
-
-  return { ok: true, invite };
-}
-
-async function createInviteFromFox(tgUserId) {
-  const userId = String(tgUserId);
-
-  const foxRow = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-  if (foxRow.rowCount === 0) return { ok: false, reason: "NO_FOX" };
-  const fox = foxRow.rows[0];
-  if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES" };
-
-  const foxId = fox.id ? Number(fox.id) : null;
-
-  // Generate unique code
-  let code = null;
-  for (let i = 0; i < 20; i++) {
-    const c = genInviteCode(10);
-    const exists = await pool.query(`SELECT 1 FROM fp1_invites WHERE code=$1 LIMIT 1`, [c]);
-    if (exists.rowCount === 0) {
-      code = c;
-      break;
-    }
-  }
-  if (!code) return { ok: false, reason: "CODE_GEN_FAIL" };
-
-  // Detect real columns in fp1_invites
-  const has_created_by_tg = await hasColumn("fp1_invites", "created_by_tg");
-  const has_created_by_fox_id = await hasColumn("fp1_invites", "created_by_fox_id");
-  const has_created_by_user_id = await hasColumn("fp1_invites", "created_by_user_id");
-
-  const cols = ["code", "max_uses", "uses"];
-  const vals = [code, 1, 0];
-
-  // IMPORTANT: satisfy NOT NULL constraints if such columns exist
-  if (has_created_by_tg) {
-    cols.push("created_by_tg");
-    vals.push(Number(userId));
-  }
-  if (has_created_by_fox_id) {
-    cols.push("created_by_fox_id");
-    vals.push(foxId ? foxId : 0);
-  }
-  if (has_created_by_user_id) {
-    cols.push("created_by_user_id");
-    vals.push(Number(userId));
-  }
-
-  const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
-  const sql = `INSERT INTO fp1_invites(${cols.join(",")}) VALUES (${placeholders})`;
+  // Debounce: one/day/venue/user
+  const already = await hasCountedToday(venueId, userId);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const dec = await client.query(
-      `UPDATE fp1_foxes SET invites = invites - 1 WHERE user_id=$1 AND invites > 0 RETURNING invites`,
-      [userId]
-    );
-    if (dec.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return { ok: false, reason: "NO_INVITES" };
+    // Mark confirmed always (even if already counted, staff confirmed the OTP)
+    await client.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [
+      venueId,
+      row.id,
+    ]);
+
+    let countedAdded = false;
+    let inviteAutoAdded = 0;
+
+    if (!already) {
+      // Insert counted visit satisfying REAL schema
+      // Use pool-level helper (but execute with transaction client)
+      // We'll rebuild SQL here using same rules:
+      const hasDayKey = COUNTED_DAY_COL === "day_key";
+      const hasWarDay = await hasColumn("fp1_counted_visits", "war_day");
+
+      const cols = ["venue_id", "user_id"];
+      const vals = [venueId, userId];
+
+      if (hasDayKey) {
+        cols.push("day_key");
+        vals.push(day);
+      }
+      if (hasWarDay) {
+        cols.push("war_day");
+        vals.push(day);
+      }
+
+      const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(",");
+      const sql = `INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES (${placeholders})`;
+      await client.query(sql, vals);
+
+      countedAdded = true;
+
+      await client.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
+
+      // invites from 5 visits (outside transaction is fine, but keep consistent)
+      // We'll do it after COMMIT using pool (safe), but we need totals correct; it's OK.
     }
 
-    await client.query(sql, vals);
-
     await client.query("COMMIT");
-    return { ok: true, code, invites_left: dec.rows[0].invites };
+
+    if (countedAdded) {
+      const aw = await awardInvitesFrom5VisitsIfNeeded(userId);
+      inviteAutoAdded = aw.added || 0;
+    }
+
+    return { ok: true, userId, day, countedAdded, inviteAutoAdded };
   } catch (e) {
     try {
       await client.query("ROLLBACK");
@@ -588,7 +512,7 @@ async function createInviteFromFox(tgUserId) {
 
 /* ---------------- Routes ---------------- */
 app.get("/", (req, res) => res.send("OK"));
-app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_3_OK"));
+app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_4_OK"));
 
 app.get("/health", async (req, res) => {
   try {
@@ -599,23 +523,30 @@ app.get("/health", async (req, res) => {
   }
 });
 
-/**
- * TEMP FIX ROUTE: make sure common columns exist (does NOT remove NOT NULL constraints).
- */
-app.get("/fix-invites", async (req, res) => {
+// Debug (optional): see which day column is used
+app.get("/debug", async (req, res) => {
   try {
-    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT;`);
-    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS created_by_fox_id BIGINT;`);
-    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS created_by_tg BIGINT;`);
-    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS max_uses INT NOT NULL DEFAULT 1;`);
-    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS uses INT NOT NULL DEFAULT 0;`);
-    res.json({ ok: true, msg: "Invites table fixed (v9.3)" });
+    res.json({ ok: true, COUNTED_DAY_COL });
   } catch (e) {
-    res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-/* ---------------- Panel (minimal, stable) ---------------- */
+// PIN reset helper (venue 1)
+app.get("/reset-pin", async (req, res) => {
+  try {
+    const venueId = 1;
+    const newPin = "123456";
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = crypto.createHmac("sha256", salt).update(newPin).digest("hex");
+    await pool.query(`UPDATE fp1_venues SET pin_hash=$1, pin_salt=$2 WHERE id=$3`, [hash, salt, venueId]);
+    res.json({ ok: true, msg: "PIN reset to 123456 for venue 1" });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message) });
+  }
+});
+
+/* ---------------- Panel ---------------- */
 app.get("/panel", async (req, res) => {
   const sess = verifySession(getCookie(req));
   if (sess) return res.redirect("/panel/dashboard");
@@ -730,13 +661,14 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           <div><a href="/panel/logout">Wyloguj</a></div>
         </div>
         ${ok}${err}
+        <div class="muted" style="margin-top:10px">COUNTED_DAY_COL: ${escapeHtml(COUNTED_DAY_COL)}</div>
       </div>
 
       <div class="card">
         <h1>Confirm OTP</h1>
         <form method="POST" action="/panel/confirm">
           <label>OTP (6 cyfr)</label>
-          <input name="otp" required placeholder="np. 874940" inputmode="numeric"/>
+          <input name="otp" required placeholder="np. 341913" inputmode="numeric"/>
           <button type="submit">Confirm</button>
           <div class="muted" style="margin-top:10px">OTP ważny 10 minut.</div>
         </form>
@@ -753,7 +685,6 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   );
 });
 
-/* confirm route uses existing confirmOtp; Telegram notify below */
 let bot = null;
 
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
@@ -763,6 +694,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const r = await confirmOtp(venueId, otp);
     if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP nie znaleziono albo wygasł.")}`);
 
+    // notify telegram (safe)
     if (bot) {
       try {
         const v = await getVenue(venueId);
@@ -771,7 +703,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
           Number(r.userId),
           `✅ Confirm OK
 🏪 ${v.name}
-📅 Day (Warszawa): ${r.warDay}
+📅 Day (Warszawa): ${r.day}
 📊 X/Y: ${xy.X}/${xy.Y}`
         );
       } catch (e) {
@@ -781,12 +713,121 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
 
     return res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Confirm OK")}`);
   } catch (e) {
-    console.error("CONFIRM_ERR", e);
-    return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Błąd potwierdzenia OTP.")}`);
+    const pgCode = e && e.code ? String(e.code) : "NO_PG_CODE";
+    const msg = e && e.message ? String(e.message) : String(e);
+    console.error("CONFIRM_ERR", { pgCode, msg }, e);
+    return res.redirect(
+      `/panel/dashboard?err=${encodeURIComponent(`Confirm error. PG:${pgCode} MSG:${msg.slice(0, 160)}`)}`
+    );
   }
 });
 
 /* ---------------- Telegram ---------------- */
+async function redeemInviteCode(userId, codeRaw) {
+  const code = String(codeRaw || "").trim().toUpperCase();
+  if (!code) return { ok: false, reason: "NO_CODE" };
+
+  const inv = await pool.query(`SELECT * FROM fp1_invites WHERE code=$1 LIMIT 1`, [code]);
+  if (inv.rowCount === 0) return { ok: false, reason: "NOT_FOUND" };
+  const invite = inv.rows[0];
+
+  const usedByThis = await pool.query(
+    `SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`,
+    [invite.id, String(userId)]
+  );
+  if (usedByThis.rowCount > 0) return { ok: false, reason: "ALREADY_USED_BY_YOU", invite };
+
+  if (Number(invite.uses) >= Number(invite.max_uses)) return { ok: false, reason: "EXHAUSTED", invite };
+
+  await pool.query(`INSERT INTO fp1_invite_uses(invite_id, used_by_user_id) VALUES ($1,$2)`, [invite.id, String(userId)]);
+  await pool.query(`UPDATE fp1_invites SET uses = uses + 1 WHERE id=$1`, [invite.id]);
+
+  const createdByUser = invite.created_by_user_id ? String(invite.created_by_user_id) : null;
+  await pool.query(
+    `
+    UPDATE fp1_foxes
+    SET invited_by_user_id = COALESCE(invited_by_user_id, $1),
+        invite_code_used   = COALESCE(invite_code_used, $2),
+        invite_used_at     = COALESCE(invite_used_at, NOW())
+    WHERE user_id = $3
+  `,
+    [createdByUser, code, String(userId)]
+  );
+
+  return { ok: true, invite };
+}
+
+async function createInviteFromFox(tgUserId) {
+  const userId = String(tgUserId);
+
+  const foxRow = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+  if (foxRow.rowCount === 0) return { ok: false, reason: "NO_FOX" };
+  const fox = foxRow.rows[0];
+  if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES" };
+
+  const foxId = fox.id ? Number(fox.id) : null;
+
+  let code = null;
+  for (let i = 0; i < 20; i++) {
+    const c = genInviteCode(10);
+    const exists = await pool.query(`SELECT 1 FROM fp1_invites WHERE code=$1 LIMIT 1`, [c]);
+    if (exists.rowCount === 0) {
+      code = c;
+      break;
+    }
+  }
+  if (!code) return { ok: false, reason: "CODE_GEN_FAIL" };
+
+  const has_created_by_tg = await hasColumn("fp1_invites", "created_by_tg");
+  const has_created_by_fox_id = await hasColumn("fp1_invites", "created_by_fox_id");
+  const has_created_by_user_id = await hasColumn("fp1_invites", "created_by_user_id");
+
+  const cols = ["code", "max_uses", "uses"];
+  const vals = [code, 1, 0];
+
+  if (has_created_by_tg) {
+    cols.push("created_by_tg");
+    vals.push(Number(userId));
+  }
+  if (has_created_by_fox_id) {
+    cols.push("created_by_fox_id");
+    vals.push(foxId ? foxId : 0);
+  }
+  if (has_created_by_user_id) {
+    cols.push("created_by_user_id");
+    vals.push(Number(userId));
+  }
+
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+  const sql = `INSERT INTO fp1_invites(${cols.join(",")}) VALUES (${placeholders})`;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const dec = await client.query(
+      `UPDATE fp1_foxes SET invites = invites - 1 WHERE user_id=$1 AND invites > 0 RETURNING invites`,
+      [userId]
+    );
+    if (dec.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "NO_INVITES" };
+    }
+
+    await client.query(sql, vals);
+
+    await client.query("COMMIT");
+    return { ok: true, code, invites_left: dec.rows[0].invites };
+  } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
@@ -935,34 +976,3 @@ Panel: ${PUBLIC_URL}/panel`
     process.exit(1);
   }
 })();
-app.get("/reset-pin", async (req, res) => {
-  try {
-    const venueId = 1;
-    const newPin = "123456";
-
-    const salt = crypto.randomBytes(16).toString("hex");
-    const hash = crypto.createHmac("sha256", salt).update(newPin).digest("hex");
-
-await pool.query(
-  `INSERT INTO fp1_counted_visits(venue_id, user_id, war_day, day_key)
-   VALUES ($1,$2,$3,$3)`,
-  [venueId, userId, warDay]
-);
-  
-    res.json({ ok: true, msg: "PIN reset to 123456 for venue 1" });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message) });
-  }
-});
-app.get("/debug-counted-structure", async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT column_name, is_nullable
-      FROM information_schema.columns
-      WHERE table_name='fp1_counted_visits'
-    `);
-    res.json(r.rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
