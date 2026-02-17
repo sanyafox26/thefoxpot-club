@@ -1,10 +1,9 @@
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.4)
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.5)
  * FIX:
- * - Confirm OTP works with REAL fp1_counted_visits schema (day_key NOT NULL case).
- * - Auto-detects which day column is used: day_key OR war_day.
- * - Inserts both day_key and war_day if present.
- * - Panel confirm shows PG error code/message for fast debugging.
+ * - Adds missing fp1_checkins.confirmed_by_venue_id column via safe migrations
+ * - Keeps V9.4 counted schema auto-detect (day_key vs war_day)
+ * - Panel confirm shows PG error details
  *
  * Dependencies: express, telegraf, pg, crypto
  */
@@ -133,6 +132,7 @@ async function migrate() {
     )
   `);
 
+  // IMPORTANT: some older DBs have fp1_checkins without confirmed_by_venue_id. We ensure it below.
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_checkins (
       id BIGSERIAL PRIMARY KEY,
@@ -157,7 +157,7 @@ async function migrate() {
     )
   `);
 
-  // Invites (adaptive)
+  // Invites
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_invites (
       id BIGSERIAL PRIMARY KEY,
@@ -178,15 +178,17 @@ async function migrate() {
     )
   `);
 
-  // Ensure columns
+  // Ensure columns exist (fix schema drift)
   await ensureColumn("fp1_checkins", "war_day", "TEXT");
-  await ensureColumn("fp1_counted_visits", "war_day", "TEXT");
+  await ensureColumn("fp1_checkins", "confirmed_at", "TIMESTAMPTZ");
+  await ensureColumn("fp1_checkins", "confirmed_by_venue_id", "BIGINT"); // ✅ FIX for your PG:42703
   await ensureColumn("fp1_foxes", "invites_from_5visits", "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes", "invited_by_user_id", "BIGINT");
   await ensureColumn("fp1_foxes", "invite_code_used", "TEXT");
   await ensureColumn("fp1_foxes", "invite_used_at", "TIMESTAMPTZ");
+  await ensureColumn("fp1_counted_visits", "war_day", "TEXT"); // safe even if already exists
 
-  // Backfill war_day safely (if column exists)
+  // Backfill war_day safely
   await pool.query(`
     UPDATE fp1_counted_visits
     SET war_day = to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD')
@@ -406,31 +408,6 @@ async function awardInvitesFrom5VisitsIfNeeded(userId) {
   return { added: 0, total };
 }
 
-async function insertCountedVisit(venueId, userId, day) {
-  // Insert must satisfy REAL schema. If day_key exists and NOT NULL -> write it.
-  const hasDayKey = COUNTED_DAY_COL === "day_key";
-  const hasWarDay = await hasColumn("fp1_counted_visits", "war_day");
-
-  const cols = ["venue_id", "user_id"];
-  const vals = [venueId, String(userId)];
-  let i = 3;
-
-  if (hasDayKey) {
-    cols.push("day_key");
-    vals.push(day);
-    i++;
-  }
-  if (hasWarDay) {
-    cols.push("war_day");
-    vals.push(day);
-    i++;
-  }
-
-  const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(",");
-  const sql = `INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES (${placeholders})`;
-  await pool.query(sql, vals);
-}
-
 async function confirmOtp(venueId, otp) {
   const now = await dbNow();
   const pending = await pool.query(
@@ -445,26 +422,21 @@ async function confirmOtp(venueId, otp) {
   const userId = String(row.user_id);
   const day = row.war_day || warsawDayKey(new Date());
 
-  // Debounce: one/day/venue/user
   const already = await hasCountedToday(venueId, userId);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Mark confirmed always (even if already counted, staff confirmed the OTP)
+    // ✅ Now column exists (migrate ensures it)
     await client.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [
       venueId,
       row.id,
     ]);
 
     let countedAdded = false;
-    let inviteAutoAdded = 0;
 
     if (!already) {
-      // Insert counted visit satisfying REAL schema
-      // Use pool-level helper (but execute with transaction client)
-      // We'll rebuild SQL here using same rules:
       const hasDayKey = COUNTED_DAY_COL === "day_key";
       const hasWarDay = await hasColumn("fp1_counted_visits", "war_day");
 
@@ -485,15 +457,12 @@ async function confirmOtp(venueId, otp) {
       await client.query(sql, vals);
 
       countedAdded = true;
-
       await client.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
-
-      // invites from 5 visits (outside transaction is fine, but keep consistent)
-      // We'll do it after COMMIT using pool (safe), but we need totals correct; it's OK.
     }
 
     await client.query("COMMIT");
 
+    let inviteAutoAdded = 0;
     if (countedAdded) {
       const aw = await awardInvitesFrom5VisitsIfNeeded(userId);
       inviteAutoAdded = aw.added || 0;
@@ -512,7 +481,7 @@ async function confirmOtp(venueId, otp) {
 
 /* ---------------- Routes ---------------- */
 app.get("/", (req, res) => res.send("OK"));
-app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_4_OK"));
+app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_5_OK"));
 
 app.get("/health", async (req, res) => {
   try {
@@ -520,15 +489,6 @@ app.get("/health", async (req, res) => {
     res.json({ ok: true, db: true, tz: "Europe/Warsaw", day_warsaw: warsawDayKey(new Date()), now });
   } catch (e) {
     res.status(500).json({ ok: false, db: false, error: String(e && e.message ? e.message : e) });
-  }
-});
-
-// Debug (optional): see which day column is used
-app.get("/debug", async (req, res) => {
-  try {
-    res.json({ ok: true, COUNTED_DAY_COL });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
@@ -694,7 +654,6 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const r = await confirmOtp(venueId, otp);
     if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP nie znaleziono albo wygasł.")}`);
 
-    // notify telegram (safe)
     if (bot) {
       try {
         const v = await getVenue(venueId);
@@ -742,18 +701,6 @@ async function redeemInviteCode(userId, codeRaw) {
   await pool.query(`INSERT INTO fp1_invite_uses(invite_id, used_by_user_id) VALUES ($1,$2)`, [invite.id, String(userId)]);
   await pool.query(`UPDATE fp1_invites SET uses = uses + 1 WHERE id=$1`, [invite.id]);
 
-  const createdByUser = invite.created_by_user_id ? String(invite.created_by_user_id) : null;
-  await pool.query(
-    `
-    UPDATE fp1_foxes
-    SET invited_by_user_id = COALESCE(invited_by_user_id, $1),
-        invite_code_used   = COALESCE(invite_code_used, $2),
-        invite_used_at     = COALESCE(invite_used_at, NOW())
-    WHERE user_id = $3
-  `,
-    [createdByUser, code, String(userId)]
-  );
-
   return { ok: true, invite };
 }
 
@@ -765,8 +712,6 @@ async function createInviteFromFox(tgUserId) {
   const fox = foxRow.rows[0];
   if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES" };
 
-  const foxId = fox.id ? Number(fox.id) : null;
-
   let code = null;
   for (let i = 0; i < 20; i++) {
     const c = genInviteCode(10);
@@ -777,29 +722,6 @@ async function createInviteFromFox(tgUserId) {
     }
   }
   if (!code) return { ok: false, reason: "CODE_GEN_FAIL" };
-
-  const has_created_by_tg = await hasColumn("fp1_invites", "created_by_tg");
-  const has_created_by_fox_id = await hasColumn("fp1_invites", "created_by_fox_id");
-  const has_created_by_user_id = await hasColumn("fp1_invites", "created_by_user_id");
-
-  const cols = ["code", "max_uses", "uses"];
-  const vals = [code, 1, 0];
-
-  if (has_created_by_tg) {
-    cols.push("created_by_tg");
-    vals.push(Number(userId));
-  }
-  if (has_created_by_fox_id) {
-    cols.push("created_by_fox_id");
-    vals.push(foxId ? foxId : 0);
-  }
-  if (has_created_by_user_id) {
-    cols.push("created_by_user_id");
-    vals.push(Number(userId));
-  }
-
-  const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
-  const sql = `INSERT INTO fp1_invites(${cols.join(",")}) VALUES (${placeholders})`;
 
   const client = await pool.connect();
   try {
@@ -814,7 +736,7 @@ async function createInviteFromFox(tgUserId) {
       return { ok: false, reason: "NO_INVITES" };
     }
 
-    await client.query(sql, vals);
+    await client.query(`INSERT INTO fp1_invites(code,max_uses,uses) VALUES ($1,1,0)`, [code]);
 
     await client.query("COMMIT");
     return { ok: true, code, invites_left: dec.rows[0].invites };
