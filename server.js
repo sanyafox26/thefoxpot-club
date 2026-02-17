@@ -1,9 +1,9 @@
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.2)
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js (V9.3)
  * FIX:
- * - /invite now writes created_by_fox_id (because your fp1_invites requires it NOT NULL)
- * - /fix-invites updated to ensure needed columns exist (created_by_fox_id + defaults)
- * - Keeps diagnostics in Telegram for fast PG debugging
+ * - /invite now respects REAL DB constraints:
+ *   If fp1_invites has NOT NULL column created_by_tg -> we always write it (tg id).
+ *   Also supports created_by_fox_id and created_by_user_id if present.
  *
  * Dependencies: express, telegraf, pg, crypto
  */
@@ -91,9 +91,7 @@ async function ensureTable(sql) {
 
 async function ensureColumn(table, col, ddl) {
   const exists = await hasColumn(table, col);
-  if (!exists) {
-    await pool.query(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
-  }
+  if (!exists) await pool.query(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
 }
 
 async function ensureIndexSafe(sql) {
@@ -197,14 +195,11 @@ async function migrate() {
     )
   `);
 
-  // We keep CREATE TABLE IF NOT EXISTS for invites, but your existing table may be older.
-  // We'll ensure columns via ensureColumn + /fix-invites route (runtime).
+  // Invites tables (may already exist with different schema — we adapt at runtime)
   await ensureTable(`
     CREATE TABLE IF NOT EXISTS fp1_invites (
       id BIGSERIAL PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
-      created_by_fox_id BIGINT NOT NULL,
-      created_by_user_id BIGINT,
       max_uses INT NOT NULL DEFAULT 1,
       uses INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -375,12 +370,6 @@ async function upsertFox(ctx) {
   return rr.rows[0];
 }
 
-async function getFoxIdByUserId(userId) {
-  const r = await pool.query(`SELECT id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
-  if (r.rowCount === 0) return null;
-  return Number(r.rows[0].id);
-}
-
 async function hasCountedToday(venueId, userId) {
   const day = warsawDayKey(new Date());
   const r = await pool.query(
@@ -488,7 +477,7 @@ async function confirmOtp(venueId, otp) {
   return { ok: true, userId, warDay, countedAdded, inviteAutoAdded };
 }
 
-/* ---------------- Invite logic (FIXED to use created_by_fox_id) ---------------- */
+/* ---------------- Invite logic (ADAPTIVE to REAL schema) ---------------- */
 async function redeemInviteCode(userId, codeRaw) {
   const code = String(codeRaw || "").trim().toUpperCase();
   if (!code) return { ok: false, reason: "NO_CODE" };
@@ -508,7 +497,6 @@ async function redeemInviteCode(userId, codeRaw) {
   await pool.query(`INSERT INTO fp1_invite_uses(invite_id, used_by_user_id) VALUES ($1,$2)`, [invite.id, String(userId)]);
   await pool.query(`UPDATE fp1_invites SET uses = uses + 1 WHERE id=$1`, [invite.id]);
 
-  // Store inviter info on fox profile (optional, safe)
   const createdByUser = invite.created_by_user_id ? String(invite.created_by_user_id) : null;
   await pool.query(
     `
@@ -524,17 +512,19 @@ async function redeemInviteCode(userId, codeRaw) {
   return { ok: true, invite };
 }
 
-async function createInviteFromFox(userId) {
-  const foxRow = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
+async function createInviteFromFox(tgUserId) {
+  const userId = String(tgUserId);
+
+  const foxRow = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
   if (foxRow.rowCount === 0) return { ok: false, reason: "NO_FOX" };
   const fox = foxRow.rows[0];
-  if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES", fox };
+  if (Number(fox.invites) <= 0) return { ok: false, reason: "NO_INVITES" };
 
-  const foxId = Number(fox.id);
-  if (!foxId) return { ok: false, reason: "NO_FOX_ID" };
+  const foxId = fox.id ? Number(fox.id) : null;
 
+  // Generate unique code
   let code = null;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 20; i++) {
     const c = genInviteCode(10);
     const exists = await pool.query(`SELECT 1 FROM fp1_invites WHERE code=$1 LIMIT 1`, [c]);
     if (exists.rowCount === 0) {
@@ -544,36 +534,45 @@ async function createInviteFromFox(userId) {
   }
   if (!code) return { ok: false, reason: "CODE_GEN_FAIL" };
 
+  // Detect real columns in fp1_invites
+  const has_created_by_tg = await hasColumn("fp1_invites", "created_by_tg");
+  const has_created_by_fox_id = await hasColumn("fp1_invites", "created_by_fox_id");
+  const has_created_by_user_id = await hasColumn("fp1_invites", "created_by_user_id");
+
+  const cols = ["code", "max_uses", "uses"];
+  const vals = [code, 1, 0];
+
+  // IMPORTANT: satisfy NOT NULL constraints if such columns exist
+  if (has_created_by_tg) {
+    cols.push("created_by_tg");
+    vals.push(Number(userId));
+  }
+  if (has_created_by_fox_id) {
+    cols.push("created_by_fox_id");
+    vals.push(foxId ? foxId : 0);
+  }
+  if (has_created_by_user_id) {
+    cols.push("created_by_user_id");
+    vals.push(Number(userId));
+  }
+
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(",");
+  const sql = `INSERT INTO fp1_invites(${cols.join(",")}) VALUES (${placeholders})`;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const dec = await client.query(
       `UPDATE fp1_foxes SET invites = invites - 1 WHERE user_id=$1 AND invites > 0 RETURNING invites`,
-      [String(userId)]
+      [userId]
     );
     if (dec.rowCount === 0) {
       await client.query("ROLLBACK");
       return { ok: false, reason: "NO_INVITES" };
     }
 
-    // ✅ IMPORTANT: fill created_by_fox_id (NOT NULL in your DB)
-    // also store created_by_user_id if column exists
-    const hasCreatedByUser = await hasColumn("fp1_invites", "created_by_user_id");
-
-    if (hasCreatedByUser) {
-      await client.query(
-        `INSERT INTO fp1_invites(code, created_by_fox_id, created_by_user_id, max_uses, uses)
-         VALUES ($1,$2,$3,1,0)`,
-        [code, foxId, String(userId)]
-      );
-    } else {
-      await client.query(
-        `INSERT INTO fp1_invites(code, created_by_fox_id, max_uses, uses)
-         VALUES ($1,$2,1,0)`,
-        [code, foxId]
-      );
-    }
+    await client.query(sql, vals);
 
     await client.query("COMMIT");
     return { ok: true, code, invites_left: dec.rows[0].invites };
@@ -589,7 +588,7 @@ async function createInviteFromFox(userId) {
 
 /* ---------------- Routes ---------------- */
 app.get("/", (req, res) => res.send("OK"));
-app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_2_OK"));
+app.get("/version", (req, res) => res.type("text/plain").send("FP_SERVER_V9_3_OK"));
 
 app.get("/health", async (req, res) => {
   try {
@@ -601,30 +600,22 @@ app.get("/health", async (req, res) => {
 });
 
 /**
- * TEMP FIX ROUTE (safe): aligns fp1_invites schema with current expectations.
- * After everything works, we can remove it.
+ * TEMP FIX ROUTE: make sure common columns exist (does NOT remove NOT NULL constraints).
  */
 app.get("/fix-invites", async (req, res) => {
   try {
     await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT;`);
-
-    // Your DB expects created_by_fox_id NOT NULL:
-    // If column missing, add it as nullable first, then we will rely on app inserts to fill it.
-    const hasFoxId = await hasColumn("fp1_invites", "created_by_fox_id");
-    if (!hasFoxId) {
-      await pool.query(`ALTER TABLE fp1_invites ADD COLUMN created_by_fox_id BIGINT;`);
-    }
-
+    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS created_by_fox_id BIGINT;`);
+    await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS created_by_tg BIGINT;`);
     await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS max_uses INT NOT NULL DEFAULT 1;`);
     await pool.query(`ALTER TABLE fp1_invites ADD COLUMN IF NOT EXISTS uses INT NOT NULL DEFAULT 0;`);
-
-    res.json({ ok: true, msg: "Invites table fixed (v9.2)" });
+    res.json({ ok: true, msg: "Invites table fixed (v9.3)" });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
   }
 });
 
-/* ---------------- Panel + statuses + confirm (same as before, minimal) ---------------- */
+/* ---------------- Panel (minimal, stable) ---------------- */
 app.get("/panel", async (req, res) => {
   const sess = verifySession(getCookie(req));
   if (sess) return res.redirect("/panel/dashboard");
@@ -680,20 +671,25 @@ app.post("/panel/login", async (req, res) => {
       return res.redirect(`/panel?msg=${encodeURIComponent("Brak danych.")}`);
     }
 
-    const v = await getVenue(venueId);
-    if (!v || !v.pin_salt || !v.pin_hash) {
+    const v = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
+    if (v.rowCount === 0) {
       loginBad(ip);
-      return res.redirect(`/panel?msg=${encodeURIComponent("Nie znaleziono lokalu / brak PIN.")}`);
+      return res.redirect(`/panel?msg=${encodeURIComponent("Nie znaleziono lokalu.")}`);
+    }
+    const venue = v.rows[0];
+    if (!venue.pin_salt || !venue.pin_hash) {
+      loginBad(ip);
+      return res.redirect(`/panel?msg=${encodeURIComponent("Brak PIN w lokalu.")}`);
     }
 
-    const calc = pinHash(pin, v.pin_salt);
-    if (calc !== v.pin_hash) {
+    const calc = pinHash(pin, venue.pin_salt);
+    if (calc !== venue.pin_hash) {
       loginBad(ip);
       return res.redirect(`/panel?msg=${encodeURIComponent("Błędny PIN.")}`);
     }
 
     loginOk(ip);
-    const token = signSession({ venue_id: String(v.id), exp: Date.now() + SESSION_TTL_MS });
+    const token = signSession({ venue_id: String(venue.id), exp: Date.now() + SESSION_TTL_MS });
     setCookie(res, token);
     return res.redirect("/panel/dashboard");
   } catch (e) {
@@ -757,6 +753,9 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   );
 });
 
+/* confirm route uses existing confirmOtp; Telegram notify below */
+let bot = null;
+
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
   const otp = String(req.body.otp || "").trim();
@@ -788,12 +787,8 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
 });
 
 /* ---------------- Telegram ---------------- */
-let bot = null;
-
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
-
-  bot.command("myid", async (ctx) => ctx.reply(`Ваш TG ID: ${ctx.from.id}`));
 
   bot.start(async (ctx) => {
     try {
@@ -806,8 +801,7 @@ if (BOT_TOKEN) {
       let inviteMsg = "";
       if (maybeCode) {
         const rr = await redeemInviteCode(String(ctx.from.id), maybeCode);
-        if (rr.ok) inviteMsg = `\n✅ Інвайт-код прийнято: ${String(maybeCode).toUpperCase()}\n`;
-        else inviteMsg = `\n❌ Невірний інвайт-код.\n`;
+        inviteMsg = rr.ok ? `\n✅ Інвайт-код прийнято: ${String(maybeCode).toUpperCase()}\n` : `\n❌ Невірний інвайт-код.\n`;
       }
 
       const fox2 = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(ctx.from.id)]);
