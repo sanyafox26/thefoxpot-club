@@ -8612,14 +8612,7 @@ Panel: ${PUBLIC_URL}/panel`
     process.exit(1);
   }
 })();
-Після деплою
-Напиши сюди одним рядком результат:
 
-що показав /version
-
-і що відповів бот на /invite
-
-Як тільки /invite працює — наступний locked крок: +1 invite за кожні 5 counted visits автоматично при confirm.
 
 
 
