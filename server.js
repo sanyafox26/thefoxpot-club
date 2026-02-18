@@ -1,13 +1,18 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V12.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V13.0
  *
- * НОВИНКИ V12:
- *  ✅ Founder Fox (#1–1000) — унікальний номер назавжди
+ * НОВИНКИ V13:
+ *  ✅ Район проживання (district) при реєстрації
+ *  ✅ /settings — перегляд і зміна району
+ *  ✅ Inline keyboard для вибору району
+ *  ✅ ensureColumn district TEXT в fp1_foxes
+ *
+ * V12 (залишається без змін):
+ *  ✅ Founder Fox (#1–1000)
  *  ✅ assignFounderNumber() — атомарна функція
  *  ✅ Badge у профілі: 👑 FOUNDER FOX #47
- *  ✅ Модифікований bot.start (реєстрація + профіль)
  *
  * V11 (залишається без змін):
  *  ✅ Referral system (Fox invite + Restaurant code)
@@ -19,8 +24,8 @@
 
 const express  = require("express");
 const crypto   = require("crypto");
-const { Telegraf } = require("telegraf");
-const { Pool }     = require("pg");
+const { Telegraf, Markup } = require("telegraf");
+const { Pool }             = require("pg");
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -56,6 +61,48 @@ const pool = new Pool({
 async function dbNow() {
   const r = await pool.query("SELECT NOW() AS now");
   return r.rows[0].now;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   V13: РАЙОНИ ВАРШАВИ
+═══════════════════════════════════════════════════════════════ */
+const WARSAW_DISTRICTS = [
+  "Śródmieście",
+  "Praga-Południe",
+  "Mokotów",
+  "Żoliborz",
+  "Wola",
+  "Ursynów",
+  "Praga-Północ",
+  "Targówek",
+  "Bielany",
+  "Bemowo",
+  "Białołęka",
+  "Wilanów",
+  "Inny район",
+];
+
+/**
+ * Надсилає inline keyboard з вибором району.
+ * mode: "register" (перший раз) | "change" (з /settings)
+ */
+async function sendDistrictKeyboard(ctx, mode = "register") {
+  const text = mode === "register"
+    ? `📍 Останній крок!\n\nВ якому районі Варшави ти живеш?\n\n(Це допомагає нам знаходити заклади поруч з тобою)`
+    : `📍 Вибери свій район:`;
+
+  // Робимо по 2 кнопки в ряд, останній ("Інший") — окремо
+  const buttons = [];
+  const main = WARSAW_DISTRICTS.slice(0, -1); // без "Інший"
+  for (let i = 0; i < main.length; i += 2) {
+    const row = [Markup.button.callback(main[i], `district_${main[i]}`)];
+    if (main[i + 1]) row.push(Markup.button.callback(main[i + 1], `district_${main[i + 1]}`));
+    buttons.push(row);
+  }
+  // "Інший район" — окремий рядок
+  buttons.push([Markup.button.callback("🗺️ Інший район", `district_Інший район`)]);
+
+  await ctx.reply(text, Markup.inlineKeyboard(buttons));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -259,10 +306,13 @@ async function migrate() {
   await ensureColumn("fp1_foxes",           "referred_by_venue",    "BIGINT");
 
   // ── V12: Founder Fox колонки ─────────────────────────────────
-  await ensureColumn("fp1_foxes", "founder_number",      "INT");
-  await ensureColumn("fp1_foxes", "founder_registered_at", "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes", "founder_number",       "INT");
+  await ensureColumn("fp1_foxes", "founder_registered_at","TIMESTAMPTZ");
 
-  // Унікальний індекс для founder_number (тільки для не-null значень)
+  // ── V13: Район проживання ────────────────────────────────────
+  await ensureColumn("fp1_foxes", "district", "TEXT");
+
+  // Унікальний індекс для founder_number
   await ensureIndex(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_founder_number
      ON fp1_foxes(founder_number)
@@ -293,8 +343,7 @@ async function migrate() {
     WHERE war_day IS NULL
   `);
 
-  // Backfill founder_number для існуючих Fox (хто зареєструвався до V12)
-  // Присвоюємо номери в порядку created_at, тільки перші 1000
+  // Backfill founder_number для існуючих Fox
   await pool.query(`
     WITH ranked AS (
       SELECT user_id,
@@ -337,7 +386,7 @@ async function migrate() {
     console.log("✅ Seeded test venues (PIN: 123456)");
   }
 
-  console.log("✅ Migrations OK (V12)");
+  console.log("✅ Migrations OK (V13)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -345,16 +394,11 @@ async function migrate() {
 ═══════════════════════════════════════════════════════════════ */
 const FOUNDER_LIMIT = 1000;
 
-/**
- * Атомарно присвоює наступний вільний Founder номер (1–1000).
- * Повертає номер або null якщо місць немає.
- */
 async function assignFounderNumber(userId) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Перевіряємо чи вже є номер
     const check = await client.query(
       `SELECT founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`,
       [String(userId)]
@@ -364,7 +408,6 @@ async function assignFounderNumber(userId) {
       return check.rows[0].founder_number;
     }
 
-    // Знаходимо наступний вільний номер
     const nextNum = await client.query(`
       SELECT n AS num
       FROM generate_series(1, $1) AS n
@@ -378,11 +421,10 @@ async function assignFounderNumber(userId) {
 
     if (nextNum.rowCount === 0) {
       await client.query("ROLLBACK");
-      return null; // Всі 1000 місць зайняті
+      return null;
     }
 
     const num = nextNum.rows[0].num;
-
     await client.query(
       `UPDATE fp1_foxes
        SET founder_number=$1, founder_registered_at=NOW()
@@ -401,17 +443,11 @@ async function assignFounderNumber(userId) {
   }
 }
 
-/**
- * Повертає badge-рядок для профілю або порожній рядок.
- */
 function founderBadge(num) {
   if (!num) return "";
   return `👑 FOUNDER FOX #${num}`;
 }
 
-/**
- * Скільки Founder місць залишилось.
- */
 async function founderSpotsLeft() {
   const r = await pool.query(
     `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE founder_number IS NOT NULL`
@@ -883,7 +919,7 @@ async function getGrowthLeaderboard(limit = 10) {
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V12_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V13_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1272,12 +1308,21 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
      GROUP BY v.id ORDER BY visits DESC LIMIT 50`
   );
   const foxes = await pool.query(
-    `SELECT user_id, username, rating, invites, city, founder_number, created_at
+    `SELECT user_id, username, rating, invites, city, district, founder_number, created_at
      FROM fp1_foxes ORDER BY rating DESC LIMIT 50`
   );
 
   const growth = await getGrowthLeaderboard(10);
   const spotsLeft = await founderSpotsLeft();
+
+  // Статистика по районах
+  const districtStats = await pool.query(
+    `SELECT district, COUNT(*)::int AS cnt
+     FROM fp1_foxes
+     WHERE district IS NOT NULL
+     GROUP BY district
+     ORDER BY cnt DESC`
+  );
 
   const pendingHtml = pending.rows.length === 0
     ? `<div class="muted">Немає заявок</div>`
@@ -1311,6 +1356,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       <td>${f.rating}</td>
       <td>${f.invites}</td>
       <td>${escapeHtml(f.city)}</td>
+      <td>${escapeHtml(f.district || "—")}</td>
       <td>${f.founder_number ? `<span style="color:#ffd700">👑 #${f.founder_number}</span>` : `<span class="muted">—</span>`}</td>
     </tr>`).join("");
 
@@ -1320,6 +1366,12 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       <td>${escapeHtml(g.name)}</td>
       <td>${escapeHtml(g.city)}</td>
       <td><b>${g.new_fox}</b></td>
+    </tr>`).join("");
+
+  const districtHtml = districtStats.rows.map(d => `
+    <tr>
+      <td>${escapeHtml(d.district)}</td>
+      <td><b>${d.cnt}</b></td>
     </tr>`).join("");
 
   res.send(pageShell("Admin — FoxPot", `
@@ -1348,6 +1400,14 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     </div>
 
     <div class="card">
+      <h2>📍 Density по районах</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="opacity:.6"><th>Район</th><th>Fox</th></tr>
+        ${districtHtml || '<tr><td colspan="2" class="muted">Ще немає даних</td></tr>'}
+      </table>
+    </div>
+
+    <div class="card">
       <h2>Активні заклади</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <tr style="opacity:.6"><th>ID</th><th>Назва</th><th>Місто</th><th>Візити</th><th>Статус</th></tr>
@@ -1358,7 +1418,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card">
       <h2>Fox (топ 50 за рейтингом)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>TG ID</th><th>Нік</th><th>Рейтинг</th><th>Інвайти</th><th>Місто</th><th>Founder</th></tr>
+        <tr style="opacity:.6"><th>TG ID</th><th>Нік</th><th>Рейтинг</th><th>Інвайти</th><th>Місто</th><th>Район</th><th>Founder</th></tr>
         ${foxesHtml}
       </table>
     </div>`, `
@@ -1437,11 +1497,12 @@ if (BOT_TOKEN) {
         profileMsg += `Рейтинг: ${f.rating}\n`;
         profileMsg += `Інвайти: ${f.invites}\n`;
         profileMsg += `Місто: ${f.city}\n`;
+        profileMsg += `Район: ${f.district || "не вказано"}\n`;
         profileMsg += `Підтверджені візити: ${tot.rows[0].c}\n`;
         if (!f.founder_number && spotsLeft > 0) {
           profileMsg += `\n⚡ Founder місць залишилось: ${spotsLeft}`;
         }
-        profileMsg += `\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>`;
+        profileMsg += `\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>\n/settings`;
 
         return ctx.reply(profileMsg);
       }
@@ -1479,10 +1540,8 @@ if (BOT_TOKEN) {
 
         // Founder number
         const founderNum = await assignFounderNumber(userId);
-        const spotsLeft  = await founderSpotsLeft();
 
-        let replyMsg = `✅ Зареєстровано через ${v.name}!\n\n`;
-        replyMsg += `+5 інвайтів\n`;
+        let replyMsg = `✅ Зареєстровано через ${v.name}!\n\n+5 інвайтів\n`;
         if (founderNum) {
           replyMsg += `\n👑 Вітаємо! Ти FOUNDER FOX #${founderNum}!\nЦей номер твій назавжди.\n`;
         } else {
@@ -1490,7 +1549,11 @@ if (BOT_TOKEN) {
         }
         replyMsg += `\n/checkin ${v.id} — почни відвідування!`;
 
-        return ctx.reply(replyMsg);
+        await ctx.reply(replyMsg);
+
+        // Питаємо район після реєстрації
+        await sendDistrictKeyboard(ctx, "register");
+        return;
       }
 
       // ── Перевірка: інвайт-код від Fox ─────────────────────────
@@ -1508,17 +1571,18 @@ if (BOT_TOKEN) {
 
       // Founder number
       const founderNum = await assignFounderNumber(userId);
-      const spotsLeft  = await founderSpotsLeft();
 
       let replyMsg = `✅ Зареєстровано!\n\n+3 інвайти\n`;
       if (founderNum) {
         replyMsg += `\n👑 Вітаємо! Ти FOUNDER FOX #${founderNum}!\nЦей номер твій назавжди.\n`;
-      } else if (spotsLeft === 0) {
+      } else {
         replyMsg += `\n(Founder місця вже закінчились)\n`;
       }
-      replyMsg += `\nКоманди:\n/checkin <venue_id>\n/invite\n/venues`;
 
       await ctx.reply(replyMsg);
+
+      // Питаємо район після реєстрації
+      await sendDistrictKeyboard(ctx, "register");
 
     } catch (e) {
       console.error("START_ERR", e);
@@ -1526,10 +1590,84 @@ if (BOT_TOKEN) {
     }
   });
 
+  // ── /settings ─────────────────────────────────────────────────
+  bot.command("settings", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(
+        `SELECT district, city FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
+      );
+
+      if (fox.rowCount === 0) {
+        return ctx.reply("❌ Спочатку зареєструйся через /start <КОД>");
+      }
+
+      const f = fox.rows[0];
+      const district = f.district || "не вказано";
+
+      await ctx.reply(
+        `⚙️ Налаштування\n\n📍 Район: ${district}\n🏙️ Місто: ${f.city || "Warsaw"}`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback("📍 Змінити район", "change_district")]
+        ])
+      );
+    } catch (e) {
+      console.error("SETTINGS_ERR", e);
+      await ctx.reply("Помилка. Спробуй ще раз.");
+    }
+  });
+
+  // ── Обробка вибору району ─────────────────────────────────────
+  // "change_district" — показати кнопки районів
+  bot.action("change_district", async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+      await sendDistrictKeyboard(ctx, "change");
+    } catch (e) {
+      console.error("CHANGE_DISTRICT_ERR", e);
+    }
+  });
+
+  // "district_<назва>" — зберегти район
+  bot.action(/^district_(.+)$/, async (ctx) => {
+    try {
+      const district = ctx.match[1];
+
+      // Валідація — тільки дозволені райони
+      if (!WARSAW_DISTRICTS.includes(district)) {
+        await ctx.answerCbQuery("❌ Невірний район");
+        return;
+      }
+
+      const userId = String(ctx.from.id);
+      await pool.query(
+        `UPDATE fp1_foxes SET district=$1 WHERE user_id=$2`,
+        [district, userId]
+      );
+
+      await ctx.answerCbQuery(`✅ Район збережено: ${district}`);
+
+      // Редагуємо попереднє повідомлення з кнопками
+      try {
+        await ctx.editMessageText(
+          `✅ Район збережено!\n\n📍 ${district}\n\nТепер ти будеш бачити заклади поруч з тобою.\n\nЗмінити: /settings`
+        );
+      } catch {
+        // Якщо не вдалось редагувати — надсилаємо нове
+        await ctx.reply(`✅ Район збережено: ${district}\n\nЗмінити: /settings`);
+      }
+    } catch (e) {
+      console.error("DISTRICT_ACTION_ERR", e);
+      await ctx.answerCbQuery("❌ Помилка. Спробуй ще раз.");
+    }
+  });
+
+  // ── /panel ────────────────────────────────────────────────────
   bot.command("panel", async (ctx) => {
     await ctx.reply(`Панель закладу: ${PUBLIC_URL}/panel`);
   });
 
+  // ── /venues ───────────────────────────────────────────────────
   bot.command("venues", async (ctx) => {
     const r = await pool.query(
       `SELECT id, name, city FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 50`
@@ -1538,6 +1676,7 @@ if (BOT_TOKEN) {
     await ctx.reply(`🏪 Заклади:\n${lines.join("\n")}\n\n/checkin <ID>`);
   });
 
+  // ── /invite ───────────────────────────────────────────────────
   bot.command("invite", async (ctx) => {
     try {
       await upsertFox(ctx);
@@ -1556,6 +1695,7 @@ if (BOT_TOKEN) {
     }
   });
 
+  // ── /checkin ──────────────────────────────────────────────────
   bot.command("checkin", async (ctx) => {
     try {
       const parts   = String(ctx.message?.text || "").trim().split(/\s+/);
@@ -1593,6 +1733,7 @@ if (BOT_TOKEN) {
     }
   });
 
+  // ── /stamps ───────────────────────────────────────────────────
   bot.command("stamps", async (ctx) => {
     try {
       const parts   = String(ctx.message?.text || "").trim().split(/\s+/);
@@ -1615,6 +1756,7 @@ if (BOT_TOKEN) {
     }
   });
 
+  // ── /addvenue ─────────────────────────────────────────────────
   bot.command("addvenue", async (ctx) => {
     await upsertFox(ctx);
     await ctx.reply(
@@ -1622,6 +1764,7 @@ if (BOT_TOKEN) {
     );
   });
 
+  // ── /newvenue ─────────────────────────────────────────────────
   bot.command("newvenue", async (ctx) => {
     try {
       await upsertFox(ctx);
@@ -1678,7 +1821,7 @@ if (BOT_TOKEN) {
       }
     }
 
-    app.listen(PORT, () => console.log(`✅ Server V12 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V13 listening on ${PORT}`));
   } catch (e) {
     console.error("BOOT_ERR", e);
     process.exit(1);
