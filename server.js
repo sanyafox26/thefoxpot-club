@@ -254,7 +254,23 @@ async function migrate() {
   await ensureColumn("fp1_venues",          "address",              "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",          "fox_nick",             "TEXT");
   await ensureColumn("fp1_venues",          "approved",             "BOOLEAN NOT NULL DEFAULT FALSE");
-
+// Після існуючих ensureColumn додай:
+await ensureColumn('fp1_venues', 'ref_code', 'TEXT UNIQUE');
+await ensureColumn('fp1_venues', 'staff_bonus_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE');
+await ensureColumn('fp1_venues', 'staff_bonus_amount', 'INT NOT NULL DEFAULT 2');
+await ensureColumn('fp1_foxes', 'referred_by_venue', 'BIGINT');
+  
+   // Generate ref_codes для існуючих venues
+const venuesNoCode = await pool.query(`SELECT id FROM fp1_venues WHERE ref_code IS NULL`);
+for (const v of venuesNoCode.rows) {
+  let code = null;
+  for (let i = 0; i < 20; i++) {
+    const c = genInviteCode(8);
+    const ex = await pool.query(`SELECT 1 FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [c]);
+    if (ex.rowCount === 0) { code = c; break; }
+  }
+  if (code) await pool.query(`UPDATE fp1_venues SET ref_code=$1 WHERE id=$2`, [code, v.id]);
+}
   // Backfill war_day
   await pool.query(`
     UPDATE fp1_counted_visits
@@ -1227,35 +1243,69 @@ let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
-  // /start — профіль + redeem invite
-  bot.start(async (ctx) => {
-    try {
-      await upsertFox(ctx);
-      const text      = String(ctx.message?.text || "").trim();
-      const maybeCode = text.split(/\s+/)[1] || "";
-      let inviteMsg   = "";
+ bot.start(async (ctx) => {
+  try {
+    const text = String(ctx.message?.text || '').trim();
+    const parts = text.split(/\s+/);
+    const codeOrInv = parts[1] || '';
+    const userId = String(ctx.from.id);
+    const username = ctx.from.username || null;
 
-      if (maybeCode) {
-        const rr = await redeemInviteCode(String(ctx.from.id), maybeCode);
-        inviteMsg = rr.ok
-          ? `\n✅ Інвайт-код прийнято!\n`
-          : `\n❌ Невірний або вже використаний код.\n`;
-      }
-
-      const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(ctx.from.id)]);
-      const f   = fox.rows[0];
-      const tot = await pool.query(
-        `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [String(ctx.from.id)]
+    // Перевірка чи Fox вже існує
+    const exists = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (exists.rowCount > 0) {
+      const f = exists.rows[0];
+      const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+      return ctx.reply(
+        `🦊 Твій профіль\n\nRating: ${f.rating}\nInvites: ${f.invites}\nМісто: ${f.city}\nCounted visits: ${tot.rows[0].c}\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>`
       );
-
-      await ctx.reply(
-        `🦊 Твій профіль${inviteMsg}\nRating: ${f.rating}\nInvites: ${f.invites}\nМісто: ${f.city}\nCounted visits: ${tot.rows[0].c}\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>\n/panel`
-      );
-    } catch (e) {
-      console.error("START_ERR", e);
-      await ctx.reply("Помилка. Спробуй ще раз.");
     }
-  });
+
+    // Новий Fox — треба код
+    if (!codeOrInv) {
+      return ctx.reply('🦊 FoxPot Club\n\nЩоб зареєструватись потрібен інвайт від Fox або код ресторану.\n\nВведи /start <CODE>');
+    }
+
+    // Спробувати як venue code
+    const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [codeOrInv.toUpperCase()]);
+    if (venue.rowCount > 0) {
+      // Venue code — +5 invites
+      await pool.query(
+        `INSERT INTO fp1_foxes(user_id, username, rating, invites, city, referred_by_venue)
+         VALUES ($1,$2,1,5,'Warsaw',$3)`,
+        [userId, username, venue.rows[0].id]
+      );
+      
+      // +1 Y для ресторану
+      const day = warsawDayKey();
+      await pool.query(
+        `INSERT INTO fp1_counted_visits(venue_id, user_id, war_day) VALUES ($1,$2,$3)`,
+        [venue.rows[0].id, userId, day]
+      );
+
+      return ctx.reply(
+        `✅ Зареєстровано через ${venue.rows[0].name}!\n\nТи отримав +5 invites!\n\n/checkin ${venue.rows[0].id} — почни відвідування!`
+      );
+    }
+
+    // Спробувати як Fox invite
+    const result = await redeemInviteCode(userId, codeOrInv);
+    if (!result.ok) {
+      return ctx.reply('❌ Невірний код. Потрібен інвайт від Fox або код ресторану.');
+    }
+
+    await pool.query(
+      `INSERT INTO fp1_foxes(user_id, username, rating, invites, city)
+       VALUES ($1,$2,1,3,'Warsaw') ON CONFLICT (user_id) DO NOTHING`,
+      [userId, username]
+    );
+
+    await ctx.reply(`✅ Зареєстровано!\n\n+3 invites\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues`);
+  } catch (e) {
+    console.error('START_ERR', e);
+    await ctx.reply('Помилка. Спробуй ще раз.');
+  }
+});
 
   // /panel
   bot.command("panel", async (ctx) => {
@@ -1418,6 +1468,41 @@ if (BOT_TOKEN) {
       }
     }
 
+   // === NEW FOX TRACKING ===
+async function countNewFoxThisMonth(venueId) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_foxes
+     WHERE referred_by_venue=$1
+       AND date_trunc('month', created_at AT TIME ZONE 'Europe/Warsaw')
+           = date_trunc('month', NOW() AT TIME ZONE 'Europe/Warsaw')`,
+    [venueId]
+  );
+  return r.rows[0].c;
+}
+
+async function countNewFoxTotal(venueId) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE referred_by_venue=$1`,
+    [venueId]
+  );
+  return r.rows[0].c;
+}
+
+async function getGrowthLeaderboard(limit = 10) {
+  const r = await pool.query(
+    `SELECT v.id, v.name, v.city, COUNT(f.id)::int AS new_fox
+     FROM fp1_venues v
+     LEFT JOIN fp1_foxes f ON f.referred_by_venue=v.id
+       AND date_trunc('month', f.created_at AT TIME ZONE 'Europe/Warsaw')
+           = date_trunc('month', NOW() AT TIME ZONE 'Europe/Warsaw')
+     WHERE v.approved=TRUE
+     GROUP BY v.id, v.name, v.city
+     ORDER BY new_fox DESC, v.name ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return r.rows;
+}  
     app.listen(PORT, () => console.log(`✅ Server listening on ${PORT}`));
   } catch (e) {
     console.error("BOOT_ERR", e);
