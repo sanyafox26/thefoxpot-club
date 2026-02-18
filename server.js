@@ -1,19 +1,15 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V10.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V11.0
  *
- * ЗМІНИ vs V9.4:
- *  ✅ FIX: otp6() — crypto.randomInt замість Math.random()
- *  ✅ FIX: /reset-pin видалено (безпека)
- *  ✅ FIX: COUNTED_DAY_COL fallback захист
- *  ✅ NEW: 📍 Rezerwa (статус закладу, 2×/міс, до 24h, мін. 24h наперед)
- *  ✅ NEW: Dziś ograniczone (2×/тиждень, до 3h, FULL/PRIVATE EVENT/KITCHEN LIMIT)
- *  ✅ NEW: Emoji-stamps (заклад нараховує/списує, Fox бачить баланс)
- *  ✅ NEW: Реєстрація закладу через бот (invite-only, Fox вводить nick)
- *  ✅ NEW: Admin panel /admin — approve/reject закладів, перегляд Fox
- *
- * Dependencies: express, telegraf, pg, crypto (вбудований)
+ * НОВИНКИ V11:
+ *  ✅ Referral system: тільки через Fox invite або Restaurant code
+ *  ✅ Restaurant code дає Fox +5 invites (замість 3)
+ *  ✅ Restaurant code дає ресторану +1 Y
+ *  ✅ New Fox tracker в панелі
+ *  ✅ Growth Leaderboard (тільки в панелі + адмін)
+ *  ✅ Staff bonus tracker (опціонально)
  */
 
 const express  = require("express");
@@ -254,23 +250,23 @@ async function migrate() {
   await ensureColumn("fp1_venues",          "address",              "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",          "fox_nick",             "TEXT");
   await ensureColumn("fp1_venues",          "approved",             "BOOLEAN NOT NULL DEFAULT FALSE");
-// Після існуючих ensureColumn додай:
-await ensureColumn('fp1_venues', 'ref_code', 'TEXT UNIQUE');
-await ensureColumn('fp1_venues', 'staff_bonus_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE');
-await ensureColumn('fp1_venues', 'staff_bonus_amount', 'INT NOT NULL DEFAULT 2');
-await ensureColumn('fp1_foxes', 'referred_by_venue', 'BIGINT');
-  
-   // Generate ref_codes для існуючих venues
-const venuesNoCode = await pool.query(`SELECT id FROM fp1_venues WHERE ref_code IS NULL`);
-for (const v of venuesNoCode.rows) {
-  let code = null;
-  for (let i = 0; i < 20; i++) {
-    const c = genInviteCode(8);
-    const ex = await pool.query(`SELECT 1 FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [c]);
-    if (ex.rowCount === 0) { code = c; break; }
+  await ensureColumn("fp1_venues", "ref_code", "TEXT UNIQUE");
+  await ensureColumn("fp1_venues", "staff_bonus_enabled", "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_venues", "staff_bonus_amount", "INT NOT NULL DEFAULT 2");
+  await ensureColumn("fp1_foxes", "referred_by_venue", "BIGINT");
+
+  // Generate ref_codes для існуючих venues
+  const venuesNoCode = await pool.query(`SELECT id FROM fp1_venues WHERE ref_code IS NULL`);
+  for (const v of venuesNoCode.rows) {
+    let code = null;
+    for (let i = 0; i < 20; i++) {
+      const c = genInviteCode(8);
+      const ex = await pool.query(`SELECT 1 FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [c]);
+      if (ex.rowCount === 0) { code = c; break; }
+    }
+    if (code) await pool.query(`UPDATE fp1_venues SET ref_code=$1 WHERE id=$2`, [code, v.id]);
   }
-  if (code) await pool.query(`UPDATE fp1_venues SET ref_code=$1 WHERE id=$2`, [code, v.id]);
-}
+
   // Backfill war_day
   await pool.query(`
     UPDATE fp1_counted_visits
@@ -312,7 +308,6 @@ for (const v of venuesNoCode.rows) {
 
   console.log("✅ Migrations OK");
 }
-
 /* ═══════════════════════════════════════════════════════════════
    SESSION (Panel + Admin) — HMAC-signed cookie
 ═══════════════════════════════════════════════════════════════ */
@@ -418,8 +413,8 @@ body{margin:0;font-family:system-ui;background:#0f1220;color:#fff}
 h1{font-size:18px;margin:0 0 10px}
 h2{font-size:15px;margin:0 0 8px;opacity:.85}
 label{display:block;font-size:12px;opacity:.8;margin:10px 0 5px}
-input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #2a2f49;background:#0b0e19;color:#fff;font-size:14px}
-input:focus,select:focus{outline:none;border-color:#6e56ff}
+input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #2a2f49;background:#0b0e19;color:#fff;font-size:14px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#6e56ff}
 button{padding:10px 16px;border-radius:10px;border:none;background:#6e56ff;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
 button:hover{background:#5a44e0}
 button.danger{background:#8b1a1a}
@@ -739,10 +734,47 @@ async function createInviteCode(tgUserId) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   NEW FOX TRACKING
+═══════════════════════════════════════════════════════════════ */
+async function countNewFoxThisMonth(venueId) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_foxes
+     WHERE referred_by_venue=$1
+       AND date_trunc('month', created_at AT TIME ZONE 'Europe/Warsaw')
+           = date_trunc('month', NOW() AT TIME ZONE 'Europe/Warsaw')`,
+    [venueId]
+  );
+  return r.rows[0].c;
+}
+
+async function countNewFoxTotal(venueId) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE referred_by_venue=$1`,
+    [venueId]
+  );
+  return r.rows[0].c;
+}
+
+async function getGrowthLeaderboard(limit = 10) {
+  const r = await pool.query(
+    `SELECT v.id, v.name, v.city, COUNT(f.id)::int AS new_fox
+     FROM fp1_venues v
+     LEFT JOIN fp1_foxes f ON f.referred_by_venue=v.id
+       AND date_trunc('month', f.created_at AT TIME ZONE 'Europe/Warsaw')
+           = date_trunc('month', NOW() AT TIME ZONE 'Europe/Warsaw')
+     WHERE v.approved=TRUE
+     GROUP BY v.id, v.name, v.city
+     ORDER BY new_fox DESC, v.name ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return r.rows;
+}
+/* ═══════════════════════════════════════════════════════════════
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V10_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V11_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -805,17 +837,13 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   const venue   = await getVenue(venueId);
   const pending = await listPending(venueId);
   const status  = await currentVenueStatus(venueId);
-app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
-  const venue   = await getVenue(venueId);
-  const pending = await listPending(venueId);
-  const status  = await currentVenueStatus(venueId);
-  
+
   // NEW FOX STATS
   const newFoxMonth = await countNewFoxThisMonth(venueId);
   const newFoxTotal = await countNewFoxTotal(venueId);
   const growth = await getGrowthLeaderboard(50);
   const myPos = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
+
   // Status badge
   let statusHtml = `<span class="badge badge-ok">● Aktywny</span>`;
   if (status) {
@@ -834,6 +862,9 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
                 <span class="muted"> · za ~${min} min</span></div>`;
       }).join("");
 
+  const xy = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+  const totalVisits = xy.rows[0].c;
+
   res.send(pageShell(`Panel — ${venue?.name || venueId}`, `
     <div class="card">
       <div class="topbar">
@@ -841,6 +872,22 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <a href="/panel/logout">Wyloguj</a>
       </div>
       ${flash(req)}
+      <div style="margin-top:10px;opacity:.7;font-size:13px">
+        Kod zakładу: <b>${escapeHtml(venue.ref_code || 'brak')}</b> | Total visits: <b>${totalVisits}</b>
+      </div>
+    </div>
+
+    <!-- Nowi Fox -->
+    <div class="card">
+      <h2>📊 Nowi Fox przez twій kod</h2>
+      <div style="font-size:24px;font-weight:700;margin:10px 0">
+        Цього місяця: ${newFoxMonth} Fox
+      </div>
+      <div class="muted">Всього приведено: ${newFoxTotal} Fox</div>
+      ${myPos > 0 ? `<div class="muted" style="margin-top:8px">Ти на ${myPos} місці в Growth топі! 🏆</div>` : ''}
+      <div class="muted" style="margin-top:10px">
+        💡 Table tent на столику працює — Fox бачать і реєструються.
+      </div>
     </div>
 
     <div class="grid2">
@@ -869,7 +916,6 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
     <div class="card">
       <h2>Statusy lokalu</h2>
       <div class="grid2">
-        <!-- Rezerwa -->
         <div>
           <b>📍 Rezerwa</b> <span class="muted">(maks. 2×/mies., min. 24h wcześniej)</span>
           <form method="POST" action="/panel/reserve" style="margin-top:8px">
@@ -887,7 +933,6 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           </form>
         </div>
 
-        <!-- Ograniczone -->
         <div>
           <b>⚠️ Dziś ograniczone</b> <span class="muted">(maks. 2×/tydz., do 3h)</span>
           <form method="POST" action="/panel/limited" style="margin-top:8px">
@@ -964,7 +1009,6 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const venue = await getVenue(venueId);
     const xy    = await countXY(venueId, r.userId);
 
-    // Notify Fox (safe)
     if (bot) {
       try {
         let msg;
@@ -974,7 +1018,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
           msg = `DZIŚ JUŻ BYŁO ✅\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
         } else {
           msg = `✅ Confirm OK\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
-          if (r.inviteAutoAdded > 0) msg += `\n🎁 +${r.inviteAutoAdded} invite za 5 wizyt!`;
+          if (r.inviteAutoAdded > 0) msg += `\n🎁 +${r.inviteAutoAdded} invite за 5 wizyt!`;
         }
         await bot.telegram.sendMessage(Number(r.userId), msg);
       } catch (e) { console.error("TG_SEND_ERR", e?.message); }
@@ -1004,11 +1048,9 @@ app.post("/panel/reserve", requirePanelAuth, async (req, res) => {
   if (isNaN(startsAt.getTime()))
     return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowa data.")}`);
 
-  // Musi być min. 24h wcześniej
   if (startsAt.getTime() - Date.now() < 24 * 3600 * 1000)
     return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Rezerwa musi być ustawiona min. 24h wcześniej.")}`);
 
-  // Max 2 razy w miesiącu
   const cnt = await reserveCountThisMonth(venueId);
   if (cnt >= 2)
     return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Limit: maks. 2 rezerwy w miesiącu.")}`);
@@ -1028,7 +1070,6 @@ app.post("/panel/limited", requirePanelAuth, async (req, res) => {
     ? req.body.reason : "FULL";
   const hours   = Math.min(3, Math.max(1, Number(req.body.hours) || 3));
 
-  // Max 2 razy w tygodniu
   const cnt = await limitedCountThisWeek(venueId);
   if (cnt >= 2)
     return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Limit: maks. 2× 'ograniczone' w tygodniu.")}`);
@@ -1065,7 +1106,6 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
   if (!userId || isNaN(Number(userId)))
     return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowe Telegram ID.")}`);
 
-  // Nie można zejść poniżej 0
   if (delta === -1) {
     const bal = await stampBalance(venueId, userId);
     if (bal <= 0)
@@ -1079,7 +1119,6 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
 
   const newBal = await stampBalance(venueId, userId);
 
-  // Powiadom Foxa
   if (bot) {
     try {
       const venue = await getVenue(venueId);
@@ -1138,6 +1177,8 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     `SELECT user_id, username, rating, invites, city, created_at FROM fp1_foxes ORDER BY rating DESC LIMIT 50`
   );
 
+  const growth = await getGrowthLeaderboard(10);
+
   const pendingHtml = pending.rows.length === 0
     ? `<div class="muted">Brak oczekujących</div>`
     : pending.rows.map(v => `
@@ -1172,6 +1213,14 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       <td>${escapeHtml(f.city)}</td>
     </tr>`).join("");
 
+  const growthHtml = growth.map((g, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(g.name)}</td>
+      <td>${escapeHtml(g.city)}</td>
+      <td><b>${g.new_fox}</b></td>
+    </tr>`).join("");
+
   res.send(pageShell("Admin — FoxPot", `
     <div class="card">
       <div class="topbar">
@@ -1187,17 +1236,25 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     </div>
 
     <div class="card">
-      <h2>Aktywne lokale</h2>
+      <h2>🚀 Growth Leaderboard (цей місяць)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>ID</th><th>Nazwa</th><th>Miasto</th><th>Wizyty</th><th>Status</th></tr>
+        <tr style="opacity:.6"><th>#</th><th>Назва</th><th>Місто</th><th>Нових Fox</th></tr>
+        ${growthHtml}
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Активні локале</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="opacity:.6"><th>ID</th><th>Назва</th><th>Місто</th><th>Візити</th><th>Статус</th></tr>
         ${venuesHtml}
       </table>
     </div>
 
     <div class="card">
-      <h2>Foxowie (top 50 rating)</h2>
+      <h2>Foxи (top 50 rating)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Rating</th><th>Invites</th><th>Miasto</th></tr>
+        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Rating</th><th>Invites</th><th>Місто</th></tr>
         ${foxesHtml}
       </table>
     </div>`, `
@@ -1205,12 +1262,10 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
   `));
 });
 
-// Approve venue
 app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
   const venueId = Number(req.params.id);
   await pool.query(`UPDATE fp1_venues SET approved=TRUE WHERE id=$1`, [venueId]);
 
-  // Знайди Fox який підключив заклад та нарахуй бонуси
   const v = await getVenue(venueId);
   if (v?.fox_nick) {
     const foxRow = await pool.query(
@@ -1237,7 +1292,6 @@ app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
   res.redirect(`/admin?ok=${encodeURIComponent("Zatwierdzono: " + (v?.name || venueId))}`);
 });
 
-// Reject venue
 app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
   const venueId = Number(req.params.id);
   const v = await getVenue(venueId);
@@ -1253,76 +1307,68 @@ let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
- bot.start(async (ctx) => {
-  try {
-    const text = String(ctx.message?.text || '').trim();
-    const parts = text.split(/\s+/);
-    const codeOrInv = parts[1] || '';
-    const userId = String(ctx.from.id);
-    const username = ctx.from.username || null;
+  bot.start(async (ctx) => {
+    try {
+      const text = String(ctx.message?.text || "").trim();
+      const parts = text.split(/\s+/);
+      const codeOrInv = parts[1] || "";
+      const userId = String(ctx.from.id);
+      const username = ctx.from.username || null;
 
-    // Перевірка чи Fox вже існує
-    const exists = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-    if (exists.rowCount > 0) {
-      const f = exists.rows[0];
-      const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
-      return ctx.reply(
-        `🦊 Твій профіль\n\nRating: ${f.rating}\nInvites: ${f.invites}\nМісто: ${f.city}\nCounted visits: ${tot.rows[0].c}\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>`
-      );
-    }
+      const exists = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (exists.rowCount > 0) {
+        const f = exists.rows[0];
+        const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+        return ctx.reply(
+          `🦊 Твій профіль\n\nRating: ${f.rating}\nInvites: ${f.invites}\nМісто: ${f.city}\nCounted visits: ${tot.rows[0].c}\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>`
+        );
+      }
 
-    // Новий Fox — треба код
-    if (!codeOrInv) {
-      return ctx.reply('🦊 FoxPot Club\n\nЩоб зареєструватись потрібен інвайт від Fox або код ресторану.\n\nВведи /start <CODE>');
-    }
+      if (!codeOrInv) {
+        return ctx.reply("🦊 FoxPot Club\n\nЩоб зареєструватись потрібен інвайт від Fox або код ресторану.\n\nВведи /start <CODE>");
+      }
 
-    // Спробувати як venue code
-    const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [codeOrInv.toUpperCase()]);
-    if (venue.rowCount > 0) {
-      // Venue code — +5 invites
+      const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [codeOrInv.toUpperCase()]);
+      if (venue.rowCount > 0) {
+        await pool.query(
+          `INSERT INTO fp1_foxes(user_id, username, rating, invites, city, referred_by_venue)
+           VALUES ($1,$2,1,5,'Warsaw',$3)`,
+          [userId, username, venue.rows[0].id]
+        );
+        
+        const day = warsawDayKey();
+        await pool.query(
+          `INSERT INTO fp1_counted_visits(venue_id, user_id, war_day) VALUES ($1,$2,$3)`,
+          [venue.rows[0].id, userId, day]
+        );
+
+        return ctx.reply(
+          `✅ Зареєстровано через ${venue.rows[0].name}!\n\nТи отримав +5 invites!\n\n/checkin ${venue.rows[0].id} — почни відвідування!`
+        );
+      }
+
+      const result = await redeemInviteCode(userId, codeOrInv);
+      if (!result.ok) {
+        return ctx.reply("❌ Невірний код. Потрібен інвайт від Fox або код ресторану.");
+      }
+
       await pool.query(
-        `INSERT INTO fp1_foxes(user_id, username, rating, invites, city, referred_by_venue)
-         VALUES ($1,$2,1,5,'Warsaw',$3)`,
-        [userId, username, venue.rows[0].id]
-      );
-      
-      // +1 Y для ресторану
-      const day = warsawDayKey();
-      await pool.query(
-        `INSERT INTO fp1_counted_visits(venue_id, user_id, war_day) VALUES ($1,$2,$3)`,
-        [venue.rows[0].id, userId, day]
+        `INSERT INTO fp1_foxes(user_id, username, rating, invites, city)
+         VALUES ($1,$2,1,3,'Warsaw') ON CONFLICT (user_id) DO NOTHING`,
+        [userId, username]
       );
 
-      return ctx.reply(
-        `✅ Зареєстровано через ${venue.rows[0].name}!\n\nТи отримав +5 invites!\n\n/checkin ${venue.rows[0].id} — почни відвідування!`
-      );
+      await ctx.reply(`✅ Зареєстровано!\n\n+3 invites\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues`);
+    } catch (e) {
+      console.error("START_ERR", e);
+      await ctx.reply("Помилка. Спробуй ще раз.");
     }
+  });
 
-    // Спробувати як Fox invite
-    const result = await redeemInviteCode(userId, codeOrInv);
-    if (!result.ok) {
-      return ctx.reply('❌ Невірний код. Потрібен інвайт від Fox або код ресторану.');
-    }
-
-    await pool.query(
-      `INSERT INTO fp1_foxes(user_id, username, rating, invites, city)
-       VALUES ($1,$2,1,3,'Warsaw') ON CONFLICT (user_id) DO NOTHING`,
-      [userId, username]
-    );
-
-    await ctx.reply(`✅ Зареєстровано!\n\n+3 invites\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues`);
-  } catch (e) {
-    console.error('START_ERR', e);
-    await ctx.reply('Помилка. Спробуй ще раз.');
-  }
-});
-
-  // /panel
   bot.command("panel", async (ctx) => {
     await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`);
   });
 
-  // /venues
   bot.command("venues", async (ctx) => {
     const r = await pool.query(
       `SELECT id, name, city FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 50`
@@ -1331,7 +1377,6 @@ if (BOT_TOKEN) {
     await ctx.reply(`🏪 Lokale:\n${lines.join("\n")}\n\n/checkin <ID>`);
   });
 
-  // /invite
   bot.command("invite", async (ctx) => {
     try {
       await upsertFox(ctx);
@@ -1350,7 +1395,6 @@ if (BOT_TOKEN) {
     }
   });
 
-  // /checkin <venue_id>
   bot.command("checkin", async (ctx) => {
     try {
       const parts   = String(ctx.message?.text || "").trim().split(/\s+/);
@@ -1364,7 +1408,6 @@ if (BOT_TOKEN) {
       await upsertFox(ctx);
       const userId = String(ctx.from.id);
 
-      // Perевірка статусу закладу
       const status = await currentVenueStatus(venueId);
       let statusWarn = "";
       if (status?.type === "limited")
@@ -1389,7 +1432,6 @@ if (BOT_TOKEN) {
     }
   });
 
-  // /stamps <venue_id> — Fox бачить свій баланс
   bot.command("stamps", async (ctx) => {
     try {
       const parts   = String(ctx.message?.text || "").trim().split(/\s+/);
@@ -1412,7 +1454,6 @@ if (BOT_TOKEN) {
     }
   });
 
-  // /addvenue — Fox реєструє заклад
   bot.command("addvenue", async (ctx) => {
     await upsertFox(ctx);
     await ctx.reply(
@@ -1420,7 +1461,6 @@ if (BOT_TOKEN) {
     );
   });
 
-  // /newvenue Назва | Місто | Адреса | PIN
   bot.command("newvenue", async (ctx) => {
     try {
       await upsertFox(ctx);
@@ -1447,7 +1487,7 @@ if (BOT_TOKEN) {
       );
 
       await ctx.reply(
-        `✅ Zaproszenie wysłane!\n\n🏪 ${name}\n📍 ${address}, ${city}\n\nAdmin sprawdzi i zatwierdzi lokal. Dostaniesz powiadomienie + bonusy po zatwierdzeniu.`
+        `✅ Zaявka надіслана!\n\n🏪 ${name}\n📍 ${address}, ${city}\n\nAdmin sprawdzi i zatwierdzi lokal. Dostaniesz powiadomienie + bonusy po zatwierdzeniu.`
       );
     } catch (e) {
       console.error("NEWVENUE_ERR", e);
@@ -1455,7 +1495,6 @@ if (BOT_TOKEN) {
     }
   });
 
-  // Webhook
   app.use(bot.webhookCallback(`/${WEBHOOK_SECRET}`));
   app.get(`/${WEBHOOK_SECRET}`, (_req, res) => res.type("text/plain").send("WEBHOOK_OK"));
 }
@@ -1478,41 +1517,6 @@ if (BOT_TOKEN) {
       }
     }
 
-   // === NEW FOX TRACKING ===
-async function countNewFoxThisMonth(venueId) {
-  const r = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM fp1_foxes
-     WHERE referred_by_venue=$1
-       AND date_trunc('month', created_at AT TIME ZONE 'Europe/Warsaw')
-           = date_trunc('month', NOW() AT TIME ZONE 'Europe/Warsaw')`,
-    [venueId]
-  );
-  return r.rows[0].c;
-}
-
-async function countNewFoxTotal(venueId) {
-  const r = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE referred_by_venue=$1`,
-    [venueId]
-  );
-  return r.rows[0].c;
-}
-
-async function getGrowthLeaderboard(limit = 10) {
-  const r = await pool.query(
-    `SELECT v.id, v.name, v.city, COUNT(f.id)::int AS new_fox
-     FROM fp1_venues v
-     LEFT JOIN fp1_foxes f ON f.referred_by_venue=v.id
-       AND date_trunc('month', f.created_at AT TIME ZONE 'Europe/Warsaw')
-           = date_trunc('month', NOW() AT TIME ZONE 'Europe/Warsaw')
-     WHERE v.approved=TRUE
-     GROUP BY v.id, v.name, v.city
-     ORDER BY new_fox DESC, v.name ASC
-     LIMIT $1`,
-    [limit]
-  );
-  return r.rows;
-}  
     app.listen(PORT, () => console.log(`✅ Server listening on ${PORT}`));
   } catch (e) {
     console.error("BOOT_ERR", e);
