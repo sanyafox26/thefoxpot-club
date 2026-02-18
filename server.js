@@ -805,7 +805,17 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   const venue   = await getVenue(venueId);
   const pending = await listPending(venueId);
   const status  = await currentVenueStatus(venueId);
-
+app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const venue   = await getVenue(venueId);
+  const pending = await listPending(venueId);
+  const status  = await currentVenueStatus(venueId);
+  
+  // NEW FOX STATS
+  const newFoxMonth = await countNewFoxThisMonth(venueId);
+  const newFoxTotal = await countNewFoxTotal(venueId);
+  const growth = await getGrowthLeaderboard(50);
+  const myPos = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
   // Status badge
   let statusHtml = `<span class="badge badge-ok">● Aktywny</span>`;
   if (status) {
