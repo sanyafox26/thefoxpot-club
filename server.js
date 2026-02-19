@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V16.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V16.1
  *
  * NOWOŚCI V16:
  *  ✅ Daily Spin — /spin raz dziennie z animacją
@@ -313,6 +313,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "streak_last_date",      "DATE");
   await ensureColumn("fp1_foxes",          "streak_freeze_available","INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "streak_best",           "INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_daily_spins",     "prize_label",           "TEXT");
 
   // Fix stare NOT NULL constraints
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`); } catch {}
@@ -378,7 +379,7 @@ async function migrate() {
     );
   }
 
-  console.log("✅ Migrations OK (V16)");
+  console.log("✅ Migrations OK (V16.1)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1021,7 +1022,7 @@ async function getGrowthLeaderboard(limit = 10) {
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V16_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V16_1_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1599,6 +1600,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V16 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V16.1 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
