@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V17.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V18.0
  *
  * NOWOŚCI V17:
  *  ✅ /achievements — lista osiągnięć gracza
@@ -384,7 +384,7 @@ async function migrate() {
     );
   }
 
-  console.log("✅ Migrations OK (V17)");
+  console.log("✅ Migrations OK (V18)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1027,7 +1027,7 @@ async function getGrowthLeaderboard(limit = 10) {
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V17_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V18_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1413,7 +1413,7 @@ if (BOT_TOKEN) {
         msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
         if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
-        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
 
         await updateStreak(userId);
         return ctx.reply(msg);
@@ -1665,6 +1665,55 @@ if (BOT_TOKEN) {
     }
   });
 
+
+  // ── /refer ────────────────────────────────────────────────────
+  bot.command("refer", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+
+      const invited = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]
+      );
+      const active = await pool.query(
+        `SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv
+         WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]
+      );
+      const codesGenerated = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]
+      );
+
+      const f = fox.rows[0];
+      const invitedCount = invited.rows[0].c;
+      const activeCount  = active.rows[0].c;
+
+      let msg = `🦊 Twoje zaproszenia\n\n`;
+      msg += `👥 Zaproszonych Fox: ${invitedCount}\n`;
+      msg += `✅ Aktywnych (min. 1 wizyta): ${activeCount}\n`;
+      msg += `🎟️ Dostępne zaproszenia: ${f.invites}\n`;
+      msg += `📋 Wygenerowanych kodów: ${codesGenerated.rows[0].c}\n\n`;
+
+      if (invitedCount === 0) {
+        msg += `Jeszcze nikogo nie zaprosiłeś!\n\nUżyj /invite aby wygenerować kod.`;
+      } else if (activeCount === 0) {
+        msg += `Zaprosiłeś ${invitedCount} Fox, ale nikt jeszcze nie zrobił check-inu.\nZachęć ich! 💪`;
+      } else {
+        const percent = Math.round((activeCount / invitedCount) * 100);
+        msg += `${percent}% twoich Fox jest aktywnych! `;
+        if (percent === 100) msg += `🏆 Idealny wynik!`;
+        else if (percent >= 50) msg += `👍 Dobry wynik!`;
+        else msg += `💪 Zachęć więcej Fox!`;
+      }
+      msg += `\n\n+1 pkt gdy ktoś użyje kodu\n+5 pkt gdy zaproszony zrobi 1. wizytę`;
+
+      await ctx.reply(msg);
+    } catch (e) {
+      console.error("REFER_ERR", e);
+      await ctx.reply("Błąd. Spróbuj ponownie.");
+    }
+  });
+
   bot.action("change_district", async (ctx) => {
     try { await ctx.answerCbQuery(); await sendDistrictKeyboard(ctx, "change"); }
     catch (e) { console.error("CHANGE_DISTRICT_ERR", e); }
@@ -1700,6 +1749,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V17 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V18 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
