@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V15.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V15.1
  *
  * НОВИНКИ V15:
  *  ✅ Всі тексти бота — польською мовою
@@ -339,10 +339,11 @@ async function migrate() {
   await ensureColumn("fp1_foxes",           "streak_last_date",      "DATE");
   await ensureColumn("fp1_foxes",           "streak_freeze_available","INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",           "streak_best",           "INT NOT NULL DEFAULT 0");
-   // V15.1: fix created_by_fox_id NOT NULL constraint
+
+  // V15.1: fix created_by_fox_id NOT NULL (стара схема)
   try {
     await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`);
-  } catch (e) { /* колонки може не бути — ок */ }
+  } catch (e) { /* колонки може не бути */ }
 
   // V15: скидаємо founder_number для адміна
   if (ADMIN_TG_ID) {
@@ -425,7 +426,7 @@ async function migrate() {
     console.log("✅ Seeded test venues (PIN: 123456)");
   }
 
-  console.log("✅ Migrations OK (V15)");
+  console.log("✅ Migrations OK (V15.1)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1104,7 +1105,7 @@ async function getGrowthLeaderboard(limit = 10) {
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V15_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V15_1_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1925,7 +1926,7 @@ if (BOT_TOKEN) {
         console.error("WEBHOOK_ERR", e?.message || e);
       }
     }
-    app.listen(PORT, () => console.log(`✅ Server V15 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V15.1 listening on ${PORT}`));
   } catch (e) {
     console.error("BOOT_ERR", e);
     process.exit(1);
