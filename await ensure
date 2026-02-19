@@ -339,6 +339,10 @@ async function migrate() {
   await ensureColumn("fp1_foxes",           "streak_last_date",      "DATE");
   await ensureColumn("fp1_foxes",           "streak_freeze_available","INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",           "streak_best",           "INT NOT NULL DEFAULT 0");
+   // V15.1: fix created_by_fox_id NOT NULL constraint
+  try {
+    await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`);
+  } catch (e) { /* колонки може не бути — ок */ }
 
   // V15: скидаємо founder_number для адміна
   if (ADMIN_TG_ID) {
