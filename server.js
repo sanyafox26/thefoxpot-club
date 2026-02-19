@@ -1,9 +1,14 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V16.1
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V17.0
  *
- * NOWOŚCI V16:
+ * NOWOŚCI V17:
+ *  ✅ /achievements — lista osiągnięć gracza
+ *  ✅ /top — ranking Top 10 Fox
+ *
+ * V16 (bez zmian):
+ *  ✅ Daily Spin — /spin z animacją
  *  ✅ Daily Spin — /spin raz dziennie z animacją
  *  ✅ Nagrody: +2 rating (60%), +5 rating (20%), +1 zaproszenie (10%), +15 rating (7%), +1 Freeze (3%)
  *
@@ -379,7 +384,7 @@ async function migrate() {
     );
   }
 
-  console.log("✅ Migrations OK (V16.1)");
+  console.log("✅ Migrations OK (V17)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1022,7 +1027,7 @@ async function getGrowthLeaderboard(limit = 10) {
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V16_1_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V17_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1408,7 +1413,7 @@ if (BOT_TOKEN) {
         msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
         if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
-        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/spin\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
 
         await updateStreak(userId);
         return ctx.reply(msg);
@@ -1565,6 +1570,101 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("NEWVENUE_ERR", e); await ctx.reply("Błąd rejestracji lokalu."); }
   });
 
+  // ── /achievements ─────────────────────────────────────────────
+  bot.command("achievements", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+
+      const existing = await pool.query(
+        `SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]
+      );
+      const have = new Set(existing.rows.map(r => r.achievement_code));
+
+      const total   = Object.keys(ACHIEVEMENTS).length;
+      const unlocked = have.size;
+
+      let msg = `🏆 Twoje osiągnięcia (${unlocked}/${total})\n\n`;
+
+      const categories = [
+        { label: "🗺️ Odkrywca",    keys: ["explorer_1","explorer_10","explorer_30","explorer_100"] },
+        { label: "🤝 Społeczność", keys: ["social_1","social_10","social_50","social_100"] },
+        { label: "🔥 Streak",      keys: ["streak_7","streak_30","streak_90","streak_365"] },
+        { label: "🏪 Wizyty",      keys: ["visits_1","visits_10","visits_50","visits_100"] },
+        { label: "🎰 Spin",        keys: ["spin_10","spin_30"] },
+        { label: "⭐ Specjalne",   keys: ["pioneer","night_fox","morning_fox","vip_diamond"] },
+      ];
+
+      for (const cat of categories) {
+        msg += `${cat.label}\n`;
+        for (const key of cat.keys) {
+          const ach = ACHIEVEMENTS[key];
+          if (!ach) continue;
+          if (have.has(key)) {
+            msg += `✅ ${ach.emoji} ${ach.label}\n`;
+          } else {
+            msg += `🔒 ${ach.label} (+${ach.rating} pkt)\n`;
+          }
+        }
+        msg += "\n";
+      }
+
+      await ctx.reply(msg);
+    } catch (e) {
+      console.error("ACHIEVEMENTS_ERR", e);
+      await ctx.reply("Błąd. Spróbuj ponownie.");
+    }
+  });
+
+  // ── /top ──────────────────────────────────────────────────────
+  bot.command("top", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+
+      // Топ 10
+      const top = await pool.query(
+        `SELECT user_id, username, rating, founder_number
+         FROM fp1_foxes
+         ORDER BY rating DESC LIMIT 10`
+      );
+
+      // Позиція поточного Fox
+      const myPos = await pool.query(
+        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE rating > (
+           SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1
+         )`, [userId]
+      );
+      const myRating = await pool.query(
+        `SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
+      );
+
+      const medals = ["🥇","🥈","🥉"];
+      let msg = `🦊 Top Fox\n\n`;
+
+      for (let i = 0; i < top.rows.length; i++) {
+        const f = top.rows[i];
+        const isMe = String(f.user_id) === userId;
+        const medal = medals[i] || `${i+1}.`;
+        const nick  = f.username ? `@${f.username}` : `Fox#${String(f.user_id).slice(-4)}`;
+        const founder = f.founder_number ? ` 👑#${f.founder_number}` : "";
+        const me = isMe ? " ← Ty!" : "";
+        msg += `${medal} ${nick}${founder} — ${f.rating} pkt${me}\n`;
+      }
+
+      // Jeśli gracz nie jest w top 10
+      const pos = (myPos.rows[0]?.pos || 0) + 1;
+      if (pos > 10 && myRating.rowCount > 0) {
+        msg += `\n...\n${pos}. Ty — ${myRating.rows[0].rating} pkt`;
+      }
+
+      await ctx.reply(msg);
+    } catch (e) {
+      console.error("TOP_ERR", e);
+      await ctx.reply("Błąd. Spróbuj ponownie.");
+    }
+  });
+
   bot.action("change_district", async (ctx) => {
     try { await ctx.answerCbQuery(); await sendDistrictKeyboard(ctx, "change"); }
     catch (e) { console.error("CHANGE_DISTRICT_ERR", e); }
@@ -1600,6 +1700,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V16.1 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V17 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
