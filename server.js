@@ -7,13 +7,13 @@
  *  ✅ Всі тексти бота — польською мовою
  *  ✅ Скидання founder_number для адміна (не рахується як #1)
  *
- * V14 (залишається без змін):
- *  ✅ Referral bonuses — +10 rating після першого check-in, +5 інвайтеру
- *  ✅ Streak — щоденний вхід, бонуси за 7/30/90/365 днів
- *  ✅ Зал Слави — 20 досягнень
+ * V14 (bez zmian):
+ *  ✅ Referral bonuses — +10 pkt po pierwszej wizycie, +5 dla zapraszającego
+ *  ✅ Streak — codzienny bonus, nagrody za 7/30/90/365 dni
+ *  ✅ Sala Chwały — 20 osiągnięć
  *
  * V13:
- *  ✅ Район проживання + /settings
+ *  ✅ Dzielnica zamieszkania + /settings
  *
  * V12:
  *  ✅ Founder Fox (#1–1000)
@@ -912,7 +912,7 @@ async function confirmOtp(venueId, otp) {
       );
       const isPioneer = venueVisitCount.rows[0].c === 1;
 
-      // Streak + досягнення
+      // Streak + osiągnięcia
       await updateStreak(userId);
       const hour = warsawHour();
       newAch = await checkAchievements(userId, {
