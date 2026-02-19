@@ -1,27 +1,25 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V14.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V15.0
  *
- * НОВИНКИ V14:
+ * НОВИНКИ V15:
+ *  ✅ Всі тексти бота — польською мовою
+ *  ✅ Скидання founder_number для адміна (не рахується як #1)
+ *
+ * V14 (залишається без змін):
  *  ✅ Referral bonuses — +10 rating після першого check-in, +5 інвайтеру
  *  ✅ Streak — щоденний вхід, бонуси за 7/30/90/365 днів
- *  ✅ Зал Слави — 20 досягнень, автоматична перевірка
- *  ✅ /streak — команда для перегляду streak
- *  ✅ Повідомлення про нові досягнення після check-in
+ *  ✅ Зал Слави — 20 досягнень
  *
- * V13 (залишається без змін):
- *  ✅ Район проживання (district) при реєстрації
- *  ✅ /settings — перегляд і зміна району
+ * V13:
+ *  ✅ Район проживання + /settings
  *
- * V12 (залишається без змін):
+ * V12:
  *  ✅ Founder Fox (#1–1000)
  *
- * V11 (залишається без змін):
- *  ✅ Referral system (Fox invite + Restaurant code)
- *  ✅ Restaurant code → +5 invites + +1 Y
- *  ✅ New Fox tracker в панелі
- *  ✅ Growth Leaderboard
+ * V11:
+ *  ✅ Referral system, panel, admin, stamps
  */
 
 const express  = require("express");
@@ -42,13 +40,13 @@ const PUBLIC_URL     = (process.env.PUBLIC_URL     || "").trim().replace(/\/+$/,
 const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "wh").trim();
 const COOKIE_SECRET  = (process.env.COOKIE_SECRET  || `${WEBHOOK_SECRET}_cookie`).trim();
 const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "admin_foxpot_2025").trim();
+const ADMIN_TG_ID    = (process.env.ADMIN_TG_ID    || "").trim(); // TG ID адміна — не рахується як founder
 const PORT           = process.env.PORT || 8080;
 
 if (!DATABASE_URL) console.error("❌ DATABASE_URL missing");
 if (!BOT_TOKEN)    console.error("❌ BOT_TOKEN missing");
 if (!PUBLIC_URL)   console.error("❌ PUBLIC_URL missing");
-if (!process.env.COOKIE_SECRET) console.warn("⚠️  COOKIE_SECRET not set!");
-if (!process.env.ADMIN_SECRET)  console.warn("⚠️  ADMIN_SECRET not set — using default!");
+if (!ADMIN_TG_ID)  console.warn("⚠️  ADMIN_TG_ID not set — set your Telegram ID to exclude from founder numbering");
 
 /* ═══════════════════════════════════════════════════════════════
    DB
@@ -66,7 +64,7 @@ async function dbNow() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   V13: РАЙОНИ ВАРШАВИ
+   РАЙОНИ ВАРШАВИ
 ═══════════════════════════════════════════════════════════════ */
 const WARSAW_DISTRICTS = [
   "Śródmieście",
@@ -81,13 +79,13 @@ const WARSAW_DISTRICTS = [
   "Bemowo",
   "Białołęka",
   "Wilanów",
-  "Інший район",
+  "Inna dzielnica",
 ];
 
 async function sendDistrictKeyboard(ctx, mode = "register") {
   const text = mode === "register"
-    ? `📍 Останній крок!\n\nВ якому районі Варшави ти живеш?\n\n(Це допомагає нам знаходити заклади поруч з тобою)`
-    : `📍 Вибери свій район:`;
+    ? `📍 Ostatni krok!\n\nW jakiej dzielnicy Warszawy mieszkasz?\n\n(Pomaga nam znaleźć lokale w pobliżu)`
+    : `📍 Wybierz swoją dzielnicę:`;
 
   const buttons = [];
   const main = WARSAW_DISTRICTS.slice(0, -1);
@@ -96,7 +94,7 @@ async function sendDistrictKeyboard(ctx, mode = "register") {
     if (main[i + 1]) row.push(Markup.button.callback(main[i + 1], `district_${main[i + 1]}`));
     buttons.push(row);
   }
-  buttons.push([Markup.button.callback("🗺️ Інший район", `district_Інший район`)]);
+  buttons.push([Markup.button.callback("🗺️ Inna dzielnica", `district_Inna dzielnica`)]);
   await ctx.reply(text, Markup.inlineKeyboard(buttons));
 }
 
@@ -154,6 +152,10 @@ function escapeHtml(s) {
     .replaceAll(">",  "&gt;")
     .replaceAll('"',  "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function isAdmin(userId) {
+  return ADMIN_TG_ID && String(userId) === String(ADMIN_TG_ID);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -291,7 +293,7 @@ async function migrate() {
     )
   `);
 
-  // ── V14: Досягнення ──────────────────────────────────────────
+  // ── Досягнення ───────────────────────────────────────────────
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_achievements (
       id               BIGSERIAL PRIMARY KEY,
@@ -302,7 +304,7 @@ async function migrate() {
     )
   `);
 
-  // ── V14: Daily Spin (підготовка для V15) ─────────────────────
+  // ── Daily Spin (підготовка) ──────────────────────────────────
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_daily_spins (
       id             BIGSERIAL PRIMARY KEY,
@@ -316,7 +318,7 @@ async function migrate() {
     )
   `);
 
-  // ── Ensure columns (backward compat) ────────────────────────
+  // ── Ensure columns ───────────────────────────────────────────
   await ensureColumn("fp1_checkins",        "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits",  "war_day",               "TEXT");
   await ensureColumn("fp1_foxes",           "invites_from_5visits",  "INT NOT NULL DEFAULT 0");
@@ -330,34 +332,35 @@ async function migrate() {
   await ensureColumn("fp1_venues",          "staff_bonus_enabled",   "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_venues",          "staff_bonus_amount",    "INT NOT NULL DEFAULT 2");
   await ensureColumn("fp1_foxes",           "referred_by_venue",     "BIGINT");
+  await ensureColumn("fp1_foxes",           "founder_number",        "INT");
+  await ensureColumn("fp1_foxes",           "founder_registered_at", "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",           "district",              "TEXT");
+  await ensureColumn("fp1_foxes",           "streak_current",        "INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_foxes",           "streak_last_date",      "DATE");
+  await ensureColumn("fp1_foxes",           "streak_freeze_available","INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_foxes",           "streak_best",           "INT NOT NULL DEFAULT 0");
 
-  // ── V12: Founder Fox ─────────────────────────────────────────
-  await ensureColumn("fp1_foxes", "founder_number",        "INT");
-  await ensureColumn("fp1_foxes", "founder_registered_at", "TIMESTAMPTZ");
-
-  // ── V13: Район ───────────────────────────────────────────────
-  await ensureColumn("fp1_foxes", "district", "TEXT");
-
-  // ── V14: Streak ──────────────────────────────────────────────
-  await ensureColumn("fp1_foxes", "streak_current",         "INT NOT NULL DEFAULT 0");
-  await ensureColumn("fp1_foxes", "streak_last_date",       "DATE");
-  await ensureColumn("fp1_foxes", "streak_freeze_available","INT NOT NULL DEFAULT 0");
-  await ensureColumn("fp1_foxes", "streak_best",            "INT NOT NULL DEFAULT 0");
+  // V15: скидаємо founder_number для адміна
+  if (ADMIN_TG_ID) {
+    await pool.query(
+      `UPDATE fp1_foxes SET founder_number=NULL, founder_registered_at=NULL
+       WHERE user_id=$1`,
+      [ADMIN_TG_ID]
+    );
+    console.log(`✅ Founder number скинуто для адміна (TG ID: ${ADMIN_TG_ID})`);
+  }
 
   // Індекси
   await ensureIndex(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_founder_number
      ON fp1_foxes(founder_number) WHERE founder_number IS NOT NULL`
   );
-  await ensureIndex(
-    `CREATE INDEX IF NOT EXISTS idx_fp1_achievements_user
-     ON fp1_achievements(user_id)`
-  );
-  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp      ON fp1_checkins(otp)`);
-  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires   ON fp1_checkins(expires_at)`);
-  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_invites_code       ON fp1_invites(code)`);
-  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_status_vid   ON fp1_venue_status(venue_id, type, ends_at)`);
-  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_stamps_venue_user  ON fp1_stamps(venue_id, user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_achievements_user   ON fp1_achievements(user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp        ON fp1_checkins(otp)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires    ON fp1_checkins(expires_at)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_invites_code        ON fp1_invites(code)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_status_vid    ON fp1_venue_status(venue_id, type, ends_at)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_stamps_venue_user   ON fp1_stamps(venue_id, user_id)`);
 
   // Generate ref_codes для існуючих venues
   const venuesNoCode = await pool.query(`SELECT id FROM fp1_venues WHERE ref_code IS NULL`);
@@ -383,13 +386,14 @@ async function migrate() {
     WHERE war_day IS NULL
   `);
 
-  // Backfill founder_number
+  // Backfill founder_number (виключаємо адміна)
   await pool.query(`
     WITH ranked AS (
       SELECT user_id,
              ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
       FROM fp1_foxes
       WHERE founder_number IS NULL
+        AND ($1 = '' OR user_id != $1::bigint)
     )
     UPDATE fp1_foxes
     SET founder_number = ranked.rn,
@@ -397,7 +401,7 @@ async function migrate() {
     FROM ranked
     WHERE fp1_foxes.user_id = ranked.user_id
       AND ranked.rn <= 1000
-  `);
+  `, [ADMIN_TG_ID || ""]);
 
   // Detect day column
   const hasDayKey = await hasColumn("fp1_counted_visits", "day_key");
@@ -411,19 +415,17 @@ async function migrate() {
     const hash = pinHash("123456", salt);
     await pool.query(
       `INSERT INTO fp1_venues(name, city, pin_hash, pin_salt, approved)
-       VALUES
-         ('Test Kebab #1','Warsaw',$1,$2,TRUE),
-         ('Test Pizza #2','Warsaw',$1,$2,TRUE)`,
+       VALUES ('Test Kebab #1','Warsaw',$1,$2,TRUE),('Test Pizza #2','Warsaw',$1,$2,TRUE)`,
       [hash, salt]
     );
     console.log("✅ Seeded test venues (PIN: 123456)");
   }
 
-  console.log("✅ Migrations OK (V14)");
+  console.log("✅ Migrations OK (V15)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   V14: STREAK
+   STREAK
 ═══════════════════════════════════════════════════════════════ */
 async function updateStreak(userId) {
   const today = warsawDayKey();
@@ -434,10 +436,7 @@ async function updateStreak(userId) {
   );
   if (fox.rowCount === 0) return null;
   const f = fox.rows[0];
-
   const last = f.streak_last_date ? String(f.streak_last_date).slice(0, 10) : null;
-
-  // Вже заходив сьогодні
   if (last === today) return null;
 
   const yesterday = warsawDayKey(new Date(Date.now() - 86400000));
@@ -449,89 +448,65 @@ async function updateStreak(userId) {
   if (last === yesterday) {
     newStreak += 1;
   } else if (last) {
-    if (newFreeze > 0) {
-      newStreak += 1;
-      newFreeze -= 1;
-    } else {
-      newStreak = 1;
-    }
+    if (newFreeze > 0) { newStreak += 1; newFreeze -= 1; }
+    else newStreak = 1;
   } else {
     newStreak = 1;
   }
 
-  // Бонуси
-  if (newStreak < 7)                                  bonusRating = 1;
-  if (newStreak % 7 === 0 && newStreak % 30 !== 0)   bonusRating = 5;
+  if (newStreak < 7)                                bonusRating = 1;
+  if (newStreak % 7 === 0 && newStreak % 30 !== 0) bonusRating = 5;
   if (newStreak === 30)  { bonusRating = 15; bonusFreeze = 1; }
   if (newStreak === 90)  bonusRating = 50;
   if (newStreak === 365) bonusRating = 200;
 
   const newBest = Math.max(newStreak, f.streak_best || 0);
-
   await pool.query(
     `UPDATE fp1_foxes
      SET streak_current=$1, streak_last_date=$2,
-         streak_freeze_available=$3, streak_best=$4,
-         rating=rating+$5
+         streak_freeze_available=$3, streak_best=$4, rating=rating+$5
      WHERE user_id=$6`,
     [newStreak, today, newFreeze + bonusFreeze, newBest, bonusRating, String(userId)]
   );
-
   return { newStreak, bonusRating, bonusFreeze };
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   V14: ЗАЛ СЛАВИ (ДОСЯГНЕННЯ)
+   ДОСЯГНЕННЯ
 ═══════════════════════════════════════════════════════════════ */
 const ACHIEVEMENTS = {
-  // ДОСЛІДНИК
-  explorer_1:   { label: "Перший крок",  emoji: "🐾", rating: 5,   check: (s) => s.venues >= 1   },
-  explorer_10:  { label: "Турист",       emoji: "🗺️", rating: 10,  check: (s) => s.venues >= 10  },
-  explorer_30:  { label: "Мандрівник",   emoji: "✈️", rating: 30,  check: (s) => s.venues >= 30  },
-  explorer_100: { label: "Легенда",      emoji: "🌍", rating: 100, check: (s) => s.venues >= 100 },
-
-  // СОЦІАЛЬНИЙ
-  social_1:     { label: "Друг",         emoji: "🤝", rating: 5,   check: (s) => s.invites_sent >= 1   },
-  social_10:    { label: "Рекрутер",     emoji: "📣", rating: 50,  check: (s) => s.invites_sent >= 10  },
-  social_50:    { label: "Амбасадор",    emoji: "⭐", rating: 200, check: (s) => s.invites_sent >= 50  },
-  social_100:   { label: "Легенда",      emoji: "👑", rating: 500, check: (s) => s.invites_sent >= 100 },
-
-  // МАРАФОНЕЦЬ
-  streak_7:     { label: "7 днів поспіль",  emoji: "🔥", rating: 10,  check: (s) => s.streak_best >= 7   },
-  streak_30:    { label: "30 днів поспіль", emoji: "💪", rating: 50,  check: (s) => s.streak_best >= 30  },
-  streak_90:    { label: "90 днів поспіль", emoji: "🏅", rating: 150, check: (s) => s.streak_best >= 90  },
-  streak_365:   { label: "365 днів!",       emoji: "🏆", rating: 500, check: (s) => s.streak_best >= 365 },
-
-  // ВІЗИТИ
-  visits_1:     { label: "Перший візит",  emoji: "🎉", rating: 5,   check: (s) => s.total_visits >= 1   },
-  visits_10:    { label: "10 візитів",    emoji: "🥈", rating: 10,  check: (s) => s.total_visits >= 10  },
-  visits_50:    { label: "50 візитів",    emoji: "🥇", rating: 50,  check: (s) => s.total_visits >= 50  },
-  visits_100:   { label: "100 візитів",   emoji: "💫", rating: 100, check: (s) => s.total_visits >= 100 },
-
-  // СПЕЦІАЛЬНІ
-  pioneer:      { label: "Піонер",        emoji: "🚀", rating: 20,  check: (s) => s.is_pioneer  },
-  night_fox:    { label: "Нічний Fox",    emoji: "🌙", rating: 10,  check: (s) => s.is_night    },
-  morning_fox:  { label: "Ранковий Fox",  emoji: "🌅", rating: 10,  check: (s) => s.is_morning  },
-  vip_diamond:  { label: "VIP Diamond",   emoji: "💎", rating: 200, check: (s) => s.total_visits >= 301 },
+  explorer_1:   { label: "Pierwszy krok",    emoji: "🐾", rating: 5,   check: (s) => s.venues >= 1   },
+  explorer_10:  { label: "Turysta",          emoji: "🗺️", rating: 10,  check: (s) => s.venues >= 10  },
+  explorer_30:  { label: "Podróżnik",        emoji: "✈️", rating: 30,  check: (s) => s.venues >= 30  },
+  explorer_100: { label: "Legenda miejsc",   emoji: "🌍", rating: 100, check: (s) => s.venues >= 100 },
+  social_1:     { label: "Przyjaciel",       emoji: "🤝", rating: 5,   check: (s) => s.invites_sent >= 1   },
+  social_10:    { label: "Rekruter",         emoji: "📣", rating: 50,  check: (s) => s.invites_sent >= 10  },
+  social_50:    { label: "Ambasador",        emoji: "⭐", rating: 200, check: (s) => s.invites_sent >= 50  },
+  social_100:   { label: "Legenda",          emoji: "👑", rating: 500, check: (s) => s.invites_sent >= 100 },
+  streak_7:     { label: "7 dni z rzędu",    emoji: "🔥", rating: 10,  check: (s) => s.streak_best >= 7   },
+  streak_30:    { label: "30 dni z rzędu",   emoji: "💪", rating: 50,  check: (s) => s.streak_best >= 30  },
+  streak_90:    { label: "90 dni z rzędu",   emoji: "🏅", rating: 150, check: (s) => s.streak_best >= 90  },
+  streak_365:   { label: "365 dni!",         emoji: "🏆", rating: 500, check: (s) => s.streak_best >= 365 },
+  visits_1:     { label: "Pierwsza wizyta",  emoji: "🎉", rating: 5,   check: (s) => s.total_visits >= 1   },
+  visits_10:    { label: "10 wizyt",         emoji: "🥈", rating: 10,  check: (s) => s.total_visits >= 10  },
+  visits_50:    { label: "50 wizyt",         emoji: "🥇", rating: 50,  check: (s) => s.total_visits >= 50  },
+  visits_100:   { label: "100 wizyt",        emoji: "💫", rating: 100, check: (s) => s.total_visits >= 100 },
+  pioneer:      { label: "Pionier",          emoji: "🚀", rating: 20,  check: (s) => s.is_pioneer  },
+  night_fox:    { label: "Nocny Fox",        emoji: "🌙", rating: 10,  check: (s) => s.is_night    },
+  morning_fox:  { label: "Poranny Fox",      emoji: "🌅", rating: 10,  check: (s) => s.is_morning  },
+  vip_diamond:  { label: "VIP Diamond",      emoji: "💎", rating: 200, check: (s) => s.total_visits >= 301 },
 };
 
 async function checkAchievements(userId, extraStats = {}) {
   const uid = String(userId);
-
   const fox = await pool.query(
     `SELECT streak_best FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [uid]
   );
   if (fox.rowCount === 0) return [];
 
-  const totalVisits = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]
-  );
-  const uniqueVenues = await pool.query(
-    `SELECT COUNT(DISTINCT venue_id)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]
-  );
-  const invitesSent = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [uid]
-  );
+  const totalVisits  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
+  const uniqueVenues = await pool.query(`SELECT COUNT(DISTINCT venue_id)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
+  const invitesSent  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [uid]);
 
   const stats = {
     total_visits: totalVisits.rows[0].c,
@@ -556,63 +531,51 @@ async function checkAchievements(userId, extraStats = {}) {
     if (!ach.check(stats)) continue;
     try {
       await pool.query(
-        `INSERT INTO fp1_achievements(user_id, achievement_code)
-         VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+        `INSERT INTO fp1_achievements(user_id, achievement_code) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
         [uid, code]
       );
       totalBonus += ach.rating;
       newOnes.push({ code, ...ach });
-    } catch (e) {
-      console.error("ACH_INSERT_ERR", e?.message);
-    }
+    } catch (e) { console.error("ACH_INSERT_ERR", e?.message); }
   }
 
-  if (totalBonus > 0) {
-    await pool.query(
-      `UPDATE fp1_foxes SET rating=rating+$1 WHERE user_id=$2`,
-      [totalBonus, uid]
-    );
-  }
+  if (totalBonus > 0)
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+$1 WHERE user_id=$2`, [totalBonus, uid]);
 
   return newOnes;
 }
 
 function formatAchievements(newOnes) {
   if (!newOnes || newOnes.length === 0) return "";
-  const lines = newOnes.map(a => `${a.emoji} ${a.label} +${a.rating} rating`);
-  return `\n\n🏆 Нові досягнення!\n${lines.join("\n")}`;
+  const lines = newOnes.map(a => `${a.emoji} ${a.label} +${a.rating} pkt`);
+  return `\n\n🏆 Nowe osiągnięcia!\n${lines.join("\n")}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   V12: FOUNDER FOX
+   FOUNDER FOX
 ═══════════════════════════════════════════════════════════════ */
 const FOUNDER_LIMIT = 1000;
 
 async function assignFounderNumber(userId) {
+  // Адмін не отримує founder number
+  if (isAdmin(userId)) return null;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const check = await client.query(
-      `SELECT founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`,
-      [String(userId)]
+      `SELECT founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]
     );
     if (check.rows[0]?.founder_number) {
       await client.query("ROLLBACK");
       return check.rows[0].founder_number;
     }
     const nextNum = await client.query(`
-      SELECT n AS num
-      FROM generate_series(1, $1) AS n
-      WHERE n NOT IN (
-        SELECT founder_number FROM fp1_foxes WHERE founder_number IS NOT NULL
-      )
-      ORDER BY n ASC LIMIT 1
-      FOR UPDATE SKIP LOCKED
+      SELECT n AS num FROM generate_series(1, $1) AS n
+      WHERE n NOT IN (SELECT founder_number FROM fp1_foxes WHERE founder_number IS NOT NULL)
+      ORDER BY n ASC LIMIT 1 FOR UPDATE SKIP LOCKED
     `, [FOUNDER_LIMIT]);
-    if (nextNum.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return null;
-    }
+    if (nextNum.rowCount === 0) { await client.query("ROLLBACK"); return null; }
     const num = nextNum.rows[0].num;
     await client.query(
       `UPDATE fp1_foxes SET founder_number=$1, founder_registered_at=NOW() WHERE user_id=$2`,
@@ -642,7 +605,7 @@ async function founderSpotsLeft() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   SESSION — HMAC-signed cookie
+   SESSION
 ═══════════════════════════════════════════════════════════════ */
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const COOKIE_NAME    = "fp1_panel_session";
@@ -712,7 +675,6 @@ const loginFail = new Map();
 function getIp(req) {
   return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.ip || "unknown";
 }
-
 function loginRate(ip) {
   const x = loginFail.get(ip) || { fails: 0, until: 0 };
   if (x.until && Date.now() < x.until) return { blocked: true };
@@ -773,7 +735,7 @@ function flash(req) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   CORE DB FUNCTIONS
+   CORE DB
 ═══════════════════════════════════════════════════════════════ */
 async function getVenue(venueId) {
   const r = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
@@ -888,8 +850,7 @@ async function confirmOtp(venueId, otp) {
   }
 
   const already = await hasCountedToday(venueId, userId);
-
-  const client = await pool.connect();
+  const client  = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(
@@ -910,12 +871,8 @@ async function confirmOtp(venueId, otp) {
       if (hasDK) { cols.push("day_key"); vals.push(day); }
       if (hasWD) { cols.push("war_day"); vals.push(day); }
       const ph = cols.map((_, i) => `$${i + 1}`).join(",");
-      await client.query(
-        `INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES (${ph})`, vals
-      );
-      await client.query(
-        `UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]
-      );
+      await client.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES (${ph})`, vals);
+      await client.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
       countedAdded = true;
     }
     await client.query("COMMIT");
@@ -923,16 +880,13 @@ async function confirmOtp(venueId, otp) {
     if (countedAdded) {
       inviteAutoAdded = await awardInvitesFrom5Visits(userId);
 
-      // Перший візит взагалі → +10 новому Fox + +5 інвайтеру
+      // Перший візит → +10 Fox + +5 інвайтеру
       const totalVisits = await pool.query(
         `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]
       );
       isFirstEver = totalVisits.rows[0].c === 1;
-
       if (isFirstEver) {
-        await pool.query(
-          `UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]
-        );
+        await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
         const inviter = await pool.query(
           `SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
         );
@@ -941,19 +895,18 @@ async function confirmOtp(venueId, otp) {
             `UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`,
             [String(inviter.rows[0].invited_by_user_id)]
           );
-          // Повідомлення інвайтеру
           if (bot) {
             try {
               await bot.telegram.sendMessage(
                 Number(inviter.rows[0].invited_by_user_id),
-                `🎉 Твій друг зробив перший check-in!\n+5 rating тобі за запрошення!`
+                `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 punktów dla Ciebie za zaproszenie! 🦊`
               );
             } catch (e) { console.error("INVITER_NOTIFY_ERR", e?.message); }
           }
         }
       }
 
-      // Перевіряємо чи Fox перший в цьому закладі (pioneer)
+      // Pioneer?
       const venueVisitCount = await pool.query(
         `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]
       );
@@ -980,7 +933,7 @@ async function confirmOtp(venueId, otp) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   VENUE STATUS HELPERS
+   VENUE STATUS
 ═══════════════════════════════════════════════════════════════ */
 async function reserveCountThisMonth(venueId) {
   const r = await pool.query(
@@ -1016,7 +969,7 @@ async function currentVenueStatus(venueId) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   STAMPS HELPERS
+   STAMPS
 ═══════════════════════════════════════════════════════════════ */
 async function stampBalance(venueId, userId) {
   const r = await pool.query(
@@ -1038,7 +991,7 @@ async function stampHistory(venueId, userId, limit = 10) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   INVITE HELPERS
+   INVITES
 ═══════════════════════════════════════════════════════════════ */
 async function redeemInviteCode(userId, codeRaw) {
   const code = String(codeRaw || "").trim().toUpperCase();
@@ -1064,10 +1017,9 @@ async function redeemInviteCode(userId, codeRaw) {
      WHERE user_id=$3`,
     [invite.created_by_user_id ? String(invite.created_by_user_id) : null, code, String(userId)]
   );
-  if (invite.created_by_user_id) {
+  if (invite.created_by_user_id)
     await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`,
       [String(invite.created_by_user_id)]);
-  }
   return { ok: true };
 }
 
@@ -1148,7 +1100,7 @@ async function getGrowthLeaderboard(limit = 10) {
    ROUTES — HEALTH
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V14_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V15_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1169,10 +1121,9 @@ app.get("/panel", (req, res) => {
   const msg = req.query.msg ? `<div class="err">${escapeHtml(req.query.msg)}</div>` : "";
   res.send(pageShell("Panel lokalu", `
     <div class="card" style="max-width:400px;margin:60px auto">
-      <h1>🦊 Panel lokalu</h1>
-      ${msg}
+      <h1>🦊 Panel lokalu</h1>${msg}
       <form method="POST" action="/panel/login">
-        <label>Venue ID</label>
+        <label>ID lokalu</label>
         <input name="venue_id" type="number" min="1" required placeholder="np. 1" autocomplete="off"/>
         <label>PIN (6 cyfr)</label>
         <input name="pin" type="password" maxlength="6" required placeholder="••••••"/>
@@ -1187,7 +1138,10 @@ app.post("/panel/login", async (req, res) => {
     return res.redirect(`/panel?msg=${encodeURIComponent("Za dużo prób. Spróbuj za 15 minut.")}`);
   const venueId = String(req.body.venue_id || "").trim();
   const pin     = String(req.body.pin || "").trim();
-  if (!venueId || !pin) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Brak danych.")}`); }
+  if (!venueId || !pin) {
+    loginBad(ip);
+    return res.redirect(`/panel?msg=${encodeURIComponent("Brak danych.")}`);
+  }
   const v = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
   if (v.rowCount === 0 || !v.rows[0].pin_salt) {
     loginBad(ip);
@@ -1206,20 +1160,20 @@ app.post("/panel/login", async (req, res) => {
 app.get("/panel/logout", (req, res) => { clearCookie(res); res.redirect("/panel"); });
 
 app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
-  const venue   = await getVenue(venueId);
-  const pending = await listPending(venueId);
-  const status  = await currentVenueStatus(venueId);
+  const venueId     = String(req.panel.venue_id);
+  const venue       = await getVenue(venueId);
+  const pending     = await listPending(venueId);
+  const status      = await currentVenueStatus(venueId);
   const newFoxMonth = await countNewFoxThisMonth(venueId);
   const newFoxTotal = await countNewFoxTotal(venueId);
-  const growth  = await getGrowthLeaderboard(50);
-  const myPos   = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
+  const growth      = await getGrowthLeaderboard(50);
+  const myPos       = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
 
   let statusHtml = `<span class="badge badge-ok">● Aktywny</span>`;
   if (status) {
     const till = new Date(status.ends_at).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
     statusHtml = status.type === "reserve"
-      ? `<span class="badge badge-err">📍 Rezerwa do ${till}</span>`
+      ? `<span class="badge badge-err">📍 Rezerwacja do ${till}</span>`
       : `<span class="badge badge-warn">⚠️ Ograniczone (${escapeHtml(status.reason)}) do ${till}</span>`;
   }
 
@@ -1243,15 +1197,15 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </div>
       ${flash(req)}
       <div style="margin-top:10px;opacity:.7;font-size:13px">
-        Код закладу: <b>${escapeHtml(venue.ref_code || 'brak')}</b> | Total visits: <b>${xy.rows[0].c}</b>
+        Kod lokalu: <b>${escapeHtml(venue.ref_code || 'brak')}</b> | Łącznie wizyt: <b>${xy.rows[0].c}</b>
       </div>
     </div>
 
     <div class="card">
       <h2>📊 Nowi Fox przez twój kod</h2>
-      <div style="font-size:24px;font-weight:700;margin:10px 0">Цього місяця: ${newFoxMonth} Fox</div>
-      <div class="muted">Всього приведено: ${newFoxTotal} Fox</div>
-      ${myPos > 0 ? `<div class="muted" style="margin-top:8px">Ти на ${myPos} місці в Growth топі! 🏆</div>` : ""}
+      <div style="font-size:24px;font-weight:700;margin:10px 0">W tym miesiącu: ${newFoxMonth} Fox</div>
+      <div class="muted">Łącznie przyciągniętych: ${newFoxTotal} Fox</div>
+      ${myPos > 0 ? `<div class="muted" style="margin-top:8px">Jesteś na ${myPos} miejscu w rankingu! 🏆</div>` : ""}
     </div>
 
     <div class="grid2">
@@ -1261,11 +1215,11 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           <input name="otp" placeholder="000000" maxlength="6" inputmode="numeric"
                  pattern="[0-9]{6}" required autocomplete="off" autofocus
                  style="font-size:28px;letter-spacing:10px;text-align:center"/>
-          <button type="submit" style="width:100%;margin-top:10px">Confirm ✓</button>
+          <button type="submit" style="width:100%;margin-top:10px">Potwierdź ✓</button>
         </form>
       </div>
       <div class="card">
-        <h2>Pending check-iny</h2>
+        <h2>Oczekujące check-iny</h2>
         ${pendingHtml}
         <form method="GET" action="/panel/dashboard" style="margin-top:10px">
           <button type="submit" class="outline" style="width:100%">↻ Odśwież</button>
@@ -1277,46 +1231,46 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       <h2>Statusy lokalu</h2>
       <div class="grid2">
         <div>
-          <b>📍 Rezerwa</b> <span class="muted">(maks. 2×/mies., min. 24h wcześniej)</span>
+          <b>📍 Rezerwacja</b> <span class="muted">(maks. 2×/mies., min. 24h wcześniej)</span>
           <form method="POST" action="/panel/reserve" style="margin-top:8px">
-            <label>Початок</label>
+            <label>Początek</label>
             <input type="datetime-local" name="starts_at" required/>
-            <label>Тривалість</label>
+            <label>Czas trwania</label>
             <select name="hours">
-              <option value="1">1 год.</option><option value="2">2 год.</option>
-              <option value="4">4 год.</option><option value="8">8 год.</option>
-              <option value="24" selected>24 год.</option>
+              <option value="1">1 godz.</option><option value="2">2 godz.</option>
+              <option value="4">4 godz.</option><option value="8">8 godz.</option>
+              <option value="24" selected>24 godz.</option>
             </select>
-            <button type="submit" style="margin-top:10px;width:100%">Встановити резерв</button>
+            <button type="submit" style="margin-top:10px;width:100%">Ustaw rezerwację</button>
           </form>
         </div>
         <div>
           <b>⚠️ Dziś ograniczone</b> <span class="muted">(maks. 2×/tydz., do 3h)</span>
           <form method="POST" action="/panel/limited" style="margin-top:8px">
-            <label>Причина</label>
+            <label>Powód</label>
             <select name="reason">
               <option>FULL</option><option>PRIVATE EVENT</option><option>KITCHEN LIMIT</option>
             </select>
-            <label>Тривалість</label>
+            <label>Czas trwania</label>
             <select name="hours">
-              <option value="1">1 год.</option><option value="2">2 год.</option>
-              <option value="3" selected>3 год.</option>
+              <option value="1">1 godz.</option><option value="2">2 godz.</option>
+              <option value="3" selected>3 godz.</option>
             </select>
-            <button type="submit" style="margin-top:10px;width:100%">Встановити статус</button>
+            <button type="submit" style="margin-top:10px;width:100%">Ustaw status</button>
           </form>
           ${status ? `<form method="POST" action="/panel/status/cancel" style="margin-top:8px">
-            <button type="submit" class="danger" style="width:100%">Скасувати статус</button>
+            <button type="submit" class="danger" style="width:100%">Anuluj aktywny status</button>
           </form>` : ""}
         </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>Emoji-stamps</h2>
+      <h2>Emoji-stemple</h2>
       <form method="POST" action="/panel/stamps">
         <div class="grid2">
           <div>
-            <label>Telegram ID гостя</label>
+            <label>Telegram ID gościa</label>
             <input name="user_id" type="number" required placeholder="np. 123456789"/>
           </div>
           <div>
@@ -1330,18 +1284,18 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
             </select>
           </div>
           <div>
-            <label>Дія</label>
+            <label>Akcja</label>
             <select name="delta">
-              <option value="1">+1 (додати)</option>
-              <option value="-1">-1 (використати)</option>
+              <option value="1">+1 (dodaj)</option>
+              <option value="-1">-1 (użyj)</option>
             </select>
           </div>
           <div>
-            <label>Нотатка (опціонально)</label>
-            <input name="note" placeholder="напр. безкоштовний десерт"/>
+            <label>Notatka (opcjonalnie)</label>
+            <input name="note" placeholder="np. darmowy deser"/>
           </div>
         </div>
-        <button type="submit" style="margin-top:10px">Застосувати штамп</button>
+        <button type="submit" style="margin-top:10px">Zastosuj stempel</button>
       </form>
     </div>`
   ));
@@ -1364,18 +1318,18 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
         if (r.debounce) {
           msg = `⚠️ Wizyta już potwierdzona w ciągu 15 min\n🏪 ${venue.name}\n📊 X/Y: ${xy.X}/${xy.Y}`;
         } else if (!r.countedAdded) {
-          msg = `DZIŚ JUŻ BYŁO ✅\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
+          msg = `DZIŚ JUŻ BYŁEŚ ✅\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
         } else {
-          msg = `✅ Confirm OK\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
-          if (r.isFirstEver) msg += `\n🎉 Перший візит! +10 rating`;
-          if (r.inviteAutoAdded > 0) msg += `\n🎁 +${r.inviteAutoAdded} invite за 5 візитів!`;
+          msg = `✅ Wizyta potwierdzona!\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
+          if (r.isFirstEver) msg += `\n🎉 Pierwsza wizyta! +10 punktów`;
+          if (r.inviteAutoAdded > 0) msg += `\n🎁 +${r.inviteAutoAdded} zaproszenie za 5 wizyt!`;
           msg += formatAchievements(r.newAch);
         }
         await bot.telegram.sendMessage(Number(r.userId), msg);
       } catch (e) { console.error("TG_SEND_ERR", e?.message); }
     }
-    const label = r.debounce ? "Debounce ⚠️ (15 хв)"
-      : r.countedAdded ? `Confirm OK ✅  X/Y ${xy.X}/${xy.Y}`
+    const label = r.debounce ? "Debounce ⚠️ (15 min)"
+      : r.countedAdded ? `Potwierdzone ✅  X/Y ${xy.X}/${xy.Y}`
       : `DZIŚ JUŻ BYŁO ✅  X/Y ${xy.X}/${xy.Y}`;
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent(label)}`);
   } catch (e) {
@@ -1388,19 +1342,19 @@ app.post("/panel/reserve", requirePanelAuth, async (req, res) => {
   const venueId   = String(req.panel.venue_id);
   const startsRaw = String(req.body.starts_at || "").trim();
   const hours     = Math.min(24, Math.max(1, Number(req.body.hours) || 24));
-  if (!startsRaw) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Введіть дату і час.")}`);
+  if (!startsRaw) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Podaj datę i godzinę.")}`);
   const startsAt = new Date(startsRaw);
-  if (isNaN(startsAt.getTime())) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Невірна дата.")}`);
+  if (isNaN(startsAt.getTime())) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowa data.")}`);
   if (startsAt.getTime() - Date.now() < 24 * 3600 * 1000)
-    return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Мінімум за 24 год.")}`);
+    return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Rezerwacja minimum 24h wcześniej.")}`);
   const cnt = await reserveCountThisMonth(venueId);
-  if (cnt >= 2) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Максимум 2 резерви на місяць.")}`);
+  if (cnt >= 2) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Maksimum 2 rezerwacje miesięcznie.")}`);
   const endsAt = new Date(startsAt.getTime() + hours * 3600 * 1000);
   await pool.query(
     `INSERT INTO fp1_venue_status(venue_id, type, starts_at, ends_at) VALUES ($1,'reserve',$2,$3)`,
     [venueId, startsAt.toISOString(), endsAt.toISOString()]
   );
-  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Резерв встановлено (${hours} год.)`)}`);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Rezerwacja ustawiona (${hours} godz.)`)}`);
 });
 
 app.post("/panel/limited", requirePanelAuth, async (req, res) => {
@@ -1408,14 +1362,14 @@ app.post("/panel/limited", requirePanelAuth, async (req, res) => {
   const reason  = ["FULL","PRIVATE EVENT","KITCHEN LIMIT"].includes(req.body.reason) ? req.body.reason : "FULL";
   const hours   = Math.min(3, Math.max(1, Number(req.body.hours) || 3));
   const cnt = await limitedCountThisWeek(venueId);
-  if (cnt >= 2) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Максимум 2× на тиждень.")}`);
+  if (cnt >= 2) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Maksimum 2× tygodniowo.")}`);
   const now    = new Date();
   const endsAt = new Date(now.getTime() + hours * 3600 * 1000);
   await pool.query(
     `INSERT INTO fp1_venue_status(venue_id, type, reason, starts_at, ends_at) VALUES ($1,'limited',$2,$3,$4)`,
     [venueId, reason, now.toISOString(), endsAt.toISOString()]
   );
-  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Статус "${reason}" на ${hours} год.`)}`);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Status "${reason}" na ${hours} godz.`)}`);
 });
 
 app.post("/panel/status/cancel", requirePanelAuth, async (req, res) => {
@@ -1425,7 +1379,7 @@ app.post("/panel/status/cancel", requirePanelAuth, async (req, res) => {
      WHERE venue_id=$1 AND starts_at <= NOW() AND ends_at > NOW()`,
     [venueId]
   );
-  res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Статус скасовано.")}`);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Status anulowany.")}`);
 });
 
 app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
@@ -1435,10 +1389,10 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
   const delta   = Number(req.body.delta) === -1 ? -1 : 1;
   const note    = String(req.body.note || "").trim().slice(0, 100);
   if (!userId || isNaN(Number(userId)))
-    return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Невірний Telegram ID.")}`);
+    return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy Telegram ID.")}`);
   if (delta === -1) {
     const bal = await stampBalance(venueId, userId);
-    if (bal <= 0) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Немає штампів.")}`);
+    if (bal <= 0) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Gość nie ma stempli.")}`);
   }
   await pool.query(
     `INSERT INTO fp1_stamps(venue_id, user_id, emoji, delta, note) VALUES ($1,$2,$3,$4,$5)`,
@@ -1448,13 +1402,13 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
   if (bot) {
     try {
       const venue  = await getVenue(venueId);
-      const action = delta > 0 ? `+${delta} ${emoji}` : `${delta} ${emoji} (використано)`;
+      const action = delta > 0 ? `+${delta} ${emoji}` : `${delta} ${emoji} (użyto)`;
       await bot.telegram.sendMessage(Number(userId),
-        `${emoji} Штамп у ${venue?.name || venueId}\n${action}\nБаланс: ${newBal}${note ? `\nНотатка: ${note}` : ""}`
+        `${emoji} Stempel w ${venue?.name || venueId}\n${action}\nTwoje saldo: ${newBal}${note ? `\nNotatka: ${note}` : ""}`
       );
     } catch (e) { console.error("STAMP_TG_ERR", e?.message); }
   }
-  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Штамп ${delta > 0 ? "додано" : "використано"} ✅ (баланс: ${newBal})`)}`);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Stempel ${delta > 0 ? "dodany" : "użyty"} ✅ (saldo: ${newBal})`)}`);
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1464,18 +1418,21 @@ app.get("/admin/login", (req, res) => {
   const msg = req.query.msg ? `<div class="err">${escapeHtml(req.query.msg)}</div>` : "";
   res.send(pageShell("Admin", `
     <div class="card" style="max-width:360px;margin:60px auto">
-      <h1>🛡️ Admin Panel</h1>${msg}
+      <h1>🛡️ Panel Admina</h1>${msg}
       <form method="POST" action="/admin/login">
-        <label>Admin Secret</label>
+        <label>Hasło admina</label>
         <input name="secret" type="password" required placeholder="••••••••"/>
-        <button type="submit" style="width:100%;margin-top:12px">Увійти →</button>
+        <button type="submit" style="width:100%;margin-top:12px">Zaloguj →</button>
       </form>
     </div>`));
 });
 
 app.post("/admin/login", (req, res) => {
   const secret = String(req.body.secret || "").trim();
-  if (secret !== ADMIN_SECRET) { loginBad(getIp(req)); return res.redirect(`/admin/login?msg=${encodeURIComponent("Невірний secret.")}`); }
+  if (secret !== ADMIN_SECRET) {
+    loginBad(getIp(req));
+    return res.redirect(`/admin/login?msg=${encodeURIComponent("Błędne hasło.")}`);
+  }
   loginOk(getIp(req));
   setCookie(res, signSession({ role: "admin", venue_id: "0", exp: Date.now() + SESSION_TTL_MS }));
   res.redirect("/admin");
@@ -1495,21 +1452,19 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
             founder_number, streak_current, streak_best, created_at
      FROM fp1_foxes ORDER BY rating DESC LIMIT 50`
   );
-  const growth = await getGrowthLeaderboard(10);
-  const spotsLeft = await founderSpotsLeft();
-
+  const growth       = await getGrowthLeaderboard(10);
+  const spotsLeft    = await founderSpotsLeft();
   const districtStats = await pool.query(
     `SELECT district, COUNT(*)::int AS cnt FROM fp1_foxes
      WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC`
   );
-
   const achStats = await pool.query(
     `SELECT achievement_code, COUNT(*)::int AS cnt FROM fp1_achievements
      GROUP BY achievement_code ORDER BY cnt DESC LIMIT 10`
   );
 
   const pendingHtml = pending.rows.length === 0
-    ? `<div class="muted">Немає заявок</div>`
+    ? `<div class="muted">Brak wniosków</div>`
     : pending.rows.map(v => `
       <div style="padding:10px 0;border-bottom:1px solid #2a2f49">
         <b>${escapeHtml(v.name)}</b> — ${escapeHtml(v.city)}
@@ -1517,27 +1472,27 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         ${v.fox_nick ? `<br><span class="muted">Fox: @${escapeHtml(v.fox_nick)}</span>` : ""}
         <br>
         <form method="POST" action="/admin/venues/${v.id}/approve" style="display:inline">
-          <button type="submit" style="margin-top:6px;margin-right:6px">✅ Approve</button>
+          <button type="submit" style="margin-top:6px;margin-right:6px">✅ Zatwierdź</button>
         </form>
         <form method="POST" action="/admin/venues/${v.id}/reject" style="display:inline">
-          <button type="submit" class="danger">❌ Reject</button>
+          <button type="submit" class="danger">❌ Odrzuć</button>
         </form>
       </div>`).join("");
 
-  const venuesHtml  = venues.rows.map(v => `
+  const venuesHtml = venues.rows.map(v => `
     <tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td>
-    <td>${v.visits}</td><td><span class="badge badge-ok">Active</span></td></tr>`).join("");
+    <td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td></tr>`).join("");
 
-  const foxesHtml   = foxes.rows.map(f => `
+  const foxesHtml = foxes.rows.map(f => `
     <tr>
       <td>${f.user_id}</td><td>${escapeHtml(f.username || "—")}</td>
-      <td>${f.rating}</td><td>${f.invites}</td><td>${escapeHtml(f.city)}</td>
-      <td>${escapeHtml(f.district || "—")}</td>
-      <td>${f.streak_current || 0} 🔥 (best: ${f.streak_best || 0})</td>
+      <td>${f.rating}</td><td>${f.invites}</td>
+      <td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district || "—")}</td>
+      <td>${f.streak_current || 0} 🔥 (rek: ${f.streak_best || 0})</td>
       <td>${f.founder_number ? `<span style="color:#ffd700">👑 #${f.founder_number}</span>` : `<span class="muted">—</span>`}</td>
     </tr>`).join("");
 
-  const growthHtml  = growth.map((g, i) => `
+  const growthHtml = growth.map((g, i) => `
     <tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
 
   const districtHtml = districtStats.rows.map(d => `
@@ -1550,50 +1505,50 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
 
   res.send(pageShell("Admin — FoxPot", `
     <div class="card">
-      <div class="topbar"><h1>🛡️ Admin Panel</h1><a href="/admin/logout">Вийти</a></div>
+      <div class="topbar"><h1>🛡️ Panel Admina</h1><a href="/admin/logout">Wyloguj</a></div>
       ${flash(req)}
-      <div class="muted" style="margin-top:8px">👑 Founder: залишилось <b>${spotsLeft}</b> / ${FOUNDER_LIMIT}</div>
+      <div class="muted" style="margin-top:8px">👑 Founder: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
     </div>
 
-    <div class="card"><h2>Заявки (${pending.rows.length})</h2>${pendingHtml}</div>
+    <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
 
     <div class="card">
-      <h2>🚀 Growth Leaderboard</h2>
+      <h2>🚀 Ranking wzrostu (ten miesiąc)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>#</th><th>Назва</th><th>Місто</th><th>Нових Fox</th></tr>
+        <tr style="opacity:.6"><th>#</th><th>Nazwa</th><th>Miasto</th><th>Nowych Fox</th></tr>
         ${growthHtml}
       </table>
     </div>
 
     <div class="grid2">
       <div class="card">
-        <h2>📍 Density по районах</h2>
+        <h2>📍 Gęstość według dzielnic</h2>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <tr style="opacity:.6"><th>Район</th><th>Fox</th></tr>
-          ${districtHtml || '<tr><td colspan="2" class="muted">Немає даних</td></tr>'}
+          <tr style="opacity:.6"><th>Dzielnica</th><th>Fox</th></tr>
+          ${districtHtml || '<tr><td colspan="2" class="muted">Brak danych</td></tr>'}
         </table>
       </div>
       <div class="card">
-        <h2>🏆 Топ досягнень</h2>
+        <h2>🏆 Top osiągnięcia</h2>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <tr style="opacity:.6"><th>Досягнення</th><th>Fox</th></tr>
-          ${achHtml || '<tr><td colspan="2" class="muted">Немає даних</td></tr>'}
+          <tr style="opacity:.6"><th>Osiągnięcie</th><th>Fox</th></tr>
+          ${achHtml || '<tr><td colspan="2" class="muted">Brak danych</td></tr>'}
         </table>
       </div>
     </div>
 
     <div class="card">
-      <h2>Активні заклади</h2>
+      <h2>Aktywne lokale</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>ID</th><th>Назва</th><th>Місто</th><th>Візити</th><th>Статус</th></tr>
+        <tr style="opacity:.6"><th>ID</th><th>Nazwa</th><th>Miasto</th><th>Wizyty</th><th>Status</th></tr>
         ${venuesHtml}
       </table>
     </div>
 
     <div class="card">
-      <h2>Fox (топ 50)</h2>
+      <h2>Fox (top 50)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>TG ID</th><th>Нік</th><th>Рейтинг</th><th>Інвайти</th><th>Місто</th><th>Район</th><th>Streak</th><th>Founder</th></tr>
+        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Punkty</th><th>Zapr.</th><th>Miasto</th><th>Dzielnica</th><th>Streak</th><th>Founder</th></tr>
         ${foxesHtml}
       </table>
     </div>`, `
@@ -1622,19 +1577,19 @@ app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
       if (bot) {
         try {
           await bot.telegram.sendMessage(Number(fox.user_id),
-            `🎉 Заклад "${v.name}" затверджено!\n+${invBonus} інвайтів, +${ratBonus} рейтинг`);
+            `🎉 Lokal "${v.name}" został zatwierdzony!\n+${invBonus} zaproszeń, +${ratBonus} punktów`);
         } catch (e) { console.error("TG_APPROVE_ERR", e?.message); }
       }
     }
   }
-  res.redirect(`/admin?ok=${encodeURIComponent("Затверджено: " + (v?.name || venueId))}`);
+  res.redirect(`/admin?ok=${encodeURIComponent("Zatwierdzono: " + (v?.name || venueId))}`);
 });
 
 app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
   const venueId = Number(req.params.id);
   const v = await getVenue(venueId);
   await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
-  res.redirect(`/admin?warn=${encodeURIComponent("Відхилено: " + (v?.name || venueId))}`);
+  res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: " + (v?.name || venueId))}`);
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1659,26 +1614,25 @@ if (BOT_TOKEN) {
         `SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
       );
       if (exists.rowCount > 0) {
-        const f   = exists.rows[0];
-        const tot = await pool.query(
+        const f         = exists.rows[0];
+        const tot       = await pool.query(
           `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]
         );
         const badge     = founderBadge(f.founder_number);
         const spotsLeft = await founderSpotsLeft();
 
-        let msg = `🦊 Твій профіль\n\n`;
+        let msg = `🦊 Twój profil\n\n`;
         if (badge) msg += `${badge}\n\n`;
-        msg += `Рейтинг: ${f.rating}\n`;
-        msg += `Інвайти: ${f.invites}\n`;
-        msg += `Місто: ${f.city}\n`;
-        msg += `Район: ${f.district || "не вказано"}\n`;
-        msg += `Візити: ${tot.rows[0].c}\n`;
-        msg += `🔥 Streak: ${f.streak_current || 0} днів (рекорд: ${f.streak_best || 0})\n`;
+        msg += `Punkty: ${f.rating}\n`;
+        msg += `Zaproszenia: ${f.invites}\n`;
+        msg += `Miasto: ${f.city}\n`;
+        msg += `Dzielnica: ${f.district || "nie podano"}\n`;
+        msg += `Wizyty: ${tot.rows[0].c}\n`;
+        msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         if (!f.founder_number && spotsLeft > 0)
-          msg += `\n⚡ Founder місць: ${spotsLeft}`;
-        msg += `\n\nКоманди:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
+          msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
 
-        // Streak при кожному відкритті профілю
         await updateStreak(userId);
         return ctx.reply(msg);
       }
@@ -1686,12 +1640,13 @@ if (BOT_TOKEN) {
       // Новий Fox — потрібен код
       if (!codeOrInv) {
         const spotsLeft = await founderSpotsLeft();
-        let msg = `🦊 THE FOXPOT CLUB\n\nЩоб зареєструватись потрібен інвайт від Fox або код ресторану.\n\nНапиши: /start <КОД>`;
-        if (spotsLeft > 0) msg += `\n\n👑 Перших 1000 Fox — статус FOUNDER!\nЗалишилось: ${spotsLeft}`;
+        let msg = `🦊 THE FOXPOT CLUB\n\nAby się zarejestrować, potrzebujesz zaproszenia od Fox lub kodu lokalu.\n\nNapisz: /start <KOD>`;
+        if (spotsLeft > 0)
+          msg += `\n\n👑 Pierwsze 1000 Fox otrzymuje status FOUNDER!\nPozostało miejsc: ${spotsLeft}`;
         return ctx.reply(msg);
       }
 
-      // Код ресторану?
+      // Kod lokalu?
       const venue = await pool.query(
         `SELECT * FROM fp1_venues WHERE ref_code=$1 AND approved=TRUE LIMIT 1`,
         [codeOrInv.toUpperCase()]
@@ -1709,19 +1664,19 @@ if (BOT_TOKEN) {
           [v.id, userId, day]
         );
         const founderNum = await assignFounderNumber(userId);
-        let msg = `✅ Зареєстровано через ${v.name}!\n\n+5 інвайтів\n`;
-        if (founderNum) msg += `\n👑 Ти FOUNDER FOX #${founderNum}!\n`;
-        else msg += `\n(Founder місця закінчились)\n`;
-        msg += `\n/checkin ${v.id} — перший візит!`;
+        let msg = `✅ Zarejestrowano przez ${v.name}!\n\n+5 zaproszeń\n`;
+        if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
+        else msg += `\n(Miejsca Founder już zajęte)\n`;
+        msg += `\n/checkin ${v.id} — pierwsza wizyta!`;
         await ctx.reply(msg);
         await sendDistrictKeyboard(ctx, "register");
         return;
       }
 
-      // Інвайт-код від Fox?
+      // Zaproszenie od Fox?
       const result = await redeemInviteCode(userId, codeOrInv);
       if (!result.ok)
-        return ctx.reply("❌ Невірний код. Потрібен інвайт від Fox або код ресторану.");
+        return ctx.reply("❌ Nieprawidłowy kod. Potrzebujesz zaproszenia od Fox lub kodu lokalu.");
 
       await pool.query(
         `INSERT INTO fp1_foxes(user_id, username, rating, invites, city)
@@ -1729,15 +1684,15 @@ if (BOT_TOKEN) {
         [userId, username]
       );
       const founderNum = await assignFounderNumber(userId);
-      let msg = `✅ Зареєстровано!\n\n+3 інвайти\n`;
-      if (founderNum) msg += `\n👑 Ти FOUNDER FOX #${founderNum}!\n`;
-      else msg += `\n(Founder місця закінчились)\n`;
+      let msg = `✅ Zarejestrowano!\n\n+3 zaproszenia\n`;
+      if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
+      else msg += `\n(Miejsca Founder już zajęte)\n`;
       await ctx.reply(msg);
       await sendDistrictKeyboard(ctx, "register");
 
     } catch (e) {
       console.error("START_ERR", e);
-      await ctx.reply("Помилка. Спробуй ще раз.");
+      await ctx.reply("Błąd. Spróbuj ponownie.");
     }
   });
 
@@ -1750,33 +1705,32 @@ if (BOT_TOKEN) {
          FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
       );
       if (fox.rowCount === 0)
-        return ctx.reply("❌ Спочатку зареєструйся через /start <КОД>");
+        return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
 
-      const f    = fox.rows[0];
-      const cur  = f.streak_current  || 0;
-      const best = f.streak_best     || 0;
+      const f      = fox.rows[0];
+      const cur    = f.streak_current  || 0;
+      const best   = f.streak_best     || 0;
       const freeze = f.streak_freeze_available || 0;
-      const last = f.streak_last_date
+      const last   = f.streak_last_date
         ? String(f.streak_last_date).slice(0, 10)
-        : "ніколи";
+        : "nigdy";
 
-      let msg = `🔥 Твій Streak\n\n`;
-      msg += `Поточний: ${cur} ${cur > 0 ? "🔥".repeat(Math.min(cur, 5)) : ""}\n`;
-      msg += `Рекорд: ${best} днів\n`;
-      msg += `❄️ Freeze: ${freeze} (рятує від скидання)\n`;
-      msg += `Останній день: ${last}\n\n`;
+      let msg = `🔥 Twój Streak\n\n`;
+      msg += `Aktualny: ${cur} ${cur > 0 ? "🔥".repeat(Math.min(cur, 5)) : ""}\n`;
+      msg += `Rekord: ${best} dni\n`;
+      msg += `❄️ Freeze: ${freeze} (chroni przed resetem)\n`;
+      msg += `Ostatni dzień: ${last}\n\n`;
 
-      // Наступний бонус
-      if (cur < 7)        msg += `До бонусу +5 rating: ${7 - cur} днів`;
-      else if (cur < 30)  msg += `До бонусу +15 rating: ${30 - cur} днів`;
-      else if (cur < 90)  msg += `До бонусу +50 rating: ${90 - cur} днів`;
-      else if (cur < 365) msg += `До бонусу +200 rating: ${365 - cur} днів`;
-      else                msg += `🏆 Ти досяг максимального streak!`;
+      if (cur < 7)        msg += `Do bonusu +5 pkt: ${7 - cur} dni`;
+      else if (cur < 30)  msg += `Do bonusu +15 pkt: ${30 - cur} dni`;
+      else if (cur < 90)  msg += `Do bonusu +50 pkt: ${90 - cur} dni`;
+      else if (cur < 365) msg += `Do bonusu +200 pkt: ${365 - cur} dni`;
+      else                msg += `🏆 Osiągnąłeś maksymalny streak!`;
 
       await ctx.reply(msg);
     } catch (e) {
       console.error("STREAK_ERR", e);
-      await ctx.reply("Помилка. Спробуй ще раз.");
+      await ctx.reply("Błąd. Spróbuj ponownie.");
     }
   });
 
@@ -1788,21 +1742,21 @@ if (BOT_TOKEN) {
         `SELECT district, city FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
       );
       if (fox.rowCount === 0)
-        return ctx.reply("❌ Спочатку зареєструйся через /start <КОД>");
+        return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const f = fox.rows[0];
       await ctx.reply(
-        `⚙️ Налаштування\n\n📍 Район: ${f.district || "не вказано"}\n🏙️ Місто: ${f.city || "Warsaw"}`,
-        Markup.inlineKeyboard([[Markup.button.callback("📍 Змінити район", "change_district")]])
+        `⚙️ Ustawienia\n\n📍 Dzielnica: ${f.district || "nie podano"}\n🏙️ Miasto: ${f.city || "Warsaw"}`,
+        Markup.inlineKeyboard([[Markup.button.callback("📍 Zmień dzielnicę", "change_district")]])
       );
     } catch (e) {
       console.error("SETTINGS_ERR", e);
-      await ctx.reply("Помилка. Спробуй ще раз.");
+      await ctx.reply("Błąd. Spróbuj ponownie.");
     }
   });
 
   // ── /panel ────────────────────────────────────────────────────
   bot.command("panel", async (ctx) => {
-    await ctx.reply(`Панель закладу: ${PUBLIC_URL}/panel`);
+    await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`);
   });
 
   // ── /venues ───────────────────────────────────────────────────
@@ -1810,8 +1764,9 @@ if (BOT_TOKEN) {
     const r = await pool.query(
       `SELECT id, name, city FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 50`
     );
+    if (r.rows.length === 0) return ctx.reply("Brak aktywnych lokali.");
     const lines = r.rows.map(v => `• ID ${v.id}: ${v.name} (${v.city})`);
-    await ctx.reply(`🏪 Заклади:\n${lines.join("\n")}\n\n/checkin <ID>`);
+    await ctx.reply(`🏪 Lokale partnerskie:\n${lines.join("\n")}\n\n/checkin <ID>`);
   });
 
   // ── /invite ───────────────────────────────────────────────────
@@ -1821,14 +1776,14 @@ if (BOT_TOKEN) {
       const r = await createInviteCode(String(ctx.from.id));
       if (!r.ok)
         return ctx.reply(r.reason === "NO_INVITES"
-          ? "❌ Немає інвайтів. +1 за кожні 5 підтверджених візитів."
-          : `❌ Помилка: ${r.reason}`);
+          ? "❌ Brak zaproszeń. +1 za każde 5 potwierdzonych wizyt."
+          : `❌ Błąd: ${r.reason}`);
       await ctx.reply(
-        `✅ Інвайт-код (1 раз):\n${r.code}\n\nНовий Fox пише:\n/start ${r.code}\n\nЗалишилось інвайтів: ${r.invites_left}`
+        `✅ Kod zaproszenia (1 użycie):\n${r.code}\n\nNowy Fox wpisuje:\n/start ${r.code}\n\nPozostałe zaproszenia: ${r.invites_left}`
       );
     } catch (e) {
       console.error("INVITE_ERR", e);
-      await ctx.reply("❌ Помилка створення інвайту.");
+      await ctx.reply("❌ Błąd tworzenia zaproszenia.");
     }
   });
 
@@ -1837,26 +1792,26 @@ if (BOT_TOKEN) {
     try {
       const parts   = String(ctx.message?.text || "").trim().split(/\s+/);
       const venueId = parts[1];
-      if (!venueId) return ctx.reply("Використання: /checkin <venue_id>");
+      if (!venueId) return ctx.reply("Użycie: /checkin <venue_id>");
       const v = await getVenue(venueId);
-      if (!v) return ctx.reply("Заклад не знайдено.");
-      if (!v.approved) return ctx.reply("Заклад очікує на затвердження.");
+      if (!v) return ctx.reply("Nie znaleziono lokalu.");
+      if (!v.approved) return ctx.reply("Lokal oczekuje na zatwierdzenie.");
       await upsertFox(ctx);
       const userId = String(ctx.from.id);
       const status = await currentVenueStatus(venueId);
       let statusWarn = "";
       if (status?.type === "limited")
-        statusWarn = `\n⚠️ Статус "${status.reason}" до ${new Date(status.ends_at).toLocaleTimeString("pl-PL", { timeZone: "Europe/Warsaw" })}`;
+        statusWarn = `\n⚠️ Status "${status.reason}" do ${new Date(status.ends_at).toLocaleTimeString("pl-PL", { timeZone: "Europe/Warsaw" })}`;
       const already = await hasCountedToday(venueId, userId);
       if (already) {
-        const xy  = await countXY(venueId, userId);
-        return ctx.reply(`СЬОГОДНІ ВЖЕ БУЛО ✅\n🏪 ${v.name}\n📅 ${warsawDayKey()}\n📊 X/Y: ${xy.X}/${xy.Y}`);
+        const xy = await countXY(venueId, userId);
+        return ctx.reply(`DZIŚ JUŻ BYŁEŚ ✅\n🏪 ${v.name}\n📅 ${warsawDayKey()}\n📊 X/Y: ${xy.X}/${xy.Y}`);
       }
       const c = await createCheckin(venueId, userId);
-      await ctx.reply(`✅ Чек-ін (10 хв)\n\n🏪 ${v.name}${statusWarn}\n🔐 OTP: ${c.otp}\n\nПокажи персоналу.\nПанель: ${PUBLIC_URL}/panel`);
+      await ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${v.name}${statusWarn}\n🔐 OTP: ${c.otp}\n\nPokaż personelowi.\nPanel: ${PUBLIC_URL}/panel`);
     } catch (e) {
       console.error("CHECKIN_ERR", e);
-      await ctx.reply("Помилка чек-іну.");
+      await ctx.reply("Błąd check-inu.");
     }
   });
 
@@ -1865,26 +1820,28 @@ if (BOT_TOKEN) {
     try {
       const parts   = String(ctx.message?.text || "").trim().split(/\s+/);
       const venueId = parts[1];
-      if (!venueId) return ctx.reply("Використання: /stamps <venue_id>");
+      if (!venueId) return ctx.reply("Użycie: /stamps <venue_id>");
       const v = await getVenue(venueId);
-      if (!v) return ctx.reply("Заклад не знайдено.");
+      if (!v) return ctx.reply("Nie znaleziono lokalu.");
       const userId  = String(ctx.from.id);
       const balance = await stampBalance(venueId, userId);
       const hist    = await stampHistory(venueId, userId, 5);
       const histTxt = hist.map(h =>
         `${h.delta > 0 ? "+" : ""}${h.delta} ${h.emoji}${h.note ? " — " + h.note : ""}`
       ).join("\n");
-      await ctx.reply(`${v.name} — Штампи\nБаланс: ${balance}\n\nОстанні:\n${histTxt || "Немає"}`);
+      await ctx.reply(`${v.name} — Stemple\nSaldo: ${balance}\n\nOstatnie:\n${histTxt || "Brak historii"}`);
     } catch (e) {
       console.error("STAMPS_ERR", e);
-      await ctx.reply("Помилка штампів.");
+      await ctx.reply("Błąd stempli.");
     }
   });
 
   // ── /addvenue ─────────────────────────────────────────────────
   bot.command("addvenue", async (ctx) => {
     await upsertFox(ctx);
-    await ctx.reply(`Щоб підключити заклад:\n\n/newvenue Назва | Місто | Адреса | PIN (6 цифр)\n\nПриклад:\n/newvenue Pizza Roma | Warsaw | ul. Nowy Świat 5 | 654321`);
+    await ctx.reply(
+      `Aby dodać lokal, wyślij dane w formacie:\n\n/newvenue Nazwa | Miasto | Adres | PIN (6 cyfr)\n\nPrzykład:\n/newvenue Pizza Roma | Warsaw | ul. Nowy Świat 5 | 654321\n\nLokal będzie aktywny po zatwierdzeniu przez admina.`
+    );
   });
 
   // ── /newvenue ─────────────────────────────────────────────────
@@ -1894,12 +1851,12 @@ if (BOT_TOKEN) {
       const text  = String(ctx.message?.text || "").replace("/newvenue", "").trim();
       const parts = text.split("|").map(s => s.trim());
       if (parts.length < 4)
-        return ctx.reply("Невірний формат.\n/newvenue Назва | Місто | Адреса | PIN (6 цифр)");
+        return ctx.reply("Nieprawidłowy format.\n/newvenue Nazwa | Miasto | Adres | PIN (6 cyfr)");
       const [name, city, address, pin] = parts;
       if (!name || !city || !address || !pin)
-        return ctx.reply("Всі поля обов'язкові.");
+        return ctx.reply("Wszystkie pola są wymagane.");
       if (!/^\d{6}$/.test(pin))
-        return ctx.reply("PIN — рівно 6 цифр.");
+        return ctx.reply("PIN musi mieć dokładnie 6 cyfr.");
       const foxNick = ctx.from.username || String(ctx.from.id);
       const salt    = crypto.randomBytes(16).toString("hex");
       const hash    = pinHash(pin, salt);
@@ -1908,14 +1865,14 @@ if (BOT_TOKEN) {
          VALUES ($1,$2,$3,$4,$5,FALSE,$6)`,
         [name, city, address, hash, salt, foxNick]
       );
-      await ctx.reply(`✅ Заявку надіслано!\n\n🏪 ${name}\n📍 ${address}, ${city}\n\nАдмін перевірить і повідомить тебе.`);
+      await ctx.reply(`✅ Wniosek wysłany!\n\n🏪 ${name}\n📍 ${address}, ${city}\n\nAdmin sprawdzi i powiadomi Cię po zatwierdzeniu.`);
     } catch (e) {
       console.error("NEWVENUE_ERR", e);
-      await ctx.reply("Помилка реєстрації закладу.");
+      await ctx.reply("Błąd rejestracji lokalu.");
     }
   });
 
-  // ── Inline actions: район ─────────────────────────────────────
+  // ── Inline actions: dzielnica ─────────────────────────────────
   bot.action("change_district", async (ctx) => {
     try {
       await ctx.answerCbQuery();
@@ -1927,22 +1884,20 @@ if (BOT_TOKEN) {
     try {
       const district = ctx.match[1];
       if (!WARSAW_DISTRICTS.includes(district)) {
-        await ctx.answerCbQuery("❌ Невірний район");
+        await ctx.answerCbQuery("❌ Nieprawidłowa dzielnica");
         return;
       }
       const userId = String(ctx.from.id);
       await pool.query(`UPDATE fp1_foxes SET district=$1 WHERE user_id=$2`, [district, userId]);
-      await ctx.answerCbQuery(`✅ Збережено: ${district}`);
+      await ctx.answerCbQuery(`✅ Zapisano: ${district}`);
       try {
-        await ctx.editMessageText(
-          `✅ Район збережено!\n\n📍 ${district}\n\nЗмінити: /settings`
-        );
+        await ctx.editMessageText(`✅ Dzielnica zapisana!\n\n📍 ${district}\n\nZmień: /settings`);
       } catch {
-        await ctx.reply(`✅ Район: ${district}\n\nЗмінити: /settings`);
+        await ctx.reply(`✅ Dzielnica: ${district}\n\nZmień: /settings`);
       }
     } catch (e) {
       console.error("DISTRICT_ACTION_ERR", e);
-      await ctx.answerCbQuery("❌ Помилка.");
+      await ctx.answerCbQuery("❌ Błąd.");
     }
   });
 
@@ -1966,7 +1921,7 @@ if (BOT_TOKEN) {
         console.error("WEBHOOK_ERR", e?.message || e);
       }
     }
-    app.listen(PORT, () => console.log(`✅ Server V14 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V15 listening on ${PORT}`));
   } catch (e) {
     console.error("BOOT_ERR", e);
     process.exit(1);
