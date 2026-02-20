@@ -1234,6 +1234,23 @@ app.get("/api/achievements", requireWebAppAuth, async (req, res) => {
   }
 });
 
+// POST /api/district
+app.post("/api/district", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const district = String(req.body.district || "").trim();
+    const valid = [
+      "Śródmieście","Praga-Południe","Mokotów","Żoliborz","Wola","Ursynów",
+      "Praga-Północ","Targówek","Bielany","Bemowo","Białołęka","Wilanów","Inna dzielnica"
+    ];
+    if (!valid.includes(district)) return res.status(400).json({ error: "Nieprawidłowa dzielnica" });
+    await pool.query("UPDATE fp1_foxes SET district=$1 WHERE user_id=$2", [district, userId]);
+    res.json({ ok: true, district });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // GET /api/top
 app.get("/api/top", async (req, res) => {
   try {
