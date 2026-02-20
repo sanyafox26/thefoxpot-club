@@ -1,36 +1,31 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V18.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V20.0
  *
- * NOWOŚCI V17:
+ * NOWOŚCI V20:
+ *  ✅ GET  /webapp               — serwuje webapp.html (Telegram Mini App)
+ *  ✅ GET  /api/profile          — profil użytkownika (auth Telegram initData)
+ *  ✅ GET  /api/venues           — lista aktywnych lokali
+ *  ✅ POST /api/checkin          — generuje OTP dla check-inu
+ *  ✅ POST /api/spin             — daily spin
+ *  ✅ GET  /api/achievements     — lista osiągnięć użytkownika
+ *  ✅ GET  /api/top              — leaderboard Top 10 + moja pozycja
+ *  ✅ Przycisk "Otwórz App" w /start i menu bota
+ *
+ * V18 (bez zmian):
  *  ✅ /achievements — lista osiągnięć gracza
  *  ✅ /top — ranking Top 10 Fox
- *
- * V16 (bez zmian):
  *  ✅ Daily Spin — /spin z animacją
- *  ✅ Daily Spin — /spin raz dziennie z animacją
- *  ✅ Nagrody: +2 rating (60%), +5 rating (20%), +1 zaproszenie (10%), +15 rating (7%), +1 Freeze (3%)
- *
- * V15.2 (bez zmian):
- *  ✅ Wszystkie teksty po polsku
- *  ✅ Reset founder_number dla admina
- *
- * V14 (bez zmian):
  *  ✅ Referral bonuses, Streak, Sala Chwały
- *
- * V13 (bez zmian):
  *  ✅ Dzielnica zamieszkania + /settings
- *
- * V12 (bez zmian):
  *  ✅ Founder Fox (#1–1000)
- *
- * V11 (bez zmian):
  *  ✅ Referral system, panel, admin, stamps
  */
 
 const express  = require("express");
 const crypto   = require("crypto");
+const path     = require("path");
 const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
 
@@ -297,7 +292,6 @@ async function migrate() {
     )
   `);
 
-  // Ensure columns
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
   await ensureColumn("fp1_foxes",          "invites_from_5visits",  "INT NOT NULL DEFAULT 0");
@@ -318,13 +312,11 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "streak_last_date",      "DATE");
   await ensureColumn("fp1_foxes",          "streak_freeze_available","INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "streak_best",           "INT NOT NULL DEFAULT 0");
-  await ensureColumn("fp1_daily_spins",     "prize_label",           "TEXT");
+  await ensureColumn("fp1_daily_spins",    "prize_label",           "TEXT");
 
-  // Fix stare NOT NULL constraints
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`); } catch {}
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_tg DROP NOT NULL`); } catch {}
 
-  // Reset founder dla admina
   if (ADMIN_TG_ID) {
     await pool.query(
       `UPDATE fp1_foxes SET founder_number=NULL, founder_registered_at=NULL WHERE user_id=$1`,
@@ -333,7 +325,6 @@ async function migrate() {
     console.log(`✅ Founder number скинуто для адміна (TG ID: ${ADMIN_TG_ID})`);
   }
 
-  // Індекси
   await ensureIndex(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_founder_number ON fp1_foxes(founder_number) WHERE founder_number IS NOT NULL`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_achievements_user   ON fp1_achievements(user_id)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp        ON fp1_checkins(otp)`);
@@ -343,7 +334,6 @@ async function migrate() {
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_stamps_venue_user   ON fp1_stamps(venue_id, user_id)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_daily_spins_user    ON fp1_daily_spins(user_id, spin_date)`);
 
-  // ref_codes для venues
   const venuesNoCode = await pool.query(`SELECT id FROM fp1_venues WHERE ref_code IS NULL`);
   for (const v of venuesNoCode.rows) {
     let code = null;
@@ -355,11 +345,9 @@ async function migrate() {
     if (code) await pool.query(`UPDATE fp1_venues SET ref_code=$1 WHERE id=$2`, [code, v.id]);
   }
 
-  // Backfill war_day
   await pool.query(`UPDATE fp1_counted_visits SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
   await pool.query(`UPDATE fp1_checkins SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
 
-  // Backfill founder_number
   await pool.query(`
     WITH ranked AS (
       SELECT user_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
@@ -384,14 +372,12 @@ async function migrate() {
     );
   }
 
-  console.log("✅ Migrations OK (V18)");
+  console.log("✅ Migrations OK (V20)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   V16: DAILY SPIN
+   DAILY SPIN
 ═══════════════════════════════════════════════════════════════ */
-
-// Nagrody z prawdopodobieństwami
 const SPIN_PRIZES = [
   { type: "rating", value: 2,  label: "+2 punkty",       emoji: "🎁", weight: 60 },
   { type: "rating", value: 5,  label: "+5 punktów",      emoji: "⭐", weight: 20 },
@@ -400,7 +386,6 @@ const SPIN_PRIZES = [
   { type: "freeze", value: 1,  label: "+1 Freeze streak",emoji: "❄️", weight: 3  },
 ];
 
-// Emotki do animacji roulette
 const SPIN_EMOJIS = ["🦊", "💎", "⭐", "🎁", "👑", "🔥", "🎟️", "❄️", "🏆", "🎰"];
 
 function pickPrize() {
@@ -451,16 +436,12 @@ async function applyPrize(userId, prize) {
 
 async function doSpin(ctx) {
   const userId = String(ctx.from.id);
-
-  // Sprawdź czy Fox istnieje
   const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
   if (fox.rowCount === 0)
     return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
 
-  // Sprawdź czy już kręcił dziś
   const alreadySpun = await hasSpunToday(userId);
   if (alreadySpun) {
-    // Kiedy następny spin?
     const now      = new Date();
     const tomorrow = new Date(`${warsawDayKey(new Date(now.getTime() + 86400000))}T00:00:00+01:00`);
     const diffMs   = tomorrow - now;
@@ -471,10 +452,7 @@ async function doSpin(ctx) {
     );
   }
 
-  // Losuj nagrodę
   const prize = pickPrize();
-
-  // Animacja — wysyłamy wiadomość i edytujemy 3 razy
   const msg = await ctx.reply(`🎰 Kręcimy...\n\n[ ${randomSpinRow()} ]`);
   const msgId = msg.message_id;
   const chatId = ctx.chat.id;
@@ -487,15 +465,12 @@ async function doSpin(ctx) {
   try { await ctx.telegram.editMessageText(chatId, msgId, null, `🎰 Kręcimy...\n\n[ ${randomSpinRow()} ]`); } catch {}
   await sleep(900);
 
-  // Zapisz i zastosuj nagrodę
   await recordSpin(userId, prize);
   await applyPrize(userId, prize);
 
-  // Pobierz aktualny rating
   const updated = await pool.query(`SELECT rating, invites, streak_freeze_available FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
   const f = updated.rows[0];
 
-  // Finalna wiadomość
   const finalRow = `${prize.emoji} ${prize.emoji} ${prize.emoji}`;
   let finalMsg = `🎰 WYNIK!\n\n[ ${finalRow} ]\n\n`;
   finalMsg += `${prize.emoji} ${prize.label}!\n\n`;
@@ -511,7 +486,6 @@ async function doSpin(ctx) {
     await ctx.reply(finalMsg);
   }
 
-  // Sprawdź osiągnięcia po spinie
   await checkAchievements(userId);
 }
 
@@ -557,7 +531,7 @@ async function updateStreak(userId) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   ДОСЯГНЕННЯ
+   OSIĄGNIĘCIA
 ═══════════════════════════════════════════════════════════════ */
 const ACHIEVEMENTS = {
   explorer_1:   { label: "Pierwszy krok",    emoji: "🐾", rating: 5,   check: (s) => s.venues >= 1   },
@@ -1024,16 +998,275 @@ async function getGrowthLeaderboard(limit = 10) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   ROUTES — HEALTH
+   V20: AUTORYZACJA TELEGRAM WEBAPP
+═══════════════════════════════════════════════════════════════ */
+function verifyTelegramInitData(initData) {
+  if (!initData || !BOT_TOKEN) return null;
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return null;
+    params.delete("hash");
+
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+
+    const secretKey = crypto.createHmac("sha256", "WebAppData").update(BOT_TOKEN).digest();
+    const expectedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+    if (expectedHash !== hash) return null;
+
+    const userStr = params.get("user");
+    if (!userStr) return null;
+    return JSON.parse(userStr);
+  } catch (e) {
+    console.error("TG_AUTH_ERR", e?.message);
+    return null;
+  }
+}
+
+function requireWebAppAuth(req, res, next) {
+  const initData = req.headers["x-telegram-init-data"] || "";
+  const user = verifyTelegramInitData(initData);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  req.tgUser = user;
+  next();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ROUTES — HEALTH & STATIC
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V18_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V20_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
     const now = await dbNow(), spots = await founderSpotsLeft();
     res.json({ ok:true, db:true, tz:"Europe/Warsaw", day_warsaw:warsawDayKey(), now, founder_spots_left:spots });
   } catch (e) { res.status(500).json({ ok:false, db:false, error:String(e?.message||e) }); }
+});
+
+// ── Telegram Mini App ─────────────────────────────────────────
+app.get("/webapp", (_req, res) => {
+  res.sendFile(path.join(__dirname, "webapp.html"));
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   V20: API ROUTES
+═══════════════════════════════════════════════════════════════ */
+
+// GET /api/profile
+app.get("/api/profile", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+
+    const f = fox.rows[0];
+    const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+    const spunToday   = await hasSpunToday(userId);
+
+    res.json({
+      user_id:                  f.user_id,
+      username:                 f.username,
+      rating:                   f.rating,
+      invites:                  f.invites,
+      city:                     f.city,
+      district:                 f.district,
+      founder_number:           f.founder_number,
+      streak_current:           f.streak_current || 0,
+      streak_best:              f.streak_best    || 0,
+      streak_freeze_available:  f.streak_freeze_available || 0,
+      total_visits:             totalVisits.rows[0].c,
+      spun_today:               !!spunToday,
+      spin_prize:               spunToday?.prize_label || null,
+    });
+  } catch (e) {
+    console.error("API_PROFILE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/venues
+app.get("/api/venues", async (_req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, name, city, address FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+    );
+    res.json({ venues: r.rows });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/checkin
+app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId  = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+
+    const v = await getVenue(venueId);
+    if (!v)           return res.status(404).json({ error: "Lokal nie istnieje" });
+    if (!v.approved)  return res.status(400).json({ error: "Lokal nieaktywny" });
+
+    // Upewnij się że Fox istnieje
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+
+    // Sprawdź czy już był dziś
+    const alreadyToday = await hasCountedToday(venueId, userId);
+    if (alreadyToday) {
+      return res.json({ already_today: true, day: warsawDayKey() });
+    }
+
+    // Debounce — czy nie ma aktywnego OTP z ostatnich 15 min
+    const debounce = await pool.query(
+      `SELECT 1 FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2
+       AND created_at > NOW() - INTERVAL '15 minutes'
+       AND confirmed_at IS NULL LIMIT 1`,
+      [userId, venueId]
+    );
+    if (debounce.rowCount > 0) {
+      // Zwróć istniejące OTP
+      const existing = await pool.query(
+        `SELECT otp, expires_at FROM fp1_checkins
+         WHERE user_id=$1 AND venue_id=$2 AND confirmed_at IS NULL AND expires_at > NOW()
+         ORDER BY created_at DESC LIMIT 1`,
+        [userId, venueId]
+      );
+      if (existing.rowCount > 0) {
+        return res.json({
+          already_today: false,
+          otp: existing.rows[0].otp,
+          expires_at: existing.rows[0].expires_at,
+          venue_name: v.name,
+        });
+      }
+    }
+
+    const checkin = await createCheckin(venueId, userId);
+    res.json({
+      already_today: false,
+      otp:        checkin.otp,
+      expires_at: checkin.expires_at,
+      venue_name: v.name,
+    });
+  } catch (e) {
+    console.error("API_CHECKIN_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/spin
+app.post("/api/spin", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+
+    const alreadySpun = await hasSpunToday(userId);
+    if (alreadySpun) {
+      // Oblicz czas do następnego spinu
+      const now      = new Date();
+      const tomorrow = new Date(`${warsawDayKey(new Date(now.getTime() + 86400000))}T00:00:00+01:00`);
+      const diffMs   = tomorrow - now;
+      const hours    = Math.floor(diffMs / 3600000);
+      const mins     = Math.floor((diffMs % 3600000) / 60000);
+      return res.json({
+        already_spun:  true,
+        next_spin_in:  `${hours}h ${mins}min`,
+        prize: {
+          type:  alreadySpun.prize_type,
+          value: alreadySpun.prize_value,
+          label: alreadySpun.prize_label,
+          emoji: SPIN_PRIZES.find(p => p.label === alreadySpun.prize_label)?.emoji || "🎁",
+        },
+      });
+    }
+
+    const prize = pickPrize();
+    await recordSpin(userId, prize);
+    await applyPrize(userId, prize);
+    await checkAchievements(userId);
+
+    const updated = await pool.query(
+      `SELECT rating, invites, streak_freeze_available FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
+    );
+    const f = updated.rows[0];
+
+    res.json({
+      already_spun: false,
+      prize: {
+        type:  prize.type,
+        value: prize.value,
+        label: prize.label,
+        emoji: prize.emoji,
+      },
+      stats: {
+        rating:  f.rating,
+        invites: f.invites,
+        freeze:  f.streak_freeze_available,
+      },
+    });
+  } catch (e) {
+    console.error("API_SPIN_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/achievements
+app.get("/api/achievements", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+
+    const r = await pool.query(
+      `SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]
+    );
+    res.json({ achievements: r.rows.map(row => row.achievement_code) });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/top
+app.get("/api/top", async (req, res) => {
+  try {
+    const initData = req.headers["x-telegram-init-data"] || "";
+    const tgUser   = verifyTelegramInitData(initData);
+    const myId     = tgUser ? String(tgUser.id) : null;
+
+    const top = await pool.query(
+      `SELECT user_id, username, rating, founder_number
+       FROM fp1_foxes ORDER BY rating DESC LIMIT 10`
+    );
+
+    let myPosition = null, myRating = null;
+    if (myId) {
+      const myRow = await pool.query(
+        `SELECT rating,
+         (SELECT COUNT(*)::int FROM fp1_foxes WHERE rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)) + 1 AS pos
+         FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [myId]
+      );
+      if (myRow.rowCount > 0) {
+        myPosition = myRow.rows[0].pos;
+        myRating   = myRow.rows[0].rating;
+      }
+    }
+
+    res.json({
+      top:         top.rows,
+      my_position: myPosition,
+      my_rating:   myRating,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1387,6 +1620,7 @@ let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
+  // ── /start ────────────────────────────────────────────────────
   bot.start(async (ctx) => {
     try {
       const text = String(ctx.message?.text || "").trim();
@@ -1416,7 +1650,12 @@ if (BOT_TOKEN) {
         msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
 
         await updateStreak(userId);
-        return ctx.reply(msg);
+
+        // Przycisk otwierający Mini App
+        const webAppUrl = `${PUBLIC_URL}/webapp`;
+        return ctx.reply(msg, Markup.inlineKeyboard([
+          [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+        ]));
       }
 
       if (!codeOrInv) {
@@ -1436,7 +1675,11 @@ if (BOT_TOKEN) {
         if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
         else msg += `\n(Miejsca Founder już zajęte)\n`;
         msg += `\n/checkin ${v.id} — pierwsza wizyta!\n🎰 /spin — kręć codziennie!`;
-        await ctx.reply(msg);
+
+        const webAppUrl = `${PUBLIC_URL}/webapp`;
+        await ctx.reply(msg, Markup.inlineKeyboard([
+          [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+        ]));
         await sendDistrictKeyboard(ctx, "register");
         return;
       }
@@ -1450,7 +1693,11 @@ if (BOT_TOKEN) {
       if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
       else msg += `\n(Miejsca Founder już zajęte)\n`;
       msg += `\n🎰 /spin — kręć codziennie!`;
-      await ctx.reply(msg);
+
+      const webAppUrl = `${PUBLIC_URL}/webapp`;
+      await ctx.reply(msg, Markup.inlineKeyboard([
+        [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+      ]));
       await sendDistrictKeyboard(ctx, "register");
     } catch (e) { console.error("START_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
@@ -1492,7 +1739,9 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("SETTINGS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
-  bot.command("panel",    async (ctx) => { await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`); });
+  bot.command("panel", async (ctx) => {
+    await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`);
+  });
 
   bot.command("venues", async (ctx) => {
     const r = await pool.query(`SELECT id,name,city FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 50`);
@@ -1577,16 +1826,12 @@ if (BOT_TOKEN) {
       const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
 
-      const existing = await pool.query(
-        `SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]
-      );
+      const existing = await pool.query(`SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]);
       const have = new Set(existing.rows.map(r => r.achievement_code));
-
       const total   = Object.keys(ACHIEVEMENTS).length;
       const unlocked = have.size;
 
       let msg = `🏆 Twoje osiągnięcia (${unlocked}/${total})\n\n`;
-
       const categories = [
         { label: "🗺️ Odkrywca",    keys: ["explorer_1","explorer_10","explorer_30","explorer_100"] },
         { label: "🤝 Społeczność", keys: ["social_1","social_10","social_50","social_100"] },
@@ -1595,53 +1840,30 @@ if (BOT_TOKEN) {
         { label: "🎰 Spin",        keys: ["spin_10","spin_30"] },
         { label: "⭐ Specjalne",   keys: ["pioneer","night_fox","morning_fox","vip_diamond"] },
       ];
-
       for (const cat of categories) {
         msg += `${cat.label}\n`;
         for (const key of cat.keys) {
           const ach = ACHIEVEMENTS[key];
           if (!ach) continue;
-          if (have.has(key)) {
-            msg += `✅ ${ach.emoji} ${ach.label}\n`;
-          } else {
-            msg += `🔒 ${ach.label} (+${ach.rating} pkt)\n`;
-          }
+          msg += have.has(key) ? `✅ ${ach.emoji} ${ach.label}\n` : `🔒 ${ach.label} (+${ach.rating} pkt)\n`;
         }
         msg += "\n";
       }
-
       await ctx.reply(msg);
-    } catch (e) {
-      console.error("ACHIEVEMENTS_ERR", e);
-      await ctx.reply("Błąd. Spróbuj ponownie.");
-    }
+    } catch (e) { console.error("ACHIEVEMENTS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
   // ── /top ──────────────────────────────────────────────────────
   bot.command("top", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
-
-      // Топ 10
-      const top = await pool.query(
-        `SELECT user_id, username, rating, founder_number
-         FROM fp1_foxes
-         ORDER BY rating DESC LIMIT 10`
-      );
-
-      // Позиція поточного Fox
+      const top = await pool.query(`SELECT user_id, username, rating, founder_number FROM fp1_foxes ORDER BY rating DESC LIMIT 10`);
       const myPos = await pool.query(
-        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE rating > (
-           SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1
-         )`, [userId]
+        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)`, [userId]
       );
-      const myRating = await pool.query(
-        `SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
-      );
-
+      const myRating = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       const medals = ["🥇","🥈","🥉"];
       let msg = `🦊 Top Fox\n\n`;
-
       for (let i = 0; i < top.rows.length; i++) {
         const f = top.rows[i];
         const isMe = String(f.user_id) === userId;
@@ -1651,20 +1873,13 @@ if (BOT_TOKEN) {
         const me = isMe ? " ← Ty!" : "";
         msg += `${medal} ${nick}${founder} — ${f.rating} pkt${me}\n`;
       }
-
-      // Jeśli gracz nie jest w top 10
       const pos = (myPos.rows[0]?.pos || 0) + 1;
       if (pos > 10 && myRating.rowCount > 0) {
         msg += `\n...\n${pos}. Ty — ${myRating.rows[0].rating} pkt`;
       }
-
       await ctx.reply(msg);
-    } catch (e) {
-      console.error("TOP_ERR", e);
-      await ctx.reply("Błąd. Spróbuj ponownie.");
-    }
+    } catch (e) { console.error("TOP_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
-
 
   // ── /refer ────────────────────────────────────────────────────
   bot.command("refer", async (ctx) => {
@@ -1672,33 +1887,19 @@ if (BOT_TOKEN) {
       const userId = String(ctx.from.id);
       const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
-
-      const invited = await pool.query(
-        `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]
-      );
-      const active = await pool.query(
-        `SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv
-         WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]
-      );
-      const codesGenerated = await pool.query(
-        `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]
-      );
-
+      const invited  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]);
+      const active   = await pool.query(`SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]);
+      const codesGen = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]);
       const f = fox.rows[0];
-      const invitedCount = invited.rows[0].c;
-      const activeCount  = active.rows[0].c;
-
+      const invitedCount = invited.rows[0].c, activeCount = active.rows[0].c;
       let msg = `🦊 Twoje zaproszenia\n\n`;
       msg += `👥 Zaproszonych Fox: ${invitedCount}\n`;
       msg += `✅ Aktywnych (min. 1 wizyta): ${activeCount}\n`;
       msg += `🎟️ Dostępne zaproszenia: ${f.invites}\n`;
-      msg += `📋 Wygenerowanych kodów: ${codesGenerated.rows[0].c}\n\n`;
-
-      if (invitedCount === 0) {
-        msg += `Jeszcze nikogo nie zaprosiłeś!\n\nUżyj /invite aby wygenerować kod.`;
-      } else if (activeCount === 0) {
-        msg += `Zaprosiłeś ${invitedCount} Fox, ale nikt jeszcze nie zrobił check-inu.\nZachęć ich! 💪`;
-      } else {
+      msg += `📋 Wygenerowanych kodów: ${codesGen.rows[0].c}\n\n`;
+      if (invitedCount === 0) msg += `Jeszcze nikogo nie zaprosiłeś!\n\nUżyj /invite aby wygenerować kod.`;
+      else if (activeCount === 0) msg += `Zaprosiłeś ${invitedCount} Fox, ale nikt jeszcze nie zrobił check-inu.\nZachęć ich! 💪`;
+      else {
         const percent = Math.round((activeCount / invitedCount) * 100);
         msg += `${percent}% twoich Fox jest aktywnych! `;
         if (percent === 100) msg += `🏆 Idealny wynik!`;
@@ -1706,12 +1907,8 @@ if (BOT_TOKEN) {
         else msg += `💪 Zachęć więcej Fox!`;
       }
       msg += `\n\n+1 pkt gdy ktoś użyje kodu\n+5 pkt gdy zaproszony zrobi 1. wizytę`;
-
       await ctx.reply(msg);
-    } catch (e) {
-      console.error("REFER_ERR", e);
-      await ctx.reply("Błąd. Spróbuj ponownie.");
-    }
+    } catch (e) { console.error("REFER_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
   bot.action("change_district", async (ctx) => {
@@ -1749,6 +1946,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V18 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V20 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
