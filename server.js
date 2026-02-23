@@ -407,12 +407,14 @@ function randomSpinRow() {
 }
 
 async function hasSpunToday(userId) {
-  const today = warsawDayKey();
-  const r = await pool.query(
-    `SELECT * FROM fp1_daily_spins WHERE user_id=$1 AND spin_date=$2 LIMIT 1`,
-    [String(userId), today]
-  );
-  return r.rows[0] || null;
+  // DEMO MODE: безлімітний спін для демонстрації (прибрати перед launch)
+  return null;
+  // const today = warsawDayKey();
+  // const r = await pool.query(
+  //   `SELECT * FROM fp1_daily_spins WHERE user_id=$1 AND spin_date=$2 LIMIT 1`,
+  //   [String(userId), today]
+  // );
+  // return r.rows[0] || null;
 }
 
 async function recordSpin(userId, prize) {
