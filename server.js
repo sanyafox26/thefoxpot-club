@@ -1253,6 +1253,66 @@ app.post("/api/district", requireWebAppAuth, async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════
+// ДОДАТИ В server.js після маршруту POST /api/district
+// ══════════════════════════════════════════════════════
+
+// POST /api/invite/create — генерація нового коду запрошення
+app.post("/api/invite/create", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+    if (Number(fox.rows[0].invites) <= 0) return res.status(400).json({ error: "Brak zaproszeń", no_invites: true });
+
+    const result = await createInviteCode(userId);
+    if (!result.ok) {
+      if (result.reason === "NO_INVITES") return res.status(400).json({ error: "Brak zaproszeń", no_invites: true });
+      return res.status(500).json({ error: result.reason });
+    }
+    res.json({ ok: true, code: result.code, invites_left: result.invites_left });
+  } catch (e) {
+    console.error("API_INVITE_CREATE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/invite/stats — статистика запрошень
+app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT invites FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+
+    const invited = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]
+    );
+    const active = await pool.query(
+      `SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv
+       WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]
+    );
+    const codesGen = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]
+    );
+    // Останні згенеровані коди (до 5)
+    const recent = await pool.query(
+      `SELECT i.code, i.uses, i.max_uses, i.created_at
+       FROM fp1_invites i WHERE i.created_by_user_id=$1
+       ORDER BY i.created_at DESC LIMIT 5`, [userId]
+    );
+
+    res.json({
+      invites_available: fox.rows[0].invites,
+      invited_total:     invited.rows[0].c,
+      invited_active:    active.rows[0].c,
+      codes_generated:   codesGen.rows[0].c,
+      recent_codes:      recent.rows,
+    });
+  } catch (e) {
+    console.error("API_INVITE_STATS_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+}); 
 // GET /api/top
 app.get("/api/top", async (req, res) => {
   try {
