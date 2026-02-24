@@ -42,7 +42,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 /* BOTTOM NAV */
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;display:flex;background:rgba(16,18,31,.92);backdrop-filter:blur(20px);border-top:1px solid var(--border);padding-bottom:var(--safe-bot)}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;font-size:10px;color:var(--muted);cursor:pointer;border:none;background:none;font-family:var(--font);font-weight:600;letter-spacing:.3px;transition:color .2s,transform .15s;-webkit-user-select:none;user-select:none}
-.nav-btn .nav-icon{font-size:22px;line-height:1;transition:transform .2s}
+.nav-btn .nav-icon{font-size:20px;line-height:1;transition:transform .2s}
 .nav-btn.active{color:var(--fox)}
 .nav-btn.active .nav-icon{transform:scale(1.15)}
 .nav-btn:active{transform:scale(.92)}
@@ -214,6 +214,117 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .my-pos-card{background:rgba(124,92,252,.08);border:1px solid rgba(124,92,252,.25);border-radius:var(--radius-sm);padding:12px 14px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:700}
 .my-pos-right{font-family:var(--mono);color:var(--accent2)}
 
+/* ══════════════════════════════════════
+   INVITES SCREEN — ZAPROSZENIA
+══════════════════════════════════════ */
+.inv-hero{
+  background:linear-gradient(135deg,#0e1a2a 0%,#0d1220 60%,#0a0b14 100%);
+  border:1px solid rgba(245,166,35,.15);
+  border-radius:var(--radius);padding:24px 20px;margin-bottom:12px;
+  position:relative;overflow:hidden;text-align:center
+}
+.inv-hero::before{
+  content:'🎟️';position:absolute;right:-8px;top:-8px;
+  font-size:80px;opacity:.07;transform:rotate(20deg)
+}
+.inv-hero-title{font-size:22px;font-weight:800;margin-bottom:6px}
+.inv-hero-sub{font-size:13px;color:var(--muted);line-height:1.5}
+.inv-available{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);
+  border-radius:20px;padding:8px 20px;margin:14px 0 0;
+  font-size:22px;font-weight:800;color:var(--fox)
+}
+.inv-available span{font-size:13px;font-weight:600;color:var(--muted)}
+
+/* STATS BAR */
+.inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.inv-stat{
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-radius:var(--radius-sm);padding:12px 8px;text-align:center
+}
+.inv-stat-val{font-size:22px;font-weight:800;font-family:var(--mono);color:var(--fox);line-height:1}
+.inv-stat-lbl{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-top:4px}
+
+/* GENERATE BUTTON */
+.inv-gen-btn{
+  width:100%;padding:18px;
+  background:linear-gradient(135deg,#a85c00,var(--fox));
+  border:none;border-radius:var(--radius-sm);
+  color:#0a0b14;font-size:17px;font-weight:800;font-family:var(--font);
+  cursor:pointer;transition:all .2s;letter-spacing:.3px;
+  box-shadow:0 4px 28px rgba(245,166,35,.4);
+  margin-bottom:12px
+}
+.inv-gen-btn:active:not(:disabled){transform:scale(.97)}
+.inv-gen-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* CODE DISPLAY */
+.inv-code-box{
+  display:none;background:var(--bg3);
+  border:2px solid var(--fox);border-radius:var(--radius);
+  padding:20px;text-align:center;margin-bottom:12px;
+  animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)
+}
+.inv-code-box.show{display:block}
+.inv-code-lbl{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.inv-code{
+  font-size:32px;font-weight:800;font-family:var(--mono);
+  letter-spacing:6px;color:var(--fox);
+  text-shadow:0 0 20px rgba(245,166,35,.35);
+  margin:8px 0 16px;word-break:break-all
+}
+.inv-code-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.inv-copy-btn{
+  padding:13px;background:var(--card-bg);
+  border:1px solid var(--card-border);border-radius:var(--radius-sm);
+  color:var(--text);font-size:14px;font-weight:700;font-family:var(--font);
+  cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px
+}
+.inv-copy-btn:active{transform:scale(.95)}
+.inv-copy-btn.copied{background:rgba(46,204,113,.1);border-color:rgba(46,204,113,.3);color:var(--green)}
+.inv-share-btn{
+  padding:13px;
+  background:linear-gradient(135deg,#0077c2,#229ed9);
+  border:none;border-radius:var(--radius-sm);
+  color:white;font-size:14px;font-weight:700;font-family:var(--font);
+  cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px
+}
+.inv-share-btn:active{transform:scale(.95)}
+.inv-code-note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+/* RECENT CODES */
+.inv-recent-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 0;border-bottom:1px solid var(--border)
+}
+.inv-recent-row:last-child{border-bottom:none}
+.inv-recent-code{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:2px;color:var(--text)}
+.inv-recent-used{font-size:11px;font-family:var(--mono)}
+.inv-recent-used.yes{color:var(--muted)}
+.inv-recent-used.no{color:var(--green)}
+.inv-recent-date{font-size:10px;color:var(--muted2)}
+
+/* HOW IT WORKS */
+.how-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.how-row:last-child{border-bottom:none}
+.how-num{
+  width:28px;height:28px;background:rgba(245,166,35,.15);
+  border:1px solid rgba(245,166,35,.3);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;color:var(--fox);flex-shrink:0
+}
+.how-text{font-size:13px;line-height:1.5}
+.how-text strong{color:var(--fox)}
+
+/* PROGRESS BAR (active %) */
+.inv-progress{margin-top:12px}
+.inv-progress-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.inv-progress-lbl{font-size:12px;color:var(--muted);font-weight:600}
+.inv-progress-val{font-size:13px;font-weight:800;color:var(--fox)}
+.inv-bar-bg{height:8px;background:rgba(255,255,255,.06);border-radius:10px;overflow:hidden}
+.inv-bar-fg{height:100%;background:linear-gradient(90deg,var(--fox),var(--fox2));border-radius:10px;transition:width .8s cubic-bezier(.4,0,.2,1);min-width:4px}
+
 /* STATES */
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;gap:12px;color:var(--muted);font-size:14px}
 .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--fox);border-radius:50%;animation:spin .7s linear infinite}
@@ -244,7 +355,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="logo-icon">🦊</div>
       FoxPot
     </div>
-    <span class="ver-badge">V22</span>
+    <span class="ver-badge">V23</span>
   </header>
 
   <!-- ═══ PROFIL ═══ -->
@@ -306,7 +417,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div id="ciErr" class="err-banner"></div>
     <div id="ciOk" class="ok-banner"></div>
 
-    <!-- Wynik check-inu (po potwierdzeniu OTP) -->
     <div class="cr-box" id="crBox">
       <span class="cr-icon" id="crIcon">✅</span>
       <div class="cr-title" id="crTitle">Wizyta potwierdzona!</div>
@@ -317,7 +427,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
     </div>
 
-    <!-- OTP -->
     <div class="otp-box" id="otpBox">
       <div class="otp-lbl">Pokaż ten kod personelowi</div>
       <div class="otp-code" id="otpCode">000000</div>
@@ -374,6 +483,109 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     </div>
   </section>
 
+  <!-- ═══ ZAPROSZENIA ═══ -->
+  <section class="screen" id="screen-invites">
+    <div id="invLoading" class="loading"><div class="spinner"></div>Ładowanie…</div>
+    <div id="invContent" style="display:none">
+
+      <!-- Hero z licznikiem -->
+      <div class="inv-hero">
+        <div class="inv-hero-title">🎟️ Zaproszenia</div>
+        <div class="inv-hero-sub">Zapraszaj znajomych do The FoxPot Club.<br>Zyskujesz punkty za każdą aktywną osobę.</div>
+        <div class="inv-available">
+          <span id="invCount">0</span>
+          <span>dostępnych zaproszeń</span>
+        </div>
+      </div>
+
+      <!-- Statystyki -->
+      <div class="inv-stats">
+        <div class="inv-stat">
+          <div class="inv-stat-val" id="invTotal">0</div>
+          <div class="inv-stat-lbl">ZAPROSZONYCH</div>
+        </div>
+        <div class="inv-stat">
+          <div class="inv-stat-val" id="invActive">0</div>
+          <div class="inv-stat-lbl">AKTYWNYCH</div>
+        </div>
+        <div class="inv-stat">
+          <div class="inv-stat-val" id="invGenerated">0</div>
+          <div class="inv-stat-lbl">KODÓW</div>
+        </div>
+      </div>
+
+      <!-- Progress aktywnych -->
+      <div class="card" id="invProgressCard" style="display:none">
+        <div class="card-title">AKTYWNOŚĆ ZAPROSZEŃ</div>
+        <div class="inv-progress">
+          <div class="inv-progress-row">
+            <span class="inv-progress-lbl">Aktywnych Fox</span>
+            <span class="inv-progress-val" id="invPct">0%</span>
+          </div>
+          <div class="inv-bar-bg"><div class="inv-bar-fg" id="invBar" style="width:0%"></div></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px" id="invProgressTxt"></div>
+        </div>
+      </div>
+
+      <!-- Generuj kod -->
+      <div id="invErr" class="err-banner"></div>
+      <button class="inv-gen-btn" id="invGenBtn" onclick="genInvite()">🎟️ Generuj kod zaproszenia</button>
+
+      <!-- Wygenerowany kod -->
+      <div class="inv-code-box" id="invCodeBox">
+        <div class="inv-code-lbl">Twój kod zaproszenia</div>
+        <div class="inv-code" id="invCodeTxt">XXXXXXXXXX</div>
+        <div class="inv-code-actions">
+          <button class="inv-copy-btn" id="invCopyBtn" onclick="copyCode()">📋 Kopiuj kod</button>
+          <button class="inv-share-btn" onclick="shareCode()">✈️ Wyślij w Telegram</button>
+        </div>
+        <div class="inv-code-note">
+          Prześlij ten kod znajomemu. Wpisze go jako:<br>
+          <strong>/start TWÓJ_KOD</strong> w bocie @thefoxpot_club_bot
+        </div>
+      </div>
+
+      <!-- Ostatnie kody -->
+      <div class="card" id="invRecentCard" style="display:none">
+        <div class="card-title">OSTATNIE KODY</div>
+        <div id="invRecentList"></div>
+      </div>
+
+      <!-- Jak to działa -->
+      <div class="card">
+        <div class="card-title">JAK TO DZIAŁA</div>
+        <div class="how-row">
+          <div class="how-num">1</div>
+          <div class="how-text">Generujesz kod (kosztuje <strong>1 zaproszenie</strong>)</div>
+        </div>
+        <div class="how-row">
+          <div class="how-num">2</div>
+          <div class="how-text">Znajomy wpisuje <strong>/start KOD</strong> w bocie</div>
+        </div>
+        <div class="how-row">
+          <div class="how-num">3</div>
+          <div class="how-text">Ty dostajesz <strong>+1 pkt</strong> gdy zarejestruje się przez Twój kod</div>
+        </div>
+        <div class="how-row">
+          <div class="how-num">4</div>
+          <div class="how-text">Ty dostajesz <strong>+5 pkt</strong> gdy zrobi pierwszą wizytę w lokalu</div>
+        </div>
+        <div class="how-row">
+          <div class="how-num">5</div>
+          <div class="how-text">Za każde <strong>5 wizyt</strong> w lokalach automatycznie dostajesz nowe zaproszenie</div>
+        </div>
+      </div>
+
+    </div>
+    <div id="invUnauth" style="display:none">
+      <div class="welcome">
+        <div class="welcome-fox">🎟️</div>
+        <div class="welcome-title">Zaproszenia</div>
+        <div class="welcome-sub">Otwórz przez Telegram, aby zarządzać zaproszeniami.</div>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══ OSIĄGNIĘCIA ═══ -->
   <section class="screen" id="screen-achievements">
     <div class="screen-title">🏆 Osiągnięcia</div>
@@ -392,13 +604,13 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div id="topContent"></div>
   </section>
 
-  <!-- BOTTOM NAV -->
+  <!-- BOTTOM NAV — 5 przycisków -->
   <nav class="bottom-nav">
-    <button class="nav-btn active" id="nav-profile"      onclick="go('profile')"><span class="nav-icon">🦊</span>Profil</button>
-    <button class="nav-btn"        id="nav-checkin"      onclick="go('checkin')"><span class="nav-icon">📍</span>Check-in</button>
-    <button class="nav-btn"        id="nav-spin"         onclick="go('spin')"><span class="nav-icon">🎁</span>Bonus</button>
-    <button class="nav-btn"        id="nav-achievements" onclick="go('achievements')"><span class="nav-icon">🏆</span>Osiągnięcia</button>
-    <button class="nav-btn"        id="nav-top"          onclick="go('top')"><span class="nav-icon">👑</span>Top</button>
+    <button class="nav-btn active" id="nav-profile"      onclick="go('profile')">      <span class="nav-icon">🦊</span>Profil</button>
+    <button class="nav-btn"        id="nav-checkin"      onclick="go('checkin')">      <span class="nav-icon">📍</span>Check-in</button>
+    <button class="nav-btn"        id="nav-invites"      onclick="go('invites')">      <span class="nav-icon">🎟️</span>Zapr.</button>
+    <button class="nav-btn"        id="nav-spin"         onclick="go('spin')">         <span class="nav-icon">🎁</span>Bonus</button>
+    <button class="nav-btn"        id="nav-achievements" onclick="go('achievements')"> <span class="nav-icon">🏆</span>Osiągnięcia</button>
   </nav>
 
   <!-- DISTRICT MODAL -->
@@ -426,8 +638,9 @@ const DISTRICTS = [
 
 const S = {
   cur:'profile', profileLoaded:false, venuesLoaded:false,
-  achLoaded:false, topLoaded:false, profile:null, venues:[],
-  otpTimer:null, spinDone:false, district:null,
+  achLoaded:false, topLoaded:false, invLoaded:false,
+  profile:null, venues:[], otpTimer:null,
+  spinDone:false, district:null, lastCode:null,
 };
 
 /* ═══ NAVIGATION ═══ */
@@ -439,10 +652,11 @@ function go(name){
   document.getElementById('screen-'+name).classList.add('active');
   document.getElementById('nav-'+name).classList.add('active');
   TG?.HapticFeedback?.selectionChanged();
-  if(name==='profile'&&!S.profileLoaded) loadProfile();
-  if(name==='checkin'&&!S.venuesLoaded)  loadVenues();
-  if(name==='achievements'&&!S.achLoaded) loadAchievements();
-  if(name==='top'&&!S.topLoaded) loadTop();
+  if(name==='profile'&&!S.profileLoaded)      loadProfile();
+  if(name==='checkin'&&!S.venuesLoaded)        loadVenues();
+  if(name==='achievements'&&!S.achLoaded)      loadAchievements();
+  if(name==='top'&&!S.topLoaded)               loadTop();
+  if(name==='invites'&&!S.invLoaded)           loadInvites();
 }
 
 /* ═══ API ═══ */
@@ -589,6 +803,137 @@ function showOtp(otp,name,expiresAt){
 function hideBanners(){q('ciErr').classList.remove('show');q('ciOk').classList.remove('show')}
 function showErr(id,msg){const e=q(id);e.textContent=msg;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),5000)}
 
+/* ═══ INVITES ═══ */
+async function loadInvites(){
+  S.invLoaded=true;
+  const $l=q('invLoading'),$c=q('invContent'),$u=q('invUnauth');
+  if(!TG_USER){$l.style.display='none';$u.style.display='block';return}
+  try{
+    const d=await api('/api/invite/stats');
+    q('invCount').textContent=d.invites_available??0;
+    q('invTotal').textContent=d.invited_total??0;
+    q('invActive').textContent=d.invited_active??0;
+    q('invGenerated').textContent=d.codes_generated??0;
+
+    // Progress bar
+    if(d.invited_total>0){
+      const pct=Math.round((d.invited_active/d.invited_total)*100);
+      q('invPct').textContent=pct+'%';
+      q('invBar').style.width=pct+'%';
+      q('invProgressTxt').textContent=`${d.invited_active} z ${d.invited_total} zaproszonych Fox jest aktywnych`;
+      q('invProgressCard').style.display='block';
+    }
+
+    // Ostatnie kody
+    if(d.recent_codes&&d.recent_codes.length>0){
+      q('invRecentList').innerHTML=d.recent_codes.map(c=>{
+        const used=c.uses>=c.max_uses;
+        const dt=new Date(c.created_at).toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit'});
+        return`<div class="inv-recent-row">
+          <div>
+            <div class="inv-recent-code">${esc(c.code)}</div>
+            <div class="inv-recent-date">${dt}</div>
+          </div>
+          <span class="inv-recent-used ${used?'yes':'no'}">${used?'✅ Użyty':'⏳ Oczekuje'}</span>
+        </div>`;
+      }).join('');
+      q('invRecentCard').style.display='block';
+    }
+
+    // Disable gen btn jeśli brak
+    if(d.invites_available<=0){
+      const btn=q('invGenBtn');
+      btn.disabled=true;
+      btn.textContent='❌ Brak zaproszeń (+1 za każde 5 wizyt)';
+    }
+
+    $l.style.display='none'; $c.style.display='block';
+  }catch(e){
+    $l.style.display='none';
+    if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
+    else{$c.style.display='block'; showErr('invErr','Błąd ładowania: '+e.message)}
+  }
+}
+
+async function genInvite(){
+  if(!TG_USER)return;
+  const btn=q('invGenBtn');
+  btn.disabled=true; btn.textContent='Generowanie…';
+  q('invErr').classList.remove('show');
+  try{
+    const d=await api('/api/invite/create','POST');
+    S.lastCode=d.code;
+    q('invCodeTxt').textContent=d.code;
+    q('invCodeBox').classList.add('show');
+    // Aktualizuj licznik
+    q('invCount').textContent=d.invites_left??0;
+    q('invGenerated').textContent=Number(q('invGenerated').textContent)+1;
+    // Odśwież listę ostatnich kodów
+    S.invLoaded=false;
+    // Nie resetuj całego ekranu, tylko dodaj do listy
+    const now=new Date().toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit'});
+    const newRow=`<div class="inv-recent-row">
+      <div>
+        <div class="inv-recent-code">${esc(d.code)}</div>
+        <div class="inv-recent-date">${now}</div>
+      </div>
+      <span class="inv-recent-used no">⏳ Oczekuje</span>
+    </div>`;
+    const list=q('invRecentList');
+    list.insertAdjacentHTML('afterbegin',newRow);
+    q('invRecentCard').style.display='block';
+
+    TG?.HapticFeedback?.notificationOccurred('success');
+    if(d.invites_left<=0){
+      btn.disabled=true; btn.textContent='❌ Brak zaproszeń';
+    }else{
+      btn.disabled=false; btn.textContent='🎟️ Generuj kolejny kod';
+    }
+  }catch(e){
+    const noInv=e.message.includes('Brak')||e.message.includes('no_invites');
+    showErr('invErr', noInv ? '❌ Brak zaproszeń. Odwiedzaj lokale — +1 zaproszenie za każde 5 wizyt!' : '❌ Błąd: '+e.message);
+    btn.disabled=false; btn.textContent='🎟️ Generuj kod zaproszenia';
+  }
+}
+
+function copyCode(){
+  const code=S.lastCode||q('invCodeTxt').textContent;
+  const btn=q('invCopyBtn');
+  const text=`Dołącz do The FoxPot Club! 🦊\n\nTwój kod: ${code}\n\nWpisz w bocie: /start ${code}\n👉 @thefoxpot_club_bot`;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=>{
+      btn.textContent='✅ Skopiowano!'; btn.classList.add('copied');
+      setTimeout(()=>{btn.textContent='📋 Kopiuj kod'; btn.classList.remove('copied')},2000);
+    }).catch(()=>fallbackCopy(code,btn));
+  }else fallbackCopy(code,btn);
+  TG?.HapticFeedback?.notificationOccurred('success');
+}
+
+function fallbackCopy(code,btn){
+  const ta=document.createElement('textarea');
+  ta.value=code; document.body.appendChild(ta); ta.select();
+  try{document.execCommand('copy');btn.textContent='✅ Skopiowano!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='📋 Kopiuj kod';btn.classList.remove('copied')},2000)}
+  catch{}
+  document.body.removeChild(ta);
+}
+
+function shareCode(){
+  const code=S.lastCode||q('invCodeTxt').textContent;
+  const text=`Dołącz do The FoxPot Club! 🦊\n\nPrywatny klub dla smakoszy Warszawy.\nTwój kod dostępu: ${code}\n\nWpisz w bocie: /start ${code}\n👉 @thefoxpot_club_bot`;
+  if(TG){
+    // Telegram native share
+    TG.openTelegramLink(`https://t.me/share/url?url=https://t.me/thefoxpot_club_bot&text=${encodeURIComponent(text)}`);
+  }else{
+    // Fallback — Web Share API
+    if(navigator.share){
+      navigator.share({title:'The FoxPot Club',text}).catch(()=>{});
+    }else{
+      copyCode();
+    }
+  }
+  TG?.HapticFeedback?.notificationOccurred('success');
+}
+
 /* ═══ SPIN ═══ */
 const EMOJIS=['🦊','💎','⭐','🎁','👑','🔥','🎟️','❄️','🏆','🎰'];
 function rnd(){return EMOJIS[Math.floor(Math.random()*EMOJIS.length)]}
@@ -600,8 +945,6 @@ async function doSpin(){
   btn.disabled=true;
   q('spinResult').classList.remove('show');
   q('spinStats').style.display='none';
-
-  // Animacja
   const reels=document.querySelectorAll('.reel');
   reels.forEach(r=>r.classList.add('spinning'));
   let frame=0;
@@ -613,7 +956,6 @@ async function doSpin(){
       if(idx>=1&&idx<=5) reels[idx-1]?.classList.remove('spinning');
     }
   },110);
-
   try{
     const d=await api('/api/spin','POST');
     setTimeout(()=>{
@@ -657,7 +999,6 @@ async function doSpin(){
     TG?.HapticFeedback?.notificationOccurred('error');
   }
 }
-
 function markSpinDone(prizeLabel){
   const btn=q('spinBtn');
   btn.disabled=true;
