@@ -517,13 +517,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <button class="map-filter-btn" onclick="filterVenueMap('trial',this)">🎟️ Trial</button>
     </div>
 
-    <!-- Google Maps iframe z pinami -->
-    <div id="mapContainer" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);height:280px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
-      <div id="mapInner" style="width:100%;height:100%"></div>
-      <div id="mapPlaceholder" style="text-align:center;color:var(--muted);padding:20px">
-        <div style="font-size:32px;margin-bottom:8px">🗺️</div>
-        <div style="font-size:13px;font-weight:600">Ładowanie mapy…</div>
-      </div>
+    <!-- Google Maps Embed -->
+    <div id="mapIframeWrap" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)">
+      <div id="mapIframePlaceholder" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:6px">⏳</div><div style="font-size:12px">Ładowanie mapy…</div></div>
     </div>
 
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
@@ -1049,7 +1045,8 @@ async function loadMap() {
   S_map.loaded = true;
   q('mapLoading').style.display = 'flex';
   try {
-    const data = await api('/api/venues');
+    const data = await fetch(BASE+'/api/venues', {headers:{'X-Telegram-Init-Data': INIT_DATA||''}}).then(r=>r.json());
+    if (data.error) throw new Error(data.error);
     S_map.venues = data.venues || [];
     S_map.mapsKey = data.maps_key || '';
     renderMapList();
