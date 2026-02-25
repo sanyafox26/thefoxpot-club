@@ -1145,7 +1145,7 @@ app.get("/api/venues", async (_req, res) => {
     const r = await pool.query(
       `SELECT id, name, city, address, lat, lng, is_trial FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
-    res.json({ venues: r.rows });
+    res.json({ venues: r.rows, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
