@@ -982,7 +982,7 @@ function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
 
 /* ═══ MAP — OpenStreetMap iframe ═══ */
-const S_map = { loaded: false, venues: [], filter: 'all' };
+const S_map = { loaded: false, venues: [], filter: 'all', mapsKey: '' };
 
 function filterVenueMap(type, btn) {
   S_map.filter = type;
@@ -991,26 +991,27 @@ function filterVenueMap(type, btn) {
   renderMapList();
 }
 
-function renderMapIframe(venues) {
+function renderMapIframe(venues, mapsKey) {
   const wrap = q('mapIframeWrap');
+  if (!mapsKey) {
+    wrap.innerHTML = '<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:6px">⚠️</div><div style="font-size:12px">Brak klucza mapy</div></div>';
+    return;
+  }
   const withCoords = venues.filter(v => v.lat && v.lng);
   if (!withCoords.length) {
-    // Fallback — показуємо Варшаву без пінів
-    const src = `https://www.google.com/maps/embed/v1/view?key=AIzaSyAs-Q6iMJUtDVzWfOVTCH_w5r5JJK2vS_4&center=52.2297,21.0122&zoom=12&maptype=roadmap`;
+    const src = `https://www.google.com/maps/embed/v1/view?key=${mapsKey}&center=52.2297,21.0122&zoom=12&maptype=roadmap`;
     wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
     return;
   }
-  // Якщо один локал — search mode з піном
   if (withCoords.length === 1) {
     const v = withCoords[0];
-    const src = `https://www.google.com/maps/embed/v1/place?key=AIzaSyAs-Q6iMJUtDVzWfOVTCH_w5r5JJK2vS_4&q=${parseFloat(v.lat)},${parseFloat(v.lng)}&zoom=15&maptype=roadmap`;
+    const src = `https://www.google.com/maps/embed/v1/place?key=${mapsKey}&q=${parseFloat(v.lat)},${parseFloat(v.lng)}&zoom=15&maptype=roadmap`;
     wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
     return;
   }
-  // Кілька локалів — search mode центр + zoom
   const lat = withCoords.reduce((s,v)=>s+parseFloat(v.lat),0)/withCoords.length;
   const lng = withCoords.reduce((s,v)=>s+parseFloat(v.lng),0)/withCoords.length;
-  const src = `https://www.google.com/maps/embed/v1/search?key=AIzaSyAs-Q6iMJUtDVzWfOVTCH_w5r5JJK2vS_4&q=FoxPot+Partner+Warsaw&center=${lat.toFixed(4)},${lng.toFixed(4)}&zoom=12`;
+  const src = `https://www.google.com/maps/embed/v1/search?key=${mapsKey}&q=FoxPot+Partner+Warsaw&center=${lat.toFixed(4)},${lng.toFixed(4)}&zoom=12`;
   wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
 }
 
@@ -1021,7 +1022,7 @@ function renderMapList() {
     if (S_map.filter === 'partner') return !v.is_trial;
     return true;
   });
-  renderMapIframe(venues);
+  renderMapIframe(venues, S_map.mapsKey);
   if (!venues.length) {
     list.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Brak lokali w tej kategorii</div></div>';
     return;
@@ -1049,8 +1050,12 @@ async function loadMap() {
   S_map.loaded = true;
   q('mapLoading').style.display = 'flex';
   try {
-    const data = await api('/api/venues');
-    S_map.venues = data.venues || [];
+    const [venuesData, keyData] = await Promise.all([
+      api('/api/venues'),
+      api('/api/maps-key').catch(() => ({ key: '' }))
+    ]);
+    S_map.venues = venuesData.venues || [];
+    S_map.mapsKey = keyData.key || '';
     renderMapList();
   } catch(e) {
     q('mapIframeWrap').innerHTML = '';
