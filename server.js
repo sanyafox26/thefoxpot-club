@@ -324,6 +324,10 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "ref_code",              "TEXT UNIQUE");
   await ensureColumn("fp1_venues",         "staff_bonus_enabled",   "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_venues",         "staff_bonus_amount",    "INT NOT NULL DEFAULT 2");
+  await ensureColumn("fp1_venues",         "is_trial",              "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_venues",         "monthly_visit_limit",   "INT NOT NULL DEFAULT 20");
+  await ensureColumn("fp1_venues",         "lat",                   "NUMERIC(10,7)");
+  await ensureColumn("fp1_venues",         "lng",                   "NUMERIC(10,7)");
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
   await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
@@ -1061,7 +1065,7 @@ function requireWebAppAuth(req, res, next) {
    ROUTES — HEALTH & STATIC
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V24_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V25_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1114,7 +1118,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
 app.get("/api/venues", async (_req, res) => {
   try {
     const r = await pool.query(
-      `SELECT id, name, city, address FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+      `SELECT id, name, city, address, lat, lng, is_trial FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     res.json({ venues: r.rows });
   } catch (e) {
@@ -1132,6 +1136,24 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
     const v = await getVenue(venueId);
     if (!v)           return res.status(404).json({ error: "Lokal nie istnieje" });
     if (!v.approved)  return res.status(400).json({ error: "Lokal nieaktywny" });
+
+    // Trial Partner: max monthly_visit_limit unique visitors/month
+    if (v.is_trial) {
+      const monthStart = new Date();
+      monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+      const mCount = await pool.query(
+        `SELECT COUNT(DISTINCT user_id)::int AS c FROM fp1_counted_visits
+         WHERE venue_id=$1 AND created_at >= $2`,
+        [venueId, monthStart.toISOString()]
+      );
+      const limit = v.monthly_visit_limit || 20;
+      if (mCount.rows[0].c >= limit) {
+        return res.status(403).json({
+          error: `Ten lokal osiągnął miesięczny limit (${limit} gości). Skontaktuj się z FoxPot.`,
+          trial_limit_reached: true
+        });
+      }
+    }
 
     const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
     if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
