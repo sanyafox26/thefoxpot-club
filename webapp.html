@@ -582,7 +582,7 @@ function go(name){
   if(name==='top'&&!S.topLoaded)               loadTop();
   if(name==='invites'&&!S.invLoaded)           loadInvites();
   if(name==='map')                               loadMap();
-  if(name==='map'&&!S_mapLoaded.loaded)         loadMap();
+  if(name==='map'&&!S_map.loaded)               loadMap();
 }
 
 async function api(path,method='GET',body=null){
