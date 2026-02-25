@@ -1131,6 +1131,14 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
   }
 });
 
+
+// GET /api/maps-key — повертає Google Maps ключ тільки авторизованим юзерам
+app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
+  const key = process.env.GOOGLE_MAPS_KEY || "";
+  if (!key) return res.status(503).json({ error: "Maps key not configured" });
+  res.json({ key });
+});
+
 // GET /api/venues
 app.get("/api/venues", async (_req, res) => {
   try {
