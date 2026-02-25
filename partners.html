@@ -135,8 +135,10 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
     <span class="nav-logo-text">The <span>Fox</span>Pot Club</span>
   </a>
   <div class="nav-right">
-    <a class="nav-back" href="/">← Dla gości</a>
-    <a class="nav-cta" href="https://t.me/thefoxpot_club_bot" target="_blank">Skontaktuj się</a>
+    <button onclick="setLang('pl')" id="btn-pl" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--gold);font-family:var(--font);font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;transition:all .2s">PL</button>
+    <button onclick="setLang('en')" id="btn-en" style="background:none;border:1px solid rgba(255,255,255,.06);border-radius:8px;color:var(--muted);font-family:var(--font);font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;transition:all .2s">EN</button>
+    <a class="nav-back" href="/">← <span data-pl="Dla gości" data-en="For guests">Dla gości</span></a>
+    <a class="nav-cta" href="https://t.me/thefoxpot_club_bot" target="_blank"><span data-pl="Skontaktuj się" data-en="Contact us">Skontaktuj się</span></a>
   </div>
 </nav>
 
@@ -274,11 +276,11 @@ Pytanie — czy wybiorą Twoje, czy konkurencję.</strong></div>
   <div class="founder-inner">
     <div class="founder-box">
       <div class="founder-num">50</div>
-      <div class="founder-label">Miejsc Founder Partner</div>
-      <h3 class="founder-title">Jeden z pierwszych. Na zawsze.</h3>
-      <p class="founder-desc">Pierwsze 50 lokali otrzymuje status Founder Partner — widoczny dla wszystkich Fox-ów, w materiałach marketingowych FoxPot i na profilu lokalu na zawsze.</p>
+      <div class="founder-label">Miejsc Founding Partner</div>
+      <h3 class="founder-title">Nie każdy wejdzie.<br>Pierwsi zostają na zawsze.</h3>
+      <p class="founder-desc">To moment, w którym decyduje się, który lokal będzie w środku — a który zostanie na zewnątrz.<br><br>Pierwsze 50 lokali otrzymuje status <strong style="color:var(--gold)">Founding Partner</strong> — widoczny dla wszystkich Fox-ów, w materiałach marketingowych FoxPot i na profilu lokalu na zawsze.</p>
       <div class="founder-perks">
-        <span class="founder-perk">👑 Founder Partner Badge</span>
+        <span class="founder-perk">👑 Founding Partner Badge</span>
         <span class="founder-perk">📣 Promocja na kanałach FoxPot</span>
         <span class="founder-perk">🔢 Numer seryjny #1–50</span>
         <span class="founder-perk">⚡ Priority support</span>
@@ -286,7 +288,7 @@ Pytanie — czy wybiorą Twoje, czy konkurencję.</strong></div>
       </div>
       <p style="font-size:13px;color:var(--muted);margin-bottom:28px;max-width:500px;margin-left:auto;margin-right:auto;line-height:1.8">Pierwsze 50 lokali otrzymuje <strong style="color:var(--gold)">możliwość bezpłatnej promocji</strong> na kanałach The FoxPot Club (TikTok, Instagram, YouTube, Facebook). Zwycięzcy Growth Leaderboard i najbardziej aktywni partnerzy są regularnie promowani przez klub — bez żadnych kosztów z Twojej strony.</p>
       <a class="btn-primary" href="https://t.me/thefoxpot_club_bot" target="_blank" style="margin:0 auto">
-        ✈️ Zarezerwuj miejsce Founder
+        ✈️ Zarezerwuj miejsce Founding Partner
       </a>
     </div>
   </div>
@@ -321,7 +323,7 @@ Pytanie — czy wybiorą Twoje, czy konkurencję.</strong></div>
           <li>Bonusy dla Fox-ów w Twoim lokalu</li>
           <li>Growth Leaderboard</li>
           <li>Analityka odwiedzin (dni, godziny)</li>
-          <li>Founder Partner Badge (pierwsze 50)</li>
+          <li>Founding Partner Badge (pierwsze 50)</li>
           <li>Dedykowana strona lokalu</li>
         </ul>
       </div>
@@ -355,6 +357,24 @@ Pytanie — czy wybiorą Twoje, czy konkurencję.</strong></div>
 <script>
 const obs = new IntersectionObserver(e => e.forEach(x => { if(x.isIntersecting) x.target.classList.add('visible'); }), {threshold:0.12});
 document.querySelectorAll('.roi-card, .feature').forEach(el => obs.observe(el));
+</script>
+
+<script>
+let LANG = 'pl';
+try { LANG = localStorage.getItem('fp_lang') || 'pl'; } catch(e){}
+function setLang(l) {
+  LANG = l;
+  try { localStorage.setItem('fp_lang', l); } catch(e){}
+  const btnPl = document.getElementById('btn-pl');
+  const btnEn = document.getElementById('btn-en');
+  if(btnPl) { btnPl.style.borderColor = l==='pl' ? 'var(--gold)' : 'rgba(255,255,255,.06)'; btnPl.style.color = l==='pl' ? 'var(--gold)' : 'var(--muted)'; }
+  if(btnEn) { btnEn.style.borderColor = l==='en' ? 'var(--gold)' : 'rgba(255,255,255,.06)'; btnEn.style.color = l==='en' ? 'var(--gold)' : 'var(--muted)'; }
+  document.querySelectorAll('[data-pl]').forEach(el => {
+    const txt = el.getAttribute('data-'+l);
+    if(txt) el.innerHTML = txt;
+  });
+}
+setLang(LANG);
 </script>
 </body>
 </html>
