@@ -1,9 +1,20 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V20.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V24.0
  *
- * NOWOŚCI V20:
+ * NOWOŚCI V24:
+ *  ✅ POST /api/venue/scan     — Fox сканує QR локалу (+1 rating, +5 invites, obligation 24h)
+ *  ✅ POST /api/venue/checkin  — Fox робить check-in в локалі (виконує obligation)
+ *  ✅ Штрафна система: 1-й раз -10 + блок до ранку, 2-й -20, 3-й -50 + бан 7 днів
+ *  ✅ Лічильник порушень скидається після відбуття 7-денного бану
+ *  ✅ CRON кожні 15 хв — автоштраф за прострочені obligations
+ *
+ * V23 (без змін):
+ *  ✅ POST /api/invite/create
+ *  ✅ GET  /api/invite/stats
+ *
+ * V20 (без змін):
  *  ✅ GET  /webapp               — serwuje webapp.html (Telegram Mini App)
  *  ✅ GET  /api/profile          — profil użytkownika (auth Telegram initData)
  *  ✅ GET  /api/venues           — lista aktywnych lokali
@@ -11,16 +22,6 @@
  *  ✅ POST /api/spin             — daily spin
  *  ✅ GET  /api/achievements     — lista osiągnięć użytkownika
  *  ✅ GET  /api/top              — leaderboard Top 10 + moja pozycja
- *  ✅ Przycisk "Otwórz App" w /start i menu bota
- *
- * V18 (bez zmian):
- *  ✅ /achievements — lista osiągnięć gracza
- *  ✅ /top — ranking Top 10 Fox
- *  ✅ Daily Spin — /spin z animacją
- *  ✅ Referral bonuses, Streak, Sala Chwały
- *  ✅ Dzielnica zamieszkania + /settings
- *  ✅ Founder Fox (#1–1000)
- *  ✅ Referral system, panel, admin, stamps
  */
 
 const express  = require("express");
@@ -292,6 +293,25 @@ async function migrate() {
     )
   `);
 
+  /* ── V24: нова таблиця venue_obligations ── */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_obligations (
+      id                 BIGSERIAL PRIMARY KEY,
+      user_id            BIGINT      NOT NULL,
+      venue_id           VARCHAR(50) NOT NULL,
+      venue_name         VARCHAR(200),
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at         TIMESTAMPTZ NOT NULL,
+      fulfilled          BOOLEAN     NOT NULL DEFAULT FALSE,
+      fulfilled_at       TIMESTAMPTZ,
+      violation_count    INT         NOT NULL DEFAULT 0,
+      banned_until       TIMESTAMPTZ,
+      last_violation_at  TIMESTAMPTZ
+    )
+  `);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_obligations_user    ON fp1_venue_obligations(user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_obligations_expires ON fp1_venue_obligations(expires_at)`);
+
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
   await ensureColumn("fp1_foxes",          "invites_from_5visits",  "INT NOT NULL DEFAULT 0");
@@ -372,7 +392,7 @@ async function migrate() {
     );
   }
 
-  console.log("✅ Migrations OK (V20)");
+  console.log("✅ Migrations OK (V24)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1000,7 +1020,7 @@ async function getGrowthLeaderboard(limit = 10) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   V20: AUTORYZACJA TELEGRAM WEBAPP
+   V20: АВТОРИЗАЦІЯ TELEGRAM WEBAPP
 ═══════════════════════════════════════════════════════════════ */
 function verifyTelegramInitData(initData) {
   if (!initData || !BOT_TOKEN) return null;
@@ -1041,7 +1061,7 @@ function requireWebAppAuth(req, res, next) {
    ROUTES — HEALTH & STATIC
 ═══════════════════════════════════════════════════════════════ */
 app.get("/",        (_req, res) => res.send("OK"));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V20_0_OK"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V24_0_OK"));
 
 app.get("/health", async (_req, res) => {
   try {
@@ -1050,7 +1070,6 @@ app.get("/health", async (_req, res) => {
   } catch (e) { res.status(500).json({ ok:false, db:false, error:String(e?.message||e) }); }
 });
 
-// ── Telegram Mini App ─────────────────────────────────────────
 app.get("/webapp", (_req, res) => {
   res.sendFile(path.join(__dirname, "webapp.html"));
 });
@@ -1114,17 +1133,14 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
     if (!v)           return res.status(404).json({ error: "Lokal nie istnieje" });
     if (!v.approved)  return res.status(400).json({ error: "Lokal nieaktywny" });
 
-    // Upewnij się że Fox istnieje
     const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
     if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
 
-    // Sprawdź czy już był dziś
     const alreadyToday = await hasCountedToday(venueId, userId);
     if (alreadyToday) {
       return res.json({ already_today: true, day: warsawDayKey() });
     }
 
-    // Debounce — czy nie ma aktywnego OTP z ostatnich 15 min
     const debounce = await pool.query(
       `SELECT 1 FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2
        AND created_at > NOW() - INTERVAL '15 minutes'
@@ -1132,7 +1148,6 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
       [userId, venueId]
     );
     if (debounce.rowCount > 0) {
-      // Zwróć istniejące OTP
       const existing = await pool.query(
         `SELECT otp, expires_at FROM fp1_checkins
          WHERE user_id=$1 AND venue_id=$2 AND confirmed_at IS NULL AND expires_at > NOW()
@@ -1172,7 +1187,6 @@ app.post("/api/spin", requireWebAppAuth, async (req, res) => {
 
     const alreadySpun = await hasSpunToday(userId);
     if (alreadySpun) {
-      // Oblicz czas do następnego spinu
       const now      = new Date();
       const tomorrow = new Date(`${warsawDayKey(new Date(now.getTime() + 86400000))}T00:00:00+01:00`);
       const diffMs   = tomorrow - now;
@@ -1253,11 +1267,7 @@ app.post("/api/district", requireWebAppAuth, async (req, res) => {
   }
 });
 
-// ══════════════════════════════════════════════════════
-// ДОДАТИ В server.js після маршруту POST /api/district
-// ══════════════════════════════════════════════════════
-
-// POST /api/invite/create — генерація нового коду запрошення
+// POST /api/invite/create
 app.post("/api/invite/create", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
@@ -1277,7 +1287,7 @@ app.post("/api/invite/create", requireWebAppAuth, async (req, res) => {
   }
 });
 
-// GET /api/invite/stats — статистика запрошень
+// GET /api/invite/stats
 app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
@@ -1294,7 +1304,6 @@ app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
     const codesGen = await pool.query(
       `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]
     );
-    // Останні згенеровані коди (до 5)
     const recent = await pool.query(
       `SELECT i.code, i.uses, i.max_uses, i.created_at
        FROM fp1_invites i WHERE i.created_by_user_id=$1
@@ -1312,8 +1321,224 @@ app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
     console.error("API_INVITE_STATS_ERR", e);
     res.status(500).json({ error: String(e?.message || e) });
   }
-}); 
-// GET /api/top
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   V24: VENUE QR SYSTEM
+═══════════════════════════════════════════════════════════════ */
+
+// Helper: штрафна логіка
+async function applyViolation(client, user_id, obligation_id, new_violation_count) {
+  let penaltyPoints = 0;
+  let bannedUntil   = null;
+
+  // Warsaw midnight = наступний ранок
+  const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+  const warsawMidnight = new Date(warsawNow);
+  warsawMidnight.setHours(24, 0, 0, 0);
+
+  if (new_violation_count === 1) {
+    penaltyPoints = -10;
+    bannedUntil   = warsawMidnight;
+  } else if (new_violation_count === 2) {
+    penaltyPoints = -20;
+    bannedUntil   = warsawMidnight;
+  } else {
+    penaltyPoints = -50;
+    bannedUntil   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 днів
+  }
+
+  // Штраф до рейтингу
+  await client.query(
+    `UPDATE fp1_foxes SET rating = GREATEST(0, rating + $1) WHERE user_id = $2`,
+    [penaltyPoints, String(user_id)]
+  );
+
+  // Оновити obligation
+  await client.query(
+    `UPDATE fp1_venue_obligations
+     SET fulfilled = TRUE, fulfilled_at = NOW(),
+         violation_count = $2, banned_until = $3,
+         last_violation_at = NOW()
+     WHERE id = $1`,
+    [obligation_id, new_violation_count, bannedUntil]
+  );
+
+  // Повідомити Fox в Telegram
+  if (bot) {
+    try {
+      const msg = new_violation_count >= 3
+        ? `⛔ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБан: 7 днів\n\nЛічильник скинеться після відбуття бану.`
+        : `⚠️ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБлок до ранку (Warsaw time)`;
+      await bot.telegram.sendMessage(Number(user_id), msg);
+    } catch {}
+  }
+}
+
+// POST /api/venue/scan — Fox сканує QR або вводить код локалу
+app.post("/api/venue/scan", requireWebAppAuth, async (req, res) => {
+  const user_id    = String(req.tgUser.id);
+  const venue_id   = String(req.body.venue_id   || "").trim();
+  const venue_name = String(req.body.venue_name || venue_id).trim();
+
+  if (!venue_id) return res.status(400).json({ ok: false, error: "missing_venue_id" });
+
+  const client = await pool.connect();
+  try {
+    // 1. Перевірити бан
+    const banCheck = await client.query(
+      `SELECT banned_until FROM fp1_venue_obligations
+       WHERE user_id = $1 AND banned_until > NOW()
+       ORDER BY banned_until DESC LIMIT 1`,
+      [user_id]
+    );
+    if (banCheck.rows.length > 0) {
+      return res.json({
+        ok: false,
+        error: "banned",
+        banned_until: banCheck.rows[0].banned_until,
+      });
+    }
+
+    // 2. Перевірити активне незавершене зобов'язання
+    const existing = await client.query(
+      `SELECT id, venue_name FROM fp1_venue_obligations
+       WHERE user_id = $1 AND fulfilled = FALSE AND expires_at > NOW()`,
+      [user_id]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({
+        ok: false,
+        error: "obligation_pending",
+        pending_venue: existing.rows[0].venue_name,
+      });
+    }
+
+    // 3. Отримати violation_count (з урахуванням скидання після 7-денного бану)
+    const vcRow = await client.query(
+      `SELECT violation_count, banned_until FROM fp1_venue_obligations
+       WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [user_id]
+    );
+    let violation_count = 0;
+    if (vcRow.rows.length > 0) {
+      const last = vcRow.rows[0];
+      const was7DayBan   = last.violation_count >= 3;
+      const banExpired   = last.banned_until && new Date(last.banned_until) < new Date();
+      violation_count = (was7DayBan && banExpired) ? 0 : last.violation_count;
+    }
+
+    // 4. +1 rating, +5 invites
+    await client.query(
+      `UPDATE fp1_foxes SET rating = rating + 1, invites = invites + 5 WHERE user_id = $1`,
+      [user_id]
+    );
+
+    // 5. Зберегти referred_by_venue (як текст venue_id)
+    await client.query(
+      `UPDATE fp1_foxes SET referred_by_venue = $2 WHERE user_id = $1`,
+      [user_id, venue_id]
+    );
+
+    // 6. Створити obligation (24 години)
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await client.query(
+      `INSERT INTO fp1_venue_obligations
+       (user_id, venue_id, venue_name, expires_at, violation_count)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [user_id, venue_id, venue_name, expiresAt, violation_count]
+    );
+
+    res.json({
+      ok:         true,
+      message:    `+1 рейтинг, +5 інвайтів! Зроби check-in у ${venue_name} протягом 24 годин.`,
+      expires_at: expiresAt,
+    });
+  } catch (e) {
+    console.error("API_VENUE_SCAN_ERR", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/venue/checkin — Fox робить check-in (виконує obligation)
+app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
+  const user_id  = String(req.tgUser.id);
+  const venue_id = String(req.body.venue_id || "").trim();
+
+  if (!venue_id) return res.status(400).json({ ok: false, error: "missing_venue_id" });
+
+  const client = await pool.connect();
+  try {
+    // Знайти активне зобов'язання
+    const obligation = await client.query(
+      `SELECT * FROM fp1_venue_obligations
+       WHERE user_id = $1 AND fulfilled = FALSE AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id]
+    );
+
+    if (obligation.rows.length === 0) {
+      return res.json({ ok: false, error: "no_obligation" });
+    }
+
+    const ob = obligation.rows[0];
+
+    if (String(ob.venue_id) === venue_id) {
+      // ✅ Правильний заклад
+      await client.query(
+        `UPDATE fp1_venue_obligations
+         SET fulfilled = TRUE, fulfilled_at = NOW()
+         WHERE id = $1`,
+        [ob.id]
+      );
+      res.json({ ok: true, message: "Check-in підтверджено! 🦊" });
+    } else {
+      // ❌ Неправильний заклад — штраф
+      const new_count = ob.violation_count + 1;
+      await applyViolation(client, user_id, ob.id, new_count);
+      res.json({
+        ok:      false,
+        error:   "wrong_venue",
+        message: `Штраф! Ти зробив check-in в іншому закладі. Порушення #${new_count}.`,
+      });
+    }
+  } catch (e) {
+    console.error("API_VENUE_CHECKIN_ERR", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+// CRON: кожні 15 хвилин — штрафувати за прострочені obligations
+setInterval(async () => {
+  const client = await pool.connect();
+  try {
+    const expired = await client.query(
+      `SELECT * FROM fp1_venue_obligations
+       WHERE fulfilled = FALSE
+         AND expires_at < NOW()
+         AND (banned_until IS NULL OR banned_until < NOW())
+       ORDER BY expires_at ASC
+       LIMIT 100`
+    );
+    for (const ob of expired.rows) {
+      const new_count = ob.violation_count + 1;
+      await applyViolation(client, ob.user_id, ob.id, new_count);
+      console.log(`[VenueCron] Штраф user=${ob.user_id} violation=${new_count}`);
+    }
+  } catch (e) {
+    console.error("[VenueCron] ERR", e?.message || e);
+  } finally {
+    client.release();
+  }
+}, 15 * 60 * 1000);
+
+/* ═══════════════════════════════════════════════════════════════
+   GET /api/top
+═══════════════════════════════════════════════════════════════ */
 app.get("/api/top", async (req, res) => {
   try {
     const initData = req.headers["x-telegram-init-data"] || "";
@@ -1699,7 +1924,6 @@ let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
-  // ── /start ────────────────────────────────────────────────────
   bot.start(async (ctx) => {
     try {
       const text = String(ctx.message?.text || "").trim();
@@ -1730,7 +1954,6 @@ if (BOT_TOKEN) {
 
         await updateStreak(userId);
 
-        // Przycisk otwierający Mini App
         const webAppUrl = `${PUBLIC_URL}/webapp`;
         return ctx.reply(msg, Markup.inlineKeyboard([
           [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
@@ -1781,13 +2004,11 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("START_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
-  // ── /spin ─────────────────────────────────────────────────────
   bot.command("spin", async (ctx) => {
     try { await doSpin(ctx); }
     catch (e) { console.error("SPIN_ERR", e); await ctx.reply("Błąd spinu. Spróbuj ponownie."); }
   });
 
-  // ── /streak ───────────────────────────────────────────────────
   bot.command("streak", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
@@ -1806,7 +2027,6 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("STREAK_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
-  // ── /settings ─────────────────────────────────────────────────
   bot.command("settings", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
@@ -1898,7 +2118,6 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("NEWVENUE_ERR", e); await ctx.reply("Błąd rejestracji lokalu."); }
   });
 
-  // ── /achievements ─────────────────────────────────────────────
   bot.command("achievements", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
@@ -1932,7 +2151,6 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("ACHIEVEMENTS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
-  // ── /top ──────────────────────────────────────────────────────
   bot.command("top", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
@@ -1960,7 +2178,6 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("TOP_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
-  // ── /refer ────────────────────────────────────────────────────
   bot.command("refer", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
@@ -2025,6 +2242,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V20 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V24 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
