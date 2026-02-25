@@ -1050,12 +1050,9 @@ async function loadMap() {
   S_map.loaded = true;
   q('mapLoading').style.display = 'flex';
   try {
-    const [venuesData, keyData] = await Promise.all([
-      api('/api/venues'),
-      api('/api/maps-key').catch(() => ({ key: '' }))
-    ]);
-    S_map.venues = venuesData.venues || [];
-    S_map.mapsKey = keyData.key || '';
+    const data = await api('/api/venues');
+    S_map.venues = data.venues || [];
+    S_map.mapsKey = data.maps_key || '';
     renderMapList();
   } catch(e) {
     q('mapIframeWrap').innerHTML = '';
