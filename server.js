@@ -390,13 +390,30 @@ async function migrate() {
   if (vc.rows[0].c === 0) {
     const salt = crypto.randomBytes(16).toString("hex");
     const hash = pinHash("123456", salt);
-    await pool.query(
-      `INSERT INTO fp1_venues(name,city,pin_hash,pin_salt,approved) VALUES ('Test Kebab #1','Warsaw',$1,$2,TRUE),('Test Pizza #2','Warsaw',$1,$2,TRUE)`,
-      [hash, salt]
-    );
+    // Demo venues with real Warsaw coordinates
+    const demoVenues = [
+      { name: "Fox Pub Centrum",    city: "Warsaw", address: "ul. Nowy Świat 22",       lat: 52.2319, lng: 21.0222, is_trial: false },
+      { name: "Złoty Kebab",        city: "Warsaw", address: "ul. Chmielna 15",          lat: 52.2297, lng: 21.0122, is_trial: true  },
+      { name: "Craft Beer Corner",  city: "Warsaw", address: "ul. Mokotowska 48",        lat: 52.2180, lng: 21.0180, is_trial: false },
+      { name: "Praga Street Food",  city: "Warsaw", address: "ul. Ząbkowska 6",          lat: 52.2506, lng: 21.0444, is_trial: true  },
+      { name: "Bistro Żoliborz",    city: "Warsaw", address: "pl. Wilsona 2",            lat: 52.2680, lng: 20.9934, is_trial: false },
+    ];
+    for (const v of demoVenues) {
+      await pool.query(
+        `INSERT INTO fp1_venues(name,city,address,pin_hash,pin_salt,approved,lat,lng,is_trial,monthly_visit_limit)
+         VALUES($1,$2,$3,$4,$5,TRUE,$6,$7,$8,20)`,
+        [v.name, v.city, v.address, hash, salt, v.lat, v.lng, v.is_trial]
+      );
+    }
+    console.log("✅ Demo venues seeded with coordinates");
+  } else {
+    // Update existing venues with coords if missing
+    await pool.query(`UPDATE fp1_venues SET lat=52.2319, lng=21.0222 WHERE name='Test Kebab #1' AND lat IS NULL`);
+    await pool.query(`UPDATE fp1_venues SET lat=52.2350, lng=21.0200 WHERE name='Test Pizza #2' AND lat IS NULL`);
+    await pool.query(`UPDATE fp1_venues SET lat=52.2180, lng=21.0050 WHERE name='Test Bar #3'   AND lat IS NULL`);
   }
 
-  console.log("✅ Migrations OK (V24)");
+  console.log("✅ Migrations OK (V25)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
