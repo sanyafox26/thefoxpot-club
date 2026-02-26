@@ -1087,6 +1087,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
     const f = fox.rows[0];
     const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
     const spunToday   = await hasSpunToday(userId);
+    const savedStats = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COUNT(*)::int AS receipt_count FROM fp1_receipts WHERE user_id=$1`, [userId]);
 
     res.json({
       user_id:                  f.user_id,
@@ -1102,6 +1103,8 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       total_visits:             totalVisits.rows[0].c,
       spun_today:               !!spunToday,
       spin_prize:               spunToday?.prize_label || null,
+      total_saved:              parseFloat(savedStats.rows[0].total_saved),
+      receipt_count:            savedStats.rows[0].receipt_count,
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
