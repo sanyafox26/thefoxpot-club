@@ -419,9 +419,9 @@ async function migrate() {
     ];
     for (const v of demoVenues) {
       await pool.query(
-        `INSERT INTO fp1_venues(name,city,address,pin_hash,pin_salt,approved,lat,lng,is_trial,monthly_visit_limit)
-         VALUES($1,$2,$3,$4,$5,TRUE,$6,$7,$8,20)`,
-        [v.name, v.city, v.address, hash, salt, v.lat, v.lng, v.is_trial]
+       `INSERT INTO fp1_venues(name,city,address,pin_hash,pin_salt,approved,lat,lng,is_trial,monthly_visit_limit,discount_percent)
+         VALUES($1,$2,$3,$4,$5,TRUE,$6,$7,$8,20,$9)`,
+        [v.name, v.city, v.address, hash, salt, v.lat, v.lng, v.is_trial, v.discount || 10]
       );
     }
     console.log("✅ Demo venues seeded with coordinates");
