@@ -1124,7 +1124,7 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 app.get("/api/venues", async (_req, res) => {
   try {
     const r = await pool.query(
-      `SELECT id, name, city, address, lat, lng, is_trial FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     res.json({ venues: r.rows, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
   } catch (e) {
@@ -1188,6 +1188,7 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
           otp: existing.rows[0].otp,
           expires_at: existing.rows[0].expires_at,
           venue_name: v.name,
+          discount_percent: parseFloat(v.discount_percent) || 10,
         });
       }
     }
@@ -1198,6 +1199,7 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
       otp:        checkin.otp,
       expires_at: checkin.expires_at,
       venue_name: v.name,
+      discount_percent: parseFloat(v.discount_percent) || 10,
     });
   } catch (e) {
     console.error("API_CHECKIN_ERR", e);
