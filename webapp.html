@@ -724,6 +724,44 @@ async function doCheckin(){
   }catch(e){showErr('ciErr','Błąd: '+e.message)}
   btn.disabled=false; btn.textContent='Generuj OTP ✓';
 }
+  /* ═══ RECEIPT SYSTEM ═══ */
+let receiptPending = null;
+
+function showReceiptForm(venueId, venueName, discount) {
+  receiptPending = { venueId, venueName, discount };
+  q('receiptDiscount').textContent = discount + '%';
+  q('receiptVenue').textContent = venueName;
+  q('receiptInput').value = '';
+  q('receiptBox').classList.add('show');
+  q('receiptResult').classList.remove('show');
+}
+
+async function submitReceipt() {
+  if (!receiptPending) return;
+  const amt = parseFloat(q('receiptInput').value);
+  if (!amt || amt < 1 || amt > 5000) return showErr('ciErr', 'Wpisz kwotę 1-5000 zł');
+  const btn = q('receiptBtn');
+  btn.disabled = true; btn.textContent = 'Zapisuję…';
+  try {
+    const d = await api('/api/receipt', 'POST', {
+      venue_id: receiptPending.venueId,
+      amount_paid: amt
+    });
+    q('receiptBox').classList.remove('show');
+    q('receiptSaved').textContent = 'Zaoszczędzono: ' + (d.discount_saved || 0).toFixed(2) + ' zł';
+    let detail = `Zapłacono: ${amt.toFixed(2)} zł · Przed zniżką: ~${(d.amount_original || 0).toFixed(2)} zł`;
+    if (d.bonuses && d.bonuses.length) detail += '\n🎁 ' + d.bonuses.join(', ');
+    q('receiptDetail').textContent = detail;
+    q('receiptResult').classList.add('show');
+    TG?.HapticFeedback?.notificationOccurred('success');
+    if (d.new_rating != null) q('pRating') && (q('pRating').textContent = d.new_rating);
+    if (d.new_visits != null) q('pVisits') && (q('pVisits').textContent = d.new_visits);
+    S.profileLoaded = false;
+  } catch(e) {
+    showErr('ciErr', '❌ ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '💰 Zapisz rachunek';
+}
 function showAlready(day){
   const b=q('crBox');
   q('crIcon').textContent='✅';
