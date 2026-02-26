@@ -411,11 +411,11 @@ async function migrate() {
     const hash = pinHash("123456", salt);
     // Demo venues with real Warsaw coordinates
     const demoVenues = [
-      { name: "Fox Pub Centrum",    city: "Warsaw", address: "ul. Nowy Świat 22",       lat: 52.2319, lng: 21.0222, is_trial: false },
-      { name: "Złoty Kebab",        city: "Warsaw", address: "ul. Chmielna 15",          lat: 52.2297, lng: 21.0122, is_trial: true  },
-      { name: "Craft Beer Corner",  city: "Warsaw", address: "ul. Mokotowska 48",        lat: 52.2180, lng: 21.0180, is_trial: false },
-      { name: "Praga Street Food",  city: "Warsaw", address: "ul. Ząbkowska 6",          lat: 52.2506, lng: 21.0444, is_trial: true  },
-      { name: "Bistro Żoliborz",    city: "Warsaw", address: "pl. Wilsona 2",            lat: 52.2680, lng: 20.9934, is_trial: false },
+      { name: "Fox Pub Centrum",    city: "Warsaw", address: "ul. Nowy Świat 22",       lat: 52.2319, lng: 21.0222, is_trial: false, discount: 10 },
+      { name: "Złoty Kebab",        city: "Warsaw", address: "ul. Chmielna 15",          lat: 52.2297, lng: 21.0122, is_trial: true,  discount: 15 },
+      { name: "Craft Beer Corner",  city: "Warsaw", address: "ul. Mokotowska 48",        lat: 52.2180, lng: 21.0180, is_trial: false, discount: 10 },
+      { name: "Praga Street Food",  city: "Warsaw", address: "ul. Ząbkowska 6",          lat: 52.2506, lng: 21.0444, is_trial: true,  discount: 15 },
+      { name: "Bistro Żoliborz",    city: "Warsaw", address: "pl. Wilsona 2",            lat: 52.2680, lng: 20.9934, is_trial: false, discount: 10 },
     ];
     for (const v of demoVenues) {
       await pool.query(
