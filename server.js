@@ -1352,6 +1352,49 @@ app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// GET /api/checkin/status — polling: чи OTP підтверджений?
+app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.query.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+    const day = warsawDayKey();
+    const r = await pool.query(
+      `SELECT id, confirmed_at FROM fp1_checkins
+       WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId, venueId, day]
+    );
+    if (r.rowCount === 0) return res.json({ status: "no_checkin" });
+    const row = r.rows[0];
+    if (row.confirmed_at) {
+      const dup = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`, [userId, venueId, day]);
+      return res.json({ status: "confirmed", receipt_done: dup.rowCount > 0, checkin_id: row.id });
+    }
+    return res.json({ status: "pending" });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});// GET /api/checkin/status — polling: чи OTP підтверджений?
+app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.query.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+    const day = warsawDayKey();
+    const r = await pool.query(
+      `SELECT id, confirmed_at FROM fp1_checkins
+       WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId, venueId, day]
+    );
+    if (r.rowCount === 0) return res.json({ status: "no_checkin" });
+    const row = r.rows[0];
+    if (row.confirmed_at) {
+      const dup = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`, [userId, venueId, day]);
+      return res.json({ status: "confirmed", receipt_done: dup.rowCount > 0, checkin_id: row.id });
+    }
+    return res.json({ status: "pending" });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
 /* ═══════════════════════════════════════════════════════════════
    V26: POST /api/receipt — БОНУСИ ТІЛЬКИ ТУТ
 ═══════════════════════════════════════════════════════════════ */
