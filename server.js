@@ -293,6 +293,24 @@ async function migrate() {
     )
   `);
 
+   /* ── V26: таблиця receipts (чеки) ── */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_receipts (
+      id               BIGSERIAL PRIMARY KEY,
+      user_id          BIGINT      NOT NULL,
+      venue_id         BIGINT      NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      checkin_id       BIGINT,
+      amount_paid      NUMERIC(10,2) NOT NULL,
+      amount_original  NUMERIC(10,2) NOT NULL,
+      discount_percent NUMERIC(5,2)  NOT NULL DEFAULT 0,
+      discount_saved   NUMERIC(10,2) NOT NULL DEFAULT 0,
+      bonuses_awarded  BOOLEAN     NOT NULL DEFAULT FALSE,
+      war_day          TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_receipts_user  ON fp1_receipts(user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_receipts_venue ON fp1_receipts(venue_id)`);
   /* ── V24: нова таблиця venue_obligations ── */
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_venue_obligations (
