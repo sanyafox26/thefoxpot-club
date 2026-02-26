@@ -344,6 +344,7 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "staff_bonus_amount",    "INT NOT NULL DEFAULT 2");
   await ensureColumn("fp1_venues",         "is_trial",              "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_venues",         "monthly_visit_limit",   "INT NOT NULL DEFAULT 20");
+  await ensureColumn("fp1_venues",         "discount_percent",      "NUMERIC(5,2) NOT NULL DEFAULT 10");
   await ensureColumn("fp1_venues",         "lat",                   "NUMERIC(10,7)");
   await ensureColumn("fp1_venues",         "lng",                   "NUMERIC(10,7)");
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
