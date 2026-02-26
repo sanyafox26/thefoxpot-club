@@ -892,53 +892,11 @@ async function confirmOtp(venueId, otp) {
     return { ok:true, userId, day, countedAdded:false, debounce:true, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
   }
 
+  // V26: ТІЛЬКИ підтверджуємо check-in. БЕЗ бонусів — вони тепер в POST /api/receipt
+  await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
   const already = await hasCountedToday(venueId, userId);
-  const client  = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
-
-    let countedAdded=false, inviteAutoAdded=0, isFirstEver=false, newAch=[];
-
-    if (!already) {
-      const hasDK = COUNTED_DAY_COL === "day_key";
-      const hasWD = await hasColumn("fp1_counted_visits", "war_day");
-      const cols = ["venue_id","user_id"];
-      const vals = [venueId, userId];
-      if (hasDK) { cols.push("day_key"); vals.push(day); }
-      if (hasWD) { cols.push("war_day"); vals.push(day); }
-      const ph = cols.map((_,i) => `$${i+1}`).join(",");
-      await client.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${ph})`, vals);
-      await client.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
-      countedAdded = true;
-    }
-    await client.query("COMMIT");
-
-    if (countedAdded) {
-      inviteAutoAdded = await awardInvitesFrom5Visits(userId);
-      const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
-      isFirstEver = totalVisits.rows[0].c === 1;
-      if (isFirstEver) {
-        await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
-        const inviter = await pool.query(`SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-        if (inviter.rows[0]?.invited_by_user_id) {
-          await pool.query(`UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`, [String(inviter.rows[0].invited_by_user_id)]);
-          if (bot) {
-            try { await bot.telegram.sendMessage(Number(inviter.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 punktów dla Ciebie za zaproszenie! 🦊`); } catch {}
-          }
-        }
-      }
-      const venueVisitCount = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
-      const isPioneer = venueVisitCount.rows[0].c === 1;
-      await updateStreak(userId);
-      const hour = warsawHour();
-      newAch = await checkAchievements(userId, { is_pioneer:isPioneer, is_night:hour>=23, is_morning:hour<8 });
-    }
-    return { ok:true, userId, day, countedAdded, debounce:false, inviteAutoAdded, isFirstEver, newAch };
-  } catch (e) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw e;
-  } finally { client.release(); }
+  return { ok:true, userId, day, checkin_id:row.id, countedAdded:false, debounce:false,
+    receipt_pending:!already, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
 }
 
 /* ═══════════════════════════════════════════════════════════════
