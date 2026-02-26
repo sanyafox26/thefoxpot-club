@@ -296,6 +296,25 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .map-filter-btn.active{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.3);color:var(--green)}
 
 .screen-sub{font-size:13px;color:var(--muted);margin-bottom:16px}
+  /* RECEIPT */
+.receipt-box{display:none;background:linear-gradient(135deg,#0a1a12 0%,#0d1220 100%);border:1px solid rgba(46,204,113,.2);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px;animation:fadeIn .3s ease}
+.receipt-box.show{display:block}
+.receipt-title{font-size:16px;font-weight:800;margin-bottom:4px}
+.receipt-sub{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5}
+.receipt-input{width:100%;padding:14px 16px;background:var(--bg3);border:2px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:20px;font-family:var(--mono);font-weight:800;text-align:center;outline:none;margin-bottom:10px}
+.receipt-input:focus{border-color:var(--green)}
+.receipt-input::placeholder{color:var(--muted2);font-size:14px;font-weight:500}
+.receipt-btn{width:100%;padding:14px;background:linear-gradient(135deg,#1a7a42,var(--green));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;font-family:var(--font);cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(46,204,113,.3)}
+.receipt-btn:active:not(:disabled){transform:scale(.97)}
+.receipt-btn:disabled{opacity:.4;cursor:not-allowed}
+.receipt-result{display:none;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.25);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
+.receipt-result.show{display:block}
+.receipt-saved{font-size:28px;font-weight:800;color:var(--green);font-family:var(--mono)}
+.receipt-detail{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
+.savings-card{background:rgba(46,204,113,.06);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.savings-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
+.savings-lbl{font-size:12px;color:var(--muted);font-weight:600}
+.savings-val{font-size:14px;font-weight:800;font-family:var(--mono);color:var(--green)}
 </style>
 </head>
 <body>
