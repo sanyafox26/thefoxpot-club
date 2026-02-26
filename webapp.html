@@ -401,6 +401,18 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="otp-venue" id="otpVenue">Lokal</div>
       <div class="otp-timer">Ważny przez: <span id="otpTimer">10:00</span></div>
     </div>
+    <div class="receipt-box" id="receiptBox">
+      <div class="receipt-title">🧾 Wpisz kwotę rachunku</div>
+      <div class="receipt-sub">Wpisz kwotę którą zapłaciłeś (po zniżce FoxPot).<br>Zniżka: <strong id="receiptDiscount">10%</strong> w <strong id="receiptVenue">lokalu</strong></div>
+      <input class="receipt-input" id="receiptInput" type="number" inputmode="decimal" min="1" max="5000" placeholder="np. 45.00 zł" step="0.01"/>
+      <button class="receipt-btn" id="receiptBtn" onclick="submitReceipt()">💰 Zapisz rachunek</button>
+    </div>
+    <div class="receipt-result" id="receiptResult">
+      <span style="font-size:36px;display:block;margin-bottom:8px">💰</span>
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">Rachunek zapisany!</div>
+      <div class="receipt-saved" id="receiptSaved">Zaoszczędzono: 0 zł</div>
+      <div class="receipt-detail" id="receiptDetail"></div>
+    </div>
     <label class="venue-lbl">Wybierz lokal</label>
     <select class="venue-select" id="venueSelect"><option value="">— wybierz lokal —</option></select>
     <button class="checkin-btn" id="ciBtn" onclick="doCheckin()">Generuj OTP ✓</button>
