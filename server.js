@@ -1347,7 +1347,98 @@ app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+/* ═══════════════════════════════════════════════════════════════
+   V26: POST /api/receipt — БОНУСИ ТІЛЬКИ ТУТ
+═══════════════════════════════════════════════════════════════ */
+app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id), venueId = Number(req.body.venue_id);
+    const amountPaid = parseFloat(req.body.amount_paid);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+    if (isNaN(amountPaid) || amountPaid < 1 || amountPaid > 5000) return res.status(400).json({ error: "Kwota 1-5000 zł" });
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+    const v = await getVenue(venueId);
+    if (!v) return res.status(404).json({ error: "Lokal nie istnieje" });
+    const discountPct = parseFloat(v.discount_percent) || 10;
+    const day = warsawDayKey();
 
+    // Duplicate check
+    const dup = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`, [userId, venueId, day]);
+    if (dup.rowCount > 0) return res.status(400).json({ error: "Rachunek już wpisany", already_submitted: true });
+
+    // Must have confirmed check-in today
+    const conf = await pool.query(`SELECT id FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2 AND confirmed_at IS NOT NULL AND war_day=$3 ORDER BY confirmed_at DESC LIMIT 1`, [userId, venueId, day]);
+    if (conf.rowCount === 0) return res.status(400).json({ error: "Najpierw zrób check-in", no_checkin: true });
+
+    const amountOriginal = amountPaid / (1 - discountPct / 100);
+    const discountSaved = amountOriginal - amountPaid;
+
+    await pool.query(`INSERT INTO fp1_receipts(user_id,venue_id,checkin_id,amount_paid,amount_original,discount_percent,discount_saved,bonuses_awarded,war_day) VALUES($1,$2,$3,$4,$5,$6,$7,FALSE,$8)`,
+      [userId, venueId, conf.rows[0].id, amountPaid.toFixed(2), amountOriginal.toFixed(2), discountPct, discountSaved.toFixed(2), day]);
+
+    // ═══ БОНУСИ (перенесені з confirmOtp) ═══
+    const already = await hasCountedToday(venueId, userId);
+    let countedAdded = false, inviteAutoAdded = 0, isFirstEver = false, newAch = [];
+    if (!already) {
+      const hasDK = COUNTED_DAY_COL === "day_key", hasWD = await hasColumn("fp1_counted_visits", "war_day");
+      const cols = ["venue_id","user_id"], vals = [venueId, userId];
+      if (hasDK) { cols.push("day_key"); vals.push(day); } if (hasWD) { cols.push("war_day"); vals.push(day); }
+      await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
+      await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+      countedAdded = true;
+
+      const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+      isFirstEver = tv.rows[0].c === 1;
+      if (isFirstEver) {
+        await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
+        const inv = await pool.query(`SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+        if (inv.rows[0]?.invited_by_user_id) {
+          await pool.query(`UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`, [String(inv.rows[0].invited_by_user_id)]);
+          if (bot) { try { await bot.telegram.sendMessage(Number(inv.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 pkt dla Ciebie! 🦊`); } catch {} }
+        }
+      }
+      inviteAutoAdded = await awardInvitesFrom5Visits(userId);
+      await updateStreak(userId);
+      const vvc = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+      const hour = warsawHour();
+      newAch = await checkAchievements(userId, { is_pioneer:vvc.rows[0].c===1, is_night:hour>=23, is_morning:hour<8 });
+    }
+
+    await pool.query(`UPDATE fp1_receipts SET bonuses_awarded=TRUE WHERE user_id=$1 AND venue_id=$2 AND war_day=$3`, [userId, venueId, day]);
+    const ts = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total FROM fp1_receipts WHERE user_id=$1`, [userId]);
+    const uf = await pool.query(`SELECT rating,invites,streak_current FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    const f = uf.rows[0];
+
+    // TG notification
+    if (bot && countedAdded) {
+      try {
+        let msg = `✅ Rachunek zapisany!\n🏪 ${v.name}\n💰 Zapłacono: ${amountPaid.toFixed(0)} zł\n💸 Zaoszczędzono: ${parseFloat(discountSaved).toFixed(0)} zł\n📊 Łącznie: ${parseFloat(ts.rows[0].total).toFixed(0)} zł`;
+        if (isFirstEver) msg += `\n🎉 Pierwsza wizyta! +10 pkt`;
+        if (inviteAutoAdded > 0) msg += `\n🎁 +${inviteAutoAdded} zaproszenie`;
+        msg += formatAchievements(newAch);
+        await bot.telegram.sendMessage(Number(userId), msg);
+      } catch (e) { console.error("RECEIPT_TG_ERR", e?.message); }
+    }
+
+    res.json({ ok:true,
+      receipt:{ amount_paid:parseFloat(amountPaid.toFixed(2)), amount_original:parseFloat(amountOriginal.toFixed(2)), discount_percent:discountPct, discount_saved:parseFloat(discountSaved.toFixed(2)), total_saved:parseFloat(ts.rows[0].total) },
+      bonuses:{ counted:countedAdded, first_ever:isFirstEver, invites_added:inviteAutoAdded, achievements:newAch.map(a=>({code:a.code,emoji:a.emoji,label:a.label,rating:a.rating})) },
+      stats:{ rating:f?.rating||0, invites:f?.invites||0, streak:f?.streak_current||0 },
+    });
+  } catch (e) { console.error("API_RECEIPT_ERR", e); res.status(500).json({ error: String(e?.message||e) }); }
+});
+
+// GET /api/receipt/stats
+app.get("/api/receipt/stats", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const t = await pool.query(`SELECT COUNT(*)::int AS receipt_count, COALESCE(SUM(amount_paid),0)::numeric AS total_paid, COALESCE(SUM(amount_original),0)::numeric AS total_original, COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COALESCE(AVG(amount_paid),0)::numeric AS avg_check FROM fp1_receipts WHERE user_id=$1`, [userId]);
+    const bv = await pool.query(`SELECT v.name,v.discount_percent,COUNT(r.id)::int AS visits,COALESCE(SUM(r.discount_saved),0)::numeric AS saved,COALESCE(SUM(r.amount_paid),0)::numeric AS spent FROM fp1_receipts r JOIN fp1_venues v ON v.id=r.venue_id WHERE r.user_id=$1 GROUP BY v.id,v.name,v.discount_percent ORDER BY saved DESC LIMIT 10`, [userId]);
+    const r = t.rows[0];
+    res.json({ receipt_count:r.receipt_count, total_paid:parseFloat(r.total_paid), total_original:parseFloat(r.total_original), total_saved:parseFloat(r.total_saved), avg_check:parseFloat(parseFloat(r.avg_check).toFixed(2)), by_venue:bv.rows.map(x=>({name:x.name,discount_percent:parseFloat(x.discount_percent),visits:x.visits,saved:parseFloat(x.saved),spent:parseFloat(x.spent)})) });
+  } catch (e) { res.status(500).json({ error: String(e?.message||e) }); }
+});
 /* ═══════════════════════════════════════════════════════════════
    V24: VENUE QR SYSTEM
 ═══════════════════════════════════════════════════════════════ */
