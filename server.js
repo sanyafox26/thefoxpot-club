@@ -2363,6 +2363,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V24 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V26 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
