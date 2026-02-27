@@ -2137,7 +2137,7 @@ if (BOT_TOKEN) {
         await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city,referred_by_venue) VALUES($1,$2,1,5,'Warsaw',$3)`, [userId, username, v.id]);
         await pool.query(`INSERT INTO fp1_counted_visits(venue_id,user_id,war_day) VALUES($1,$2,$3)`, [v.id, userId, warsawDayKey()]);
         const founderNum = await assignFounderNumber(userId);
-        let msg = `✅ Zarejestrowano przez ${v.name}!\n\n+5 zaproszeń\n`;
+        let msg = `✅ Zarejestrowano przez ${v.name}!\n\n+5 zaproszeń\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).\n`;
         if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
         else msg += `\n(Miejsca Founder już zajęte)\n`;
         msg += `\n/checkin ${v.id} — pierwsza wizyta!\n🎰 /spin — kręć codziennie!`;
