@@ -728,7 +728,9 @@ async function doCheckin(){
   btn.disabled=false; btn.textContent='Generuj OTP ✓';
 }
   /* ═══ RECEIPT SYSTEM ═══ */
+/* ═══ RECEIPT SYSTEM ═══ */
 let receiptPending = null;
+let otpPollTimer = null;
 
 function showReceiptForm(venueId, venueName, discount) {
   receiptPending = { venueId, venueName, discount };
@@ -737,6 +739,30 @@ function showReceiptForm(venueId, venueName, discount) {
   q('receiptInput').value = '';
   q('receiptBox').classList.add('show');
   q('receiptResult').classList.remove('show');
+}
+
+function startOtpPolling(venueId, venueName, discount) {
+  stopOtpPolling();
+  otpPollTimer = setInterval(async () => {
+    try {
+      const d = await api(`/api/checkin/status?venue_id=${venueId}`);
+      if (d.status === 'confirmed' && !d.receipt_done) {
+        stopOtpPolling();
+        q('otpBox').classList.remove('show');
+        showReceiptForm(venueId, venueName, discount);
+        TG?.HapticFeedback?.notificationOccurred('success');
+      } else if (d.status === 'confirmed' && d.receipt_done) {
+        stopOtpPolling();
+        q('otpBox').classList.remove('show');
+        q('ciOk').textContent = '✅ Wizyta i rachunek już zapisane!';
+        q('ciOk').classList.add('show');
+      }
+    } catch (e) { /* ignore polling errors */ }
+  }, 3000);
+}
+
+function stopOtpPolling() {
+  if (otpPollTimer) { clearInterval(otpPollTimer); otpPollTimer = null; }
 }
 
 async function submitReceipt() {
@@ -751,15 +777,20 @@ async function submitReceipt() {
       amount_paid: amt
     });
     q('receiptBox').classList.remove('show');
-    q('receiptSaved').textContent = 'Zaoszczędzono: ' + (d.discount_saved || 0).toFixed(2) + ' zł';
-    let detail = `Zapłacono: ${amt.toFixed(2)} zł · Przed zniżką: ~${(d.amount_original || 0).toFixed(2)} zł`;
-    if (d.bonuses && d.bonuses.length) detail += '\n🎁 ' + d.bonuses.join(', ');
+    const saved = d.receipt?.discount_saved || 0;
+    const orig = d.receipt?.amount_original || 0;
+    q('receiptSaved').textContent = 'Zaoszczędzono: ' + saved.toFixed(2) + ' zł';
+    let detail = 'Zapłacono: ' + amt.toFixed(2) + ' zł · Przed zniżką: ~' + orig.toFixed(2) + ' zł';
+    if (d.bonuses?.achievements?.length) detail += '\n🏆 ' + d.bonuses.achievements.map(a => a.emoji + ' ' + a.label).join(', ');
+    if (d.bonuses?.first_ever) detail += '\n🎉 Pierwsza wizyta! +10 pkt';
+    if (d.bonuses?.invites_added > 0) detail += '\n🎁 +' + d.bonuses.invites_added + ' zaproszenie';
     q('receiptDetail').textContent = detail;
     q('receiptResult').classList.add('show');
     TG?.HapticFeedback?.notificationOccurred('success');
-    if (d.new_rating != null) q('pRating') && (q('pRating').textContent = d.new_rating);
-    if (d.new_visits != null) q('pVisits') && (q('pVisits').textContent = d.new_visits);
-    S.profileLoaded = false;
+    if (d.stats) {
+      if (q('pRating')) q('pRating').textContent = d.stats.rating;
+      if (q('pVisits')) S.profileLoaded = false;
+    }
   } catch(e) {
     showErr('ciErr', '❌ ' + e.message);
   }
