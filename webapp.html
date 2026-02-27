@@ -652,6 +652,7 @@ async function loadProfile(){
     q('pDistrict').textContent=d.district||'—';
     q('pFreeze').textContent=d.streak_freeze_available??0;
     q('pSpinToday').textContent=d.spun_today?'✅ '+(d.spin_prize||'kręcono'):'❌ nie kręcono';
+    q('pSaved').textContent=(d.total_saved||0).toFixed(0)+' zł';
     $l.style.display='none'; $c.style.display='block';
     S.spinDone=!!d.spun_today;
     if(S.spinDone) markSpinDone(d.spin_prize);
