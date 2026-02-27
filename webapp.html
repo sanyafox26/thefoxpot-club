@@ -720,9 +720,7 @@ async function doCheckin(){
     if(d.already_today){showAlready(d.day);btn.disabled=false;btn.textContent='Generuj OTP ✓';return}
     const venue=S.venues.find(v=>v.id===Number(vId));
    showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
-    if (d.receipt_pending && venue) {
-      showReceiptForm(venue.id, venue.name, d.discount_percent || 10);
-    }
+    startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10);
     TG?.HapticFeedback?.notificationOccurred('success');
   }catch(e){showErr('ciErr','Błąd: '+e.message)}
   btn.disabled=false; btn.textContent='Generuj OTP ✓';
