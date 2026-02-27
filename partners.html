@@ -192,7 +192,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
   <div class="section-inner">
     <div class="section-label" id="how-label">⚙️ Jak to działa</div>
     <h2 class="section-title" id="how-title">3 proste kroki</h2>
-    <p class="section-desc" id="how-desc">Start zajmuje jeden dzień. System zaczyna przyciągać pierwsze wizyty.</p>
+    <p class="section-desc" id="how-desc">Start zajmuje jeden dzień. System zaczyna generować pierwsze wizyty.</p>
     <div class="steps-grid">
       <div class="step">
         <div class="step-num">1</div>
@@ -221,7 +221,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
     <div class="data-box">
       <div class="data-badge" id="data-badge">Opcjonalnie</div>
       <div class="data-title" id="data-h">Przybliżone kwoty rachunków</div>
-      <div class="data-desc" id="data-desc">Fox-i mogą dobrowolnie podać przybliżoną kwotę rachunku. Bez paragonu i bez integracji z kasą.</div>
+      <div class="data-desc" id="data-desc">Członkowie klubu mogą dobrowolnie podać przybliżoną kwotę rachunku. Bez paragonu i bez integracji z kasą.</div>
       <div class="data-items">
         <div class="data-item" id="d1">Dobrowolne, przybliżone kwoty — bez dostępu do kasy</div>
         <div class="data-item" id="d2">Trendy w czasie — widzisz, jak zmienia się zainteresowanie</div>
@@ -264,14 +264,14 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
     <div class="founder-box">
       <div class="founder-num">50</div>
       <div class="founder-label" id="fp-spots">Miejsc Founding Partner</div>
-      <h3 class="founder-title" id="fp-title">Nie każdy wejdzie.<br>Pierwsi zostają na zawsze.</h3>
-      <p class="founder-desc" id="fp-desc">Pierwsze 50 lokali otrzymuje status <strong style="color:var(--gold)">Founding Partner</strong> — widoczny dla wszystkich Fox-ów, w materiałach marketingowych FoxPot i na profilu lokalu.<br><br><em style="color:var(--muted);font-size:14px">Limit: 50 miejsc. Status aktywny w czasie współpracy. Dodatkowa widoczność i wyróżnienie w systemie.</em></p>
+      <h3 class="founder-title" id="fp-title">Nie każdy wejdzie.<br>Pierwsi mają przewagę.</h3>
+      <p class="founder-desc" id="fp-desc">Limit: 50 miejsc Founding Partner. Pierwsi mają przewagę.<br><br>Status <strong style="color:var(--gold)">Founding Partner</strong> aktywny w czasie współpracy. Dodatkowa widoczność i wyróżnienie w systemie.</p>
       <div class="founder-perks">
         <span class="founder-perk" id="fp-b1">👑 Founding Partner Badge</span>
         <span class="founder-perk" id="fp-b2">📣 Promocja na kanałach FoxPot</span>
         <span class="founder-perk" id="fp-b3">🔢 Numer seryjny #1–50</span>
         <span class="founder-perk" id="fp-b4">⚡ Priority support</span>
-        <span class="founder-perk" id="fp-b5">🎯 Lifetime status</span>
+        <span class="founder-perk" id="fp-b5">🎯 Status Founding Partner</span>
       </div>
       <p class="founder-promo" id="fp-promo">Pierwsze 50 lokali otrzymuje <strong style="color:var(--gold)">możliwość bezpłatnej promocji</strong> na kanałach The FoxPot Club (TikTok, Instagram, YouTube, Facebook). Najbardziej aktywni partnerzy są regularnie promowani przez klub — bez żadnych kosztów.</p>
       <a class="btn-primary" href="https://t.me/thefoxpot_club_bot" target="_blank" style="margin:0 auto;display:inline-flex" id="fp-btn">✈️ Zarezerwuj miejsce Founding Partner</a>
@@ -283,7 +283,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
 <section style="padding:80px 24px">
   <div class="cta-box">
     <h2 class="cta-title" id="cta-title">Gotowy dołączyć?</h2>
-    <p class="cta-desc" id="cta-desc">Nie podpisujesz umowy na start. Konfiguracja zajmuje jeden dzień.<br>Potem Fox-i sami przychodzą.</p>
+    <p class="cta-desc" id="cta-desc">Nie podpisujesz umowy na start. Konfiguracja zajmuje jeden dzień.<br>System zaczyna generować pierwsze wizyty.</p>
     <div class="cta-badges">
       <span class="cta-badge" id="cb1">Bez prowizji</span>
       <span class="cta-badge" id="cb2">Bez integracji</span>
@@ -294,6 +294,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
       <a class="btn-secondary" href="https://t.me/thefoxpot_club_bot" target="_blank" id="cta-btn2" style="font-size:14px;padding:12px 28px">💬 Zadaj pytanie (2 min)</a>
     </div>
     <p class="cta-small" id="cta-small">Odpowiadamy zwykle tego samego dnia.</p>
+    <p class="cta-small" id="cta-config" style="margin-top:4px">Konfiguracja: ~1 dzień · Start bez zobowiązań</p>
   </div>
 </section>
 
@@ -328,14 +329,14 @@ const T = {
     "b4-title": "Bez integracji", "b4-desc": "Nie zmieniasz kasy i nic nie instalujesz. Potwierdzasz wizytę w panelu w przeglądarce. Personel uczy się w 5 minut.",
 
     "how-label": "⚙️ Jak to działa", "how-title": "3 proste kroki",
-    "how-desc": "Start zajmuje jeden dzień. System zaczyna przyciągać pierwsze wizyty.",
+    "how-desc": "Start zajmuje jeden dzień. System zaczyna generować pierwsze wizyty.",
     "s1-title": "Kontakt", "s1-desc": "Napisz do nas → aktywujemy Twój lokal i dajemy dostęp do panelu.",
     "s2-title": "Wizyta", "s2-desc": "Gość pokazuje OTP / kod wizyty → dajesz zniżkę → potwierdzasz w panelu. ~10 sekund.",
     "s3-title": "Statystyki", "s3-desc": "Widzisz statystyki wizyt i zainteresowania Twoim lokalem. Dane pomagają Ci rosnąć.",
 
     "data-label": "📋 Dane", "data-title": "Dane o rachunkach",
     "data-badge": "Opcjonalnie", "data-h": "Przybliżone kwoty rachunków",
-    "data-desc": "Fox-i mogą dobrowolnie podać przybliżoną kwotę rachunku. Bez paragonu i bez integracji z kasą.",
+    "data-desc": "Członkowie klubu mogą dobrowolnie podać przybliżoną kwotę rachunku. Bez paragonu i bez integracji z kasą.",
     "d1": "Dobrowolne, przybliżone kwoty — bez dostępu do kasy",
     "d2": "Trendy w czasie — widzisz, jak zmienia się zainteresowanie",
     "d3": "Wnioski biznesowe — lepsze decyzje, oparte na danych",
@@ -348,17 +349,18 @@ const T = {
     "sf3-title": "Wolność", "sf3-desc": "Możesz zakończyć współpracę w dowolnym momencie — bez konsekwencji finansowych.",
 
     "fp-spots": "Miejsc Founding Partner",
-    "fp-title": "Nie każdy wejdzie.<br>Pierwsi zostają na zawsze.",
-    "fp-desc": "Pierwsze 50 lokali otrzymuje status <strong style='color:var(--gold)'>Founding Partner</strong> — widoczny dla wszystkich Fox-ów, w materiałach marketingowych FoxPot i na profilu lokalu.<br><br><em style='color:var(--muted);font-size:14px'>Limit: 50 miejsc. Status aktywny w czasie współpracy. Dodatkowa widoczność i wyróżnienie w systemie.</em>",
-    "fp-b1": "👑 Founding Partner Badge", "fp-b2": "📣 Promocja na kanałach FoxPot", "fp-b3": "🔢 Numer seryjny #1–50", "fp-b4": "⚡ Priority support", "fp-b5": "🎯 Lifetime status",
+    "fp-title": "Nie każdy wejdzie.<br>Pierwsi mają przewagę.",
+    "fp-desc": "Limit: 50 miejsc Founding Partner. Pierwsi mają przewagę.<br><br>Status <strong style='color:var(--gold)'>Founding Partner</strong> aktywny w czasie współpracy. Dodatkowa widoczność i wyróżnienie w systemie.",
+    "fp-b1": "👑 Founding Partner Badge", "fp-b2": "📣 Promocja na kanałach FoxPot", "fp-b3": "🔢 Numer seryjny #1–50", "fp-b4": "⚡ Priority support", "fp-b5": "🎯 Status Founding Partner",
     "fp-promo": "Pierwsze 50 lokali otrzymuje <strong style='color:var(--gold)'>możliwość bezpłatnej promocji</strong> na kanałach The FoxPot Club (TikTok, Instagram, YouTube, Facebook). Najbardziej aktywni partnerzy są regularnie promowani przez klub — bez żadnych kosztów.",
     "fp-btn": "✈️ Zarezerwuj miejsce Founding Partner",
 
     "cta-title": "Gotowy dołączyć?",
-    "cta-desc": "Nie podpisujesz umowy na start. Konfiguracja zajmuje jeden dzień.<br>Potem Fox-i sami przychodzą.",
+    "cta-desc": "Nie podpisujesz umowy na start. Konfiguracja zajmuje jeden dzień.<br>System zaczyna generować pierwsze wizyty.",
     "cta-btn1": "✈️ Zostań partnerem", "cta-btn2": "💬 Zadaj pytanie (2 min)",
     "cb1": "Bez prowizji", "cb2": "Bez integracji", "cb3": "Bez ryzyka",
     "cta-small": "Odpowiadamy zwykle tego samego dnia.",
+    "cta-config": "Konfiguracja: ~1 dzień · Start bez zobowiązań",
     "footer-guests": "Dla gości", "footer-venues": "Dla lokali"
   },
   en: {
@@ -397,9 +399,9 @@ const T = {
     "sf3-title": "Freedom", "sf3-desc": "End the partnership at any time — no financial consequences.",
 
     "fp-spots": "Founding Partner Spots",
-    "fp-title": "Not everyone gets in.<br>The first stay forever.",
-    "fp-desc": "The first 50 venues receive <strong style='color:var(--gold)'>Founding Partner</strong> status — permanently visible to all Foxes, across FoxPot marketing and on your venue profile.<br><br><em style='color:var(--muted);font-size:14px'>Limit: 50 spots. Status active during partnership. Extra visibility and distinction in the system.</em>",
-    "fp-b1": "👑 Founding Partner Badge", "fp-b2": "📣 Promotion on FoxPot channels", "fp-b3": "🔢 Serial number #1–50", "fp-b4": "⚡ Priority support", "fp-b5": "🎯 Lifetime status",
+    "fp-title": "Not everyone gets in.<br>The first ones get the edge.",
+    "fp-desc": "Limit: 50 Founding Partner spots. The first ones get the edge.<br><br><strong style='color:var(--gold)'>Founding Partner</strong> status active during partnership. Extra visibility and distinction in the system.",
+    "fp-b1": "👑 Founding Partner Badge", "fp-b2": "📣 Promotion on FoxPot channels", "fp-b3": "🔢 Serial number #1–50", "fp-b4": "⚡ Priority support", "fp-b5": "🎯 Founding Partner Status",
     "fp-promo": "The first 50 venues receive <strong style='color:var(--gold)'>free promotion</strong> on The FoxPot Club channels (TikTok, Instagram, YouTube, Facebook). Most active partners are regularly promoted by the club — at no cost.",
     "fp-btn": "✈️ Secure your Founding Partner spot",
 
@@ -408,6 +410,7 @@ const T = {
     "cta-btn1": "✈️ Become a partner", "cta-btn2": "💬 Ask a question (2 min)",
     "cb1": "No commissions", "cb2": "No integration", "cb3": "No risk",
     "cta-small": "We usually respond the same day.",
+    "cta-config": "Setup: ~1 day · Start with no obligations",
     "footer-guests": "For guests", "footer-venues": "For venues"
   }
 };
