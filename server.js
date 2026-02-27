@@ -327,7 +327,7 @@ async function migrate() {
       last_violation_at  TIMESTAMPTZ
     )
   `);
-  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_obligations_user    ON fp1_venue_obligations(user_id)`);
+  await pool.query(`UPDATE fp1_venues SET discount_percent=10 WHERE discount_percent!=10`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_obligations_expires ON fp1_venue_obligations(expires_at)`);
 
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
