@@ -816,6 +816,30 @@ async function submitReceipt() {
   }
   btn.disabled = false; btn.textContent = '💰 Zapisz rachunek';
 }
+  function showCategoryPick() {
+  q('categoryBox').style.display = 'block';
+  q('categoryBox').classList.add('show');
+}
+async function pickCategory(cat) {
+  q('categoryBox').style.display = 'none';
+  q('categoryBox').classList.remove('show');
+  if (cat === 'skip' || !receiptPending) {
+    q('receiptResult').classList.add('show');
+    return;
+  }
+  try {
+    const d = await api('/api/receipt/category', 'POST', {
+      venue_id: receiptPending.venueId,
+      category: cat
+    });
+    if (d.bonus_points) {
+      const detail = q('receiptDetail');
+      detail.textContent += '\n🎯 +' + d.bonus_points + ' pkt za kategorię!';
+    }
+    TG?.HapticFeedback?.notificationOccurred('success');
+  } catch(e) { /* ignore */ }
+  q('receiptResult').classList.add('show');
+}
 function showAlready(day){
   const b=q('crBox');
   q('crIcon').textContent='✅';
