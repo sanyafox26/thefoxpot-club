@@ -311,6 +311,7 @@ async function migrate() {
   `);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_receipts_user  ON fp1_receipts(user_id)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_receipts_venue ON fp1_receipts(venue_id)`);
+   await ensureColumn("fp1_receipts", "category", "TEXT");
   /* ── V24: нова таблиця venue_obligations ── */
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_venue_obligations (
