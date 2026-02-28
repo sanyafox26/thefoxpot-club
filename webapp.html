@@ -413,6 +413,21 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.4;text-align:center">Kwota przybliżona · używana tylko do statystyk (anonimowo)</div>
       <button class="receipt-btn" id="receiptBtn" onclick="submitReceipt()">💰 Zapisz rachunek</button>
     </div>
+    <div class="receipt-box" id="categoryBox" style="display:none">
+      <div class="receipt-title">🍽️ Co wybrałeś?</div>
+      <div class="receipt-sub">1 klik · anonimowo · lepsze bonusy</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <button class="d-btn" onclick="pickCategory('main')">🍽️ Danie główne</button>
+        <button class="d-btn" onclick="pickCategory('snack')">🥪 Szybka przekąska</button>
+        <button class="d-btn" onclick="pickCategory('dessert')">🍰 Deser</button>
+        <button class="d-btn" onclick="pickCategory('coffee')">☕ Kawa</button>
+        <button class="d-btn" onclick="pickCategory('drink')">🥤 Napój</button>
+        <button class="d-btn" onclick="pickCategory('alcohol')">🍺 Alkohol</button>
+        <button class="d-btn" onclick="pickCategory('other')">🛒 Inne</button>
+        <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="pickCategory('skip')">Pomiń →</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);text-align:center">Anonimowo • 2 kliknięcia • bonus dla Ciebie</div>
+    </div>
     <div class="receipt-result" id="receiptResult">
       <span style="font-size:36px;display:block;margin-bottom:8px">💰</span>
       <div style="font-size:14px;font-weight:700;margin-bottom:4px">Rachunek zapisany!</div>
