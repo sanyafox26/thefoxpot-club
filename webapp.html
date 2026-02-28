@@ -410,6 +410,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="receipt-title">🧾 Wpisz kwotę rachunku</div>
       <div class="receipt-sub">Wpisz kwotę którą zapłaciłeś (po zniżce FoxPot).<br>Zniżka: <strong id="receiptDiscount">10%</strong> w <strong id="receiptVenue">lokalu</strong></div>
       <input class="receipt-input" id="receiptInput" type="number" inputmode="decimal" min="1" max="5000" placeholder="np. 45.00 zł" step="0.01"/>
+      <div style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.4;text-align:center">Kwota przybliżona · używana tylko do statystyk (anonimowo)</div>
       <button class="receipt-btn" id="receiptBtn" onclick="submitReceipt()">💰 Zapisz rachunek</button>
     </div>
     <div class="receipt-result" id="receiptResult">
