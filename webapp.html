@@ -805,7 +805,7 @@ async function submitReceipt() {
     if (d.bonuses?.first_ever) detail += '\n🎉 Pierwsza wizyta! +10 pkt';
     if (d.bonuses?.invites_added > 0) detail += '\n🎁 +' + d.bonuses.invites_added + ' zaproszenie';
     q('receiptDetail').textContent = detail;
-    q('receiptResult').classList.add('show');
+   showCategoryPick();
     TG?.HapticFeedback?.notificationOccurred('success');
     if (d.stats) {
       if (q('pRating')) q('pRating').textContent = d.stats.rating;
