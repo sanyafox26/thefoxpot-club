@@ -1184,23 +1184,21 @@ function filterVenueMap(type, btn) {
 let gMap = null;
 let gMarkers = [];
 
-function renderGoogleMap(venues) {
+function initGMap(venues) {
   const container = q('mapContainer');
-  if (!container) return;
+  if (!window.google?.maps) {
+    container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">⏳ Ładowanie mapy…</div>';
+    setTimeout(() => initGMap(venues), 500);
+    return;
+  }
   const withCoords = venues.filter(v => v.lat && v.lng);
   const center = withCoords.length
     ? { lat: withCoords.reduce((s,v)=>s+parseFloat(v.lat),0)/withCoords.length, lng: withCoords.reduce((s,v)=>s+parseFloat(v.lng),0)/withCoords.length }
     : { lat: 52.2297, lng: 21.0122 };
   if (!gMap) {
-    if (!window.google?.maps) {
-      container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">⏳ Ładowanie mapy…</div>';
-      setTimeout(() => renderGoogleMap(venues), 500);
-      return;
-    }
     gMap = new google.maps.Map(container, {
       center, zoom: 12,
-      disableDefaultUI: true,
-      zoomControl: true,
+      disableDefaultUI: true, zoomControl: true,
       styles: [
         {elementType:'geometry',stylers:[{color:'#0a0b14'}]},
         {elementType:'labels.text.stroke',stylers:[{color:'#0a0b14'}]},
@@ -1214,42 +1212,27 @@ function renderGoogleMap(venues) {
   } else {
     gMap.setCenter(center);
   }
-  gMarkers.forEach(m => m.setMap(null));
-  gMarkers = [];
-  withCoords.forEach(v => {
-    const xy = `${v.my_visits||0}/${v.total_visits||0}`;
-    const marker = new google.maps.marker.AdvancedMarkerElement?.({
-      map: gMap,
-      position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) }
-    });
-    if (marker) { gMarkers.push(marker); return; }
-    const div = document.createElement('div');
-    div.innerHTML = `<div style="background:#f5a623;color:#0a0b14;font-weight:800;font-size:11px;padding:4px 8px;border-radius:8px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4);font-family:Inter Tight,sans-serif;cursor:pointer">${xy}</div>`;
-    const overlay = new CustomOverlay(parseFloat(v.lat), parseFloat(v.lng), div, v.id);
-    overlay.setMap(gMap);
-    gMarkers.push(overlay);
-  });
+  updateMapMarkers(withCoords);
 }
 
-class CustomOverlay extends google.maps.OverlayView {
-  constructor(lat, lng, div, venueId) {
-    super();
-    this.pos = new google.maps.LatLng(lat, lng);
-    this.div = div;
-    this.venueId = venueId;
-  }
-  onAdd() {
-    this.div.style.position = 'absolute';
-    this.div.style.cursor = 'pointer';
-    this.div.addEventListener('click', () => openVenueDetail(this.venueId));
-    this.getPanes().overlayMouseTarget.appendChild(this.div);
-  }
-  draw() {
-    const p = this.getProjection().fromLatLngToDivPixel(this.pos);
-    if (p) { this.div.style.left = (p.x - 20) + 'px'; this.div.style.top = (p.y - 12) + 'px'; }
-  }
-  onRemove() { this.div.remove(); }
-  setMap(map) { super.setMap(map); }
+function updateMapMarkers(venues) {
+  gMarkers.forEach(m => m.setMap(null));
+  gMarkers = [];
+  venues.forEach(v => {
+    const xy = `${v.my_visits||0}/${v.total_visits||0}`;
+    const marker = new google.maps.Marker({
+      map: gMap,
+      position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
+      icon: {
+        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="52" height="28"><rect rx="8" width="52" height="28" fill="#f5a623"/><text x="26" y="19" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="13" fill="#0a0b14">${xy}</text></svg>`),
+        scaledSize: new google.maps.Size(52, 28),
+        anchor: new google.maps.Point(26, 14)
+      },
+      title: v.name
+    });
+    marker.addListener('click', () => openVenueDetail(v.id));
+    gMarkers.push(marker);
+  });
 }
 
   function sortVenueMap(type, btn) {
