@@ -1377,11 +1377,14 @@ async function loadMap() {
     const data = await fetch(BASE+'/api/venues', {headers:{'X-Telegram-Init-Data': INIT_DATA||''}}).then(r=>r.json());
     if (data.error) throw new Error(data.error);
     S_map.venues = data.venues || [];
-    const sc = document.querySelector('script[src*="maps.googleapis"]');
-    if (sc && data.maps_key) sc.src = sc.src.replace('MAPS_KEY_PLACEHOLDER', data.maps_key);
+    if (data.maps_key && !window.google?.maps) {
+      const sc = document.createElement('script');
+      sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + data.maps_key;
+      document.head.appendChild(sc);
+    }
     renderMapList();
   } catch(e) {
-    q('mapIframeWrap').innerHTML = '';
+    q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
   } finally {
     q('mapLoading').style.display = 'none';
