@@ -1151,7 +1151,14 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 // GET /api/venues
 app.get("/api/venues", async (req, res) => {
   try {
-    const userId = req.tgUser ? String(req.tgUser.id) : null;
+    let userId = null;
+    try {
+      const init = req.headers["x-telegram-init-data"];
+      if (init) {
+        const parsed = Object.fromEntries(new URLSearchParams(init));
+        if (parsed.user) userId = String(JSON.parse(parsed.user).id);
+      }
+    } catch(_){}
     const r = await pool.query(
      `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
