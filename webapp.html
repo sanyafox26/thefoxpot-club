@@ -384,6 +384,20 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   </section>
 
   <!-- CHECK-IN -->
+  <div id="consentOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:none;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(6px)">
+      <div style="background:#12131f;border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:28px 24px;max-width:380px;width:100%;text-align:center">
+        <div style="font-size:40px;margin-bottom:12px">🦊</div>
+        <div style="font-size:18px;font-weight:800;margin-bottom:8px">Zaakceptuj warunki</div>
+        <div style="font-size:13px;color:rgba(240,240,245,.5);line-height:1.7;margin-bottom:20px">
+          Aby korzystać z programu, zaakceptuj regulamin i politykę prywatności.
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+          <a href="/rules" target="_blank" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">📋 Regulamin →</a>
+          <a href="/privacy" target="_blank" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">🔒 Polityka Prywatności →</a>
+        </div>
+        <button id="consentAcceptBtn" onclick="acceptConsent()" style="width:100%;padding:14px;background:linear-gradient(135deg,#f5a623,#e8842a);border:none;border-radius:12px;color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">✅ Akceptuję i kontynuuję</button>
+      </div>
+    </div>
   <section class="screen" id="screen-checkin">
     <div class="checkin-hero">
       <div class="checkin-title">📍 Check-in</div>
