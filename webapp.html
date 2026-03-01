@@ -774,7 +774,10 @@ async function doCheckin(){
    showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
     startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10);
     TG?.HapticFeedback?.notificationOccurred('success');
-  }catch(e){showErr('ciErr','Błąd: '+e.message)}
+  }catch(e){
+    if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='Generuj OTP ✓';return}
+    showErr('ciErr','Błąd: '+e.message);
+  }
   btn.disabled=false; btn.textContent='Generuj OTP ✓';
 }
   /* ═══ RECEIPT SYSTEM ═══ */
