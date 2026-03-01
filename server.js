@@ -2450,7 +2450,22 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("REFER_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
-  bot.action("change_district", async (ctx) => {
+  bot.action("accept_consent", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      await saveConsent(userId);
+      await ctx.answerCbQuery("✅ Zaakceptowano!");
+      await ctx.editMessageText(
+        `✅ Regulamin i Polityka Prywatności zaakceptowane!\n\n` +
+        `Wersja: ${CONSENT_VERSION}\n` +
+        `Możesz teraz korzystać z programu. 🦊`
+      );
+    } catch (e) {
+      console.error("ACCEPT_CONSENT_ERR", e);
+      await ctx.answerCbQuery("❌ Błąd. Spróbuj ponownie.");
+    }
+  });
+   bot.action("change_district", async (ctx) => {
     try { await ctx.answerCbQuery(); await sendDistrictKeyboard(ctx, "change"); }
     catch (e) { console.error("CHANGE_DISTRICT_ERR", e); }
   });
