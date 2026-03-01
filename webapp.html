@@ -741,6 +741,22 @@ async function loadVenues(){
 }
 function pickVenue(id){q('venueSelect').value=String(id);TG?.HapticFeedback?.selectionChanged()}
 
+  function showConsent() {
+  const el = q('consentOverlay');
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+}
+async function acceptConsent() {
+  const btn = q('consentAcceptBtn');
+  btn.disabled = true; btn.textContent = 'Zapisuję…';
+  try {
+    await api('/api/consent', 'POST');
+    q('consentOverlay').style.display = 'none';
+    TG?.HapticFeedback?.notificationOccurred('success');
+  } catch(e) { showErr('ciErr', '❌ ' + e.message); }
+  btn.disabled = false; btn.textContent = '✅ Akceptuję i kontynuuję';
+}
 async function doCheckin(){
   if(!TG_USER)return showErr('ciErr','Otwórz przez Telegram.');
   const vId=q('venueSelect').value;
