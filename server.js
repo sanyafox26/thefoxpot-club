@@ -1222,11 +1222,12 @@ app.get("/api/venues", async (req, res) => {
     });
 
     // Find TOP week and TOP month venue IDs
-    let topWeekId = null, topWeekCnt = 0;
+   let topWeekId = null, topWeekCnt = 0;
     let topMonthId = null, topMonthCnt = 0;
+    let topYearId = null, topYearCnt = 0;
     Object.entries(weeklyVisits).forEach(([vid, cnt]) => { if (cnt > topWeekCnt) { topWeekId = Number(vid); topWeekCnt = cnt; } });
     Object.entries(monthlyVisits).forEach(([vid, cnt]) => { if (cnt > topMonthCnt) { topMonthId = Number(vid); topMonthCnt = cnt; } });
-
+    Object.entries(totalVisits).forEach(([vid, cnt]) => { if (cnt > topYearCnt) { topYearId = Number(vid); topYearCnt = cnt; } });
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
