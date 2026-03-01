@@ -1147,12 +1147,30 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 });
 
 // GET /api/venues
-app.get("/api/venues", async (_req, res) => {
+app.get("/api/venues", requireWebAppAuth, async (req, res) => {
   try {
+    const userId = req.tgUser ? String(req.tgUser.id) : null;
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
-    res.json({ venues: r.rows, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
+    let myVisits = {};
+    let totalVisits = {};
+    if (userId) {
+      const mv = await pool.query(
+        `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE user_id=$1 GROUP BY venue_id`, [userId]
+      );
+      mv.rows.forEach(r => myVisits[r.venue_id] = r.cnt);
+    }
+    const tv = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits GROUP BY venue_id`
+    );
+    tv.rows.forEach(r => totalVisits[r.venue_id] = r.cnt);
+    const venues = r.rows.map(v => ({
+      ...v,
+      my_visits: myVisits[v.id] || 0,
+      total_visits: totalVisits[v.id] || 0
+    }));
+    res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
