@@ -574,12 +574,14 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   </section>
 
 
-  <!-- ═══ MAPA LOKALI ═══ -->
+ <!-- ═══ MAPA LOKALI ═══ -->
   <section class="screen" id="screen-map">
     <div class="map-hero">
       <div class="map-title">🗺️ Mapa Lokali</div>
       <div class="map-sub">Partnerzy The FoxPot Club w Warszawie</div>
     </div>
+
+    <input id="mapSearch" type="text" placeholder="🔍 Szukaj lokalu…" style="width:100%;padding:12px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);outline:none;margin-bottom:10px" oninput="renderMapList()"/>
 
     <div class="map-filter">
       <button class="map-filter-btn active" onclick="filterVenueMap('all',this)">Wszystkie</button>
@@ -587,7 +589,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <button class="map-filter-btn" onclick="filterVenueMap('trial',this)">🎟️ Trial</button>
     </div>
 
-    <!-- Google Maps Embed -->
     <div id="mapIframeWrap" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)">
       <div id="mapIframePlaceholder" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:6px">⏳</div><div style="font-size:12px">Ładowanie mapy…</div></div>
     </div>
@@ -595,6 +596,11 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
     <div id="mapList"></div>
   </section>
+
+  <!-- VENUE DETAIL MODAL -->
+  <div class="modal-overlay" id="venueModal" onclick="if(event.target===this)this.classList.remove('open')">
+    <div class="modal-sheet" id="venueModalContent"></div>
+  </div>
 
   <!-- BOTTOM NAV -->
   <nav class="bottom-nav">
