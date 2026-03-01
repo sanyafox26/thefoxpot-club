@@ -1149,7 +1149,7 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 });
 
 // GET /api/venues
-app.get("/api/venues", requireWebAppAuth, async (req, res) => {
+app.get("/api/venues", async (req, res) => {
   try {
     const userId = req.tgUser ? String(req.tgUser.id) : null;
     const r = await pool.query(
