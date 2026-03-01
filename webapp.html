@@ -1303,7 +1303,8 @@ function renderMapList() {
       ? '<span class="venue-map-badge badge-trial">Trial</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
-    return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none">
+   const topStyle = v.is_top_week ? 'border-color:rgba(255,215,0,.4);background:rgba(255,215,0,.06)' : v.is_top_month ? 'border-color:rgba(160,123,255,.4);background:rgba(160,123,255,.06)' : '';
+    return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon">🏪</div>
       <div class="venue-map-info" style="flex:1">
         <div class="venue-map-name">${esc(v.name)}</div>
