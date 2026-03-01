@@ -1620,6 +1620,33 @@ app.post("/api/consent", requireWebAppAuth, async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// POST /api/receipt/reason — "Dlaczego tu?" survey
+app.post("/api/receipt/reason", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    const reason = String(req.body.reason || "").trim();
+    const VALID = ["fast","tasty","cheap","chill","social"];
+    if (!venueId || !VALID.includes(reason))
+      return res.status(400).json({ error: "Nieprawidłowy powód" });
+    const day = warsawDayKey();
+    const receipt = await pool.query(
+      `SELECT id FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`,
+      [userId, venueId, day]
+    );
+    if (receipt.rowCount === 0)
+      return res.status(400).json({ error: "Najpierw wpisz rachunek" });
+    await pool.query(
+      `UPDATE fp1_receipts SET reason=$1 WHERE id=$2`,
+      [reason, receipt.rows[0].id]
+    );
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+    res.json({ ok: true, bonus_points: 1 });
+  } catch (e) {
+    console.error("API_RECEIPT_REASON_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/api/receipt/category", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
