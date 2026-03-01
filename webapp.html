@@ -1181,28 +1181,75 @@ function filterVenueMap(type, btn) {
   renderMapList();
 }
 
-function renderMapIframe(venues, mapsKey) {
-  const wrap = q('mapIframeWrap');
-  if (!mapsKey) {
-    wrap.innerHTML = '<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:6px">⚠️</div><div style="font-size:12px">Brak klucza mapy</div></div>';
-    return;
-  }
+let gMap = null;
+let gMarkers = [];
+
+function renderGoogleMap(venues) {
+  const container = q('mapContainer');
+  if (!container) return;
   const withCoords = venues.filter(v => v.lat && v.lng);
-  if (!withCoords.length) {
-    const src = `https://www.google.com/maps/embed/v1/view?key=${mapsKey}&center=52.2297,21.0122&zoom=12&maptype=roadmap`;
-    wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
-    return;
+  const center = withCoords.length
+    ? { lat: withCoords.reduce((s,v)=>s+parseFloat(v.lat),0)/withCoords.length, lng: withCoords.reduce((s,v)=>s+parseFloat(v.lng),0)/withCoords.length }
+    : { lat: 52.2297, lng: 21.0122 };
+  if (!gMap) {
+    if (!window.google?.maps) {
+      container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">⏳ Ładowanie mapy…</div>';
+      setTimeout(() => renderGoogleMap(venues), 500);
+      return;
+    }
+    gMap = new google.maps.Map(container, {
+      center, zoom: 12,
+      disableDefaultUI: true,
+      zoomControl: true,
+      styles: [
+        {elementType:'geometry',stylers:[{color:'#0a0b14'}]},
+        {elementType:'labels.text.stroke',stylers:[{color:'#0a0b14'}]},
+        {elementType:'labels.text.fill',stylers:[{color:'#6a6a7a'}]},
+        {featureType:'road',elementType:'geometry',stylers:[{color:'#1a1b2e'}]},
+        {featureType:'water',elementType:'geometry',stylers:[{color:'#0d1020'}]},
+        {featureType:'poi',stylers:[{visibility:'off'}]},
+        {featureType:'transit',stylers:[{visibility:'off'}]}
+      ]
+    });
+  } else {
+    gMap.setCenter(center);
   }
-  if (withCoords.length === 1) {
-    const v = withCoords[0];
-    const src = `https://www.google.com/maps/embed/v1/place?key=${mapsKey}&q=${parseFloat(v.lat)},${parseFloat(v.lng)}&zoom=15&maptype=roadmap`;
-    wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
-    return;
+  gMarkers.forEach(m => m.setMap(null));
+  gMarkers = [];
+  withCoords.forEach(v => {
+    const xy = `${v.my_visits||0}/${v.total_visits||0}`;
+    const marker = new google.maps.marker.AdvancedMarkerElement?.({
+      map: gMap,
+      position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) }
+    });
+    if (marker) { gMarkers.push(marker); return; }
+    const div = document.createElement('div');
+    div.innerHTML = `<div style="background:#f5a623;color:#0a0b14;font-weight:800;font-size:11px;padding:4px 8px;border-radius:8px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4);font-family:Inter Tight,sans-serif;cursor:pointer">${xy}</div>`;
+    const overlay = new CustomOverlay(parseFloat(v.lat), parseFloat(v.lng), div, v.id);
+    overlay.setMap(gMap);
+    gMarkers.push(overlay);
+  });
+}
+
+class CustomOverlay extends google.maps.OverlayView {
+  constructor(lat, lng, div, venueId) {
+    super();
+    this.pos = new google.maps.LatLng(lat, lng);
+    this.div = div;
+    this.venueId = venueId;
   }
-  const lat = withCoords.reduce((s,v)=>s+parseFloat(v.lat),0)/withCoords.length;
-  const lng = withCoords.reduce((s,v)=>s+parseFloat(v.lng),0)/withCoords.length;
-  const src = `https://www.google.com/maps/embed/v1/search?key=${mapsKey}&q=FoxPot+Partner+Warsaw&center=${lat.toFixed(4)},${lng.toFixed(4)}&zoom=12`;
-  wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
+  onAdd() {
+    this.div.style.position = 'absolute';
+    this.div.style.cursor = 'pointer';
+    this.div.addEventListener('click', () => openVenueDetail(this.venueId));
+    this.getPanes().overlayMouseTarget.appendChild(this.div);
+  }
+  draw() {
+    const p = this.getProjection().fromLatLngToDivPixel(this.pos);
+    if (p) { this.div.style.left = (p.x - 20) + 'px'; this.div.style.top = (p.y - 12) + 'px'; }
+  }
+  onRemove() { this.div.remove(); }
+  setMap(map) { super.setMap(map); }
 }
 
   function sortVenueMap(type, btn) {
