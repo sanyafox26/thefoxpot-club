@@ -1203,31 +1203,33 @@ function renderMapIframe(venues, mapsKey) {
 
 function renderMapList() {
   const list = q('mapList');
+  const search = (q('mapSearch')?.value || '').toLowerCase().trim();
   const venues = S_map.venues.filter(v => {
     if (S_map.filter === 'trial')   return v.is_trial;
     if (S_map.filter === 'partner') return !v.is_trial;
     return true;
-  });
+  }).filter(v => !search || v.name.toLowerCase().includes(search) || (v.address||'').toLowerCase().includes(search));
   renderMapIframe(venues, S_map.mapsKey);
   if (!venues.length) {
-    list.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Brak lokali w tej kategorii</div></div>';
+    list.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">'+(search?'Nie znaleziono: «'+esc(search)+'»':'Brak lokali w tej kategorii')+'</div></div>';
     return;
   }
   list.innerHTML = venues.map(v => {
-    const mapsUrl = v.lat && v.lng
-      ? `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.name+' '+v.city)}`;
     const badge = v.is_trial
       ? '<span class="venue-map-badge badge-trial">Trial</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
-    return `<a class="venue-map-card" href="${mapsUrl}" target="_blank" rel="noopener">
+    const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
+    return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none">
       <div class="venue-map-icon">🏪</div>
-      <div class="venue-map-info">
+      <div class="venue-map-info" style="flex:1">
         <div class="venue-map-name">${esc(v.name)}</div>
         <div class="venue-map-addr">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       </div>
-      ${badge}
-    </a>`;
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+        ${xy}
+        ${badge}
+      </div>
+    </div>`;
   }).join('');
 }
 
