@@ -1257,6 +1257,7 @@ function updateMapMarkers(venues) {
   gMarkers = [];
   venues.forEach(v => {
     const xy = `${v.my_visits||0}/${v.total_visits||0}`;
+    const markerColor = v.is_top_week ? '#ffd700' : v.is_top_month ? '#a07bff' : '#f5a623';
     const marker = new google.maps.Marker({
       map: gMap,
       position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
