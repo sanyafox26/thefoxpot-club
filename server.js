@@ -1240,9 +1240,9 @@ app.get("/api/venues", async (req, res) => {
         trial_remaining,
         top_category: topCategory[v.id]?.cat || null,
         top_reason: topReason[v.id]?.reason || null,
-      is_top_week: v.id === topWeekId,
-        is_top_month: v.id === topMonthId,
-        is_top_year: v.id === topYearId
+      is_top_week: topWeekCnt >= 1 && (weeklyVisits[v.id] || 0) === topWeekCnt,
+        is_top_month: topMonthCnt >= 1 && (monthlyVisits[v.id] || 0) === topMonthCnt,
+        is_top_year: topAllCnt >= 1 && v.id === topAllId
       };
     });
     res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
