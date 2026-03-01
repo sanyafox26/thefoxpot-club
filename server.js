@@ -1517,6 +1517,17 @@ app.get("/api/receipt/stats", requireWebAppAuth, async (req, res) => {
 /* ═══════════════════════════════════════════════════════════════
    V26: POST /api/receipt/category — категорія замовлення
 ═══════════════════════════════════════════════════════════════ */
+// POST /api/consent — Fox приймає regulamin + privacy
+app.post("/api/consent", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    await saveConsent(userId);
+    res.json({ ok: true, consent_version: CONSENT_VERSION });
+  } catch (e) {
+    console.error("CONSENT_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/api/receipt/category", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
