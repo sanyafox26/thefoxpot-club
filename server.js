@@ -1221,13 +1221,13 @@ app.get("/api/venues", async (req, res) => {
       if (!topReason[r.venue_id] || r.cnt > topReason[r.venue_id].cnt) topReason[r.venue_id] = { reason: r.reason, cnt: r.cnt };
     });
 
-    // Find TOP week and TOP month venue IDs
-   let topWeekId = null, topWeekCnt = 0;
+    // Find TOP week/month/all-time — min 1 visit required, one venue can have multiple TOPs
+    let topWeekId = null, topWeekCnt = 0;
     let topMonthId = null, topMonthCnt = 0;
-    let topYearId = null, topYearCnt = 0;
-    Object.entries(weeklyVisits).forEach(([vid, cnt]) => { if (cnt > topWeekCnt) { topWeekId = Number(vid); topWeekCnt = cnt; } });
-    Object.entries(monthlyVisits).forEach(([vid, cnt]) => { if (cnt > topMonthCnt) { topMonthId = Number(vid); topMonthCnt = cnt; } });
-    Object.entries(totalVisits).forEach(([vid, cnt]) => { if (cnt > topYearCnt) { topYearId = Number(vid); topYearCnt = cnt; } });
+    let topAllId = null, topAllCnt = 0;
+    Object.entries(weeklyVisits).forEach(([vid, cnt]) => { if (cnt >= 1 && cnt > topWeekCnt) { topWeekId = Number(vid); topWeekCnt = cnt; } });
+    Object.entries(monthlyVisits).forEach(([vid, cnt]) => { if (cnt >= 1 && cnt > topMonthCnt) { topMonthId = Number(vid); topMonthCnt = cnt; } });
+    Object.entries(totalVisits).forEach(([vid, cnt]) => { if (cnt >= 1 && cnt > topAllCnt) { topAllId = Number(vid); topAllCnt = cnt; } });
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
