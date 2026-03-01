@@ -357,6 +357,8 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "streak_freeze_available","INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "streak_best",           "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_daily_spins",    "prize_label",           "TEXT");
+   await ensureColumn("fp1_foxes",          "consent_at",            "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "consent_version",       "TEXT");
 
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`); } catch {}
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_tg DROP NOT NULL`); } catch {}
