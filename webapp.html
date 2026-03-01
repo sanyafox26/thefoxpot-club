@@ -1206,6 +1206,17 @@ function renderMapIframe(venues, mapsKey) {
   wrap.innerHTML = `<iframe src="${src}" style="width:100%;height:300px;border:none" loading="lazy" allowfullscreen></iframe>`;
 }
 
+  function sortVenueMap(type, btn) {
+  S_map.sort = type;
+  document.querySelectorAll('.map-filter:last-of-type .map-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMapList();
+}function sortVenueMap(type, btn) {
+  S_map.sort = type;
+  document.querySelectorAll('.map-filter:last-of-type .map-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMapList();
+}
 function renderMapList() {
   const list = q('mapList');
   const search = (q('mapSearch')?.value || '').toLowerCase().trim();
