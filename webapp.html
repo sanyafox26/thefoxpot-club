@@ -595,9 +595,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <button class="map-filter-btn" onclick="sortVenueMap('my',this)">🦊 Moje</button>
     </div>
 
-    <div id="mapIframeWrap" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)">
-      <div id="mapIframePlaceholder" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:6px">⏳</div><div style="font-size:12px">Ładowanie mapy…</div></div>
-    </div>
+   <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
 
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
     <div id="mapList"></div>
