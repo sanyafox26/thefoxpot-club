@@ -1187,6 +1187,9 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
 
     const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
     if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+     if (!(await hasConsent(userId))) {
+      return res.status(403).json({ error: "consent_required", consent_version: CONSENT_VERSION });
+    }
 
     const alreadyToday = await hasCountedToday(venueId, userId);
     if (alreadyToday) {
