@@ -446,6 +446,23 @@ const obs = new IntersectionObserver(e => e.forEach(x => {
   if(x.isIntersecting) x.target.classList.add('visible');
 }), {threshold:0.12});
 document.querySelectorAll('.benefit-card, .step, .safety-card').forEach(el => obs.observe(el));
+  // Consent checkbox — block CTA buttons until checked
+const consentBox = document.getElementById('consent-check');
+const ctaBtn1 = document.getElementById('cta-btn1');
+const ctaBtn2 = document.getElementById('cta-btn2');
+function updateCtaState() {
+  const ok = consentBox.checked;
+  [ctaBtn1, ctaBtn2].forEach(btn => {
+    if (btn) {
+      btn.style.opacity = ok ? '1' : '0.4';
+      btn.style.pointerEvents = ok ? 'auto' : 'none';
+    }
+  });
+}
+if (consentBox) {
+  consentBox.addEventListener('change', updateCtaState);
+  updateCtaState();
+}
 </script>
 </body>
 </html>
