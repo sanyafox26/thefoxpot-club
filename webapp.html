@@ -845,6 +845,7 @@ async function submitReceipt() {
       if (q('pVisits')) S.profileLoaded = false;
     }
   } catch(e) {
+    if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='💰 Zapisz rachunek';return}
     showErr('ciErr', '❌ ' + e.message);
   }
   btn.disabled = false; btn.textContent = '💰 Zapisz rachunek';
