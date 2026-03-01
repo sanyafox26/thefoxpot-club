@@ -871,7 +871,7 @@ async function pickCategory(cat) {
   q('categoryBox').style.display = 'none';
   q('categoryBox').classList.remove('show');
   if (cat === 'skip' || !receiptPending) {
-    q('receiptResult').classList.add('show');
+    showReasonPick();
     return;
   }
   try {
@@ -882,6 +882,32 @@ async function pickCategory(cat) {
     if (d.bonus_points) {
       const detail = q('receiptDetail');
       detail.textContent += '\n🎯 +' + d.bonus_points + ' pkt za kategorię!';
+    }
+    TG?.HapticFeedback?.notificationOccurred('success');
+  } catch(e) { /* ignore */ }
+  showReasonPick();
+}
+
+function showReasonPick() {
+  q('reasonBox').style.display = 'block';
+  q('reasonBox').classList.add('show');
+}
+
+async function pickReason(reason) {
+  q('reasonBox').style.display = 'none';
+  q('reasonBox').classList.remove('show');
+  if (reason === 'skip' || !receiptPending) {
+    q('receiptResult').classList.add('show');
+    return;
+  }
+  try {
+    const d = await api('/api/receipt/reason', 'POST', {
+      venue_id: receiptPending.venueId,
+      reason: reason
+    });
+    if (d.bonus_points) {
+      const detail = q('receiptDetail');
+      detail.textContent += '\n⚡ +' + d.bonus_points + ' pkt za opinię!';
     }
     TG?.HapticFeedback?.notificationOccurred('success');
   } catch(e) { /* ignore */ }
