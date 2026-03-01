@@ -1259,14 +1259,13 @@ function updateMapMarkers(venues) {
     const xy = `${v.my_visits||0}/${v.total_visits||0}`;
     const markerColor = v.is_top_year ? '#7C3AED' : v.is_top_month ? '#2563EB' : v.is_top_week ? '#EAB308' : '#F59E0B';
     const textColor = (v.is_top_month || v.is_top_year) ? '#FFFFFF' : '#000000';
-    const markerColor = v.is_top_week ? '#ffd700' : v.is_top_month ? '#a07bff' : '#f5a623';
     const marker = new google.maps.Marker({
       map: gMap,
       position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
       icon: {
-        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="52" height="28"><rect rx="8" width="52" height="28" fill="${markerColor}"/><text x="26" y="19" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="13" fill="#0a0b14">${xy}</text></svg>`),
-        scaledSize: new google.maps.Size(52, 28),
-        anchor: new google.maps.Point(26, 14)
+        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="56" height="28"><rect rx="10" width="56" height="28" fill="${markerColor}"/><text x="28" y="19" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="13" fill="${textColor}">${xy}</text></svg>`),
+        scaledSize: new google.maps.Size(56, 28),
+        anchor: new google.maps.Point(28, 14)
       },
       title: v.name
     });
