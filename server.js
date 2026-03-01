@@ -366,6 +366,8 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "lng",                   "NUMERIC(10,7)");
    await ensureColumn("fp1_venues",         "description",           "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "recommended",           "TEXT NOT NULL DEFAULT ''");
+   await ensureColumn("fp1_venues",         "description",           "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "recommended",           "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
   await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
