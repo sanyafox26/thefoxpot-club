@@ -2300,6 +2300,17 @@ if (BOT_TOKEN) {
       if (!v.approved) return ctx.reply("Lokal oczekuje na zatwierdzenie.");
       await upsertFox(ctx);
       const userId = String(ctx.from.id);
+       if (!(await hasConsent(userId))) {
+        return ctx.reply(
+          `🦊 Zanim zrobisz check-in, zaakceptuj regulamin:\n\n` +
+          `📋 Regulamin: ${PUBLIC_URL}/rules\n` +
+          `🔒 Polityka Prywatności: ${PUBLIC_URL}/privacy\n\n` +
+          `Otwórz aplikację i zaakceptuj warunki.`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback("✅ Akceptuję Regulamin i Politykę Prywatności", "accept_consent")]
+          ])
+        );
+      }
       const status = await currentVenueStatus(venueId);
       let statusWarn = "";
       if (status?.type === "limited") statusWarn = `\n⚠️ Status "${status.reason}" do ${new Date(status.ends_at).toLocaleTimeString("pl-PL",{timeZone:"Europe/Warsaw"})}`;
