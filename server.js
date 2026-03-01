@@ -1161,7 +1161,7 @@ app.get("/api/venues", async (req, res) => {
       }
     } catch(_){}
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -1175,11 +1175,73 @@ app.get("/api/venues", async (req, res) => {
       `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits GROUP BY venue_id`
     );
     tv.rows.forEach(r => totalVisits[r.venue_id] = r.cnt);
-    const venues = r.rows.map(v => ({
-      ...v,
-      my_visits: myVisits[v.id] || 0,
-      total_visits: totalVisits[v.id] || 0
-    }));
+
+    // Trial: remaining slots this month
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const trialUsed = {};
+    const tu = await pool.query(
+      `SELECT venue_id, COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [monthStart.toISOString()]
+    );
+    tu.rows.forEach(r => trialUsed[r.venue_id] = r.cnt);
+
+    // Weekly visits (for TOP week)
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+    const wv = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [weekAgo.toISOString()]
+    );
+    const weeklyVisits = {};
+    wv.rows.forEach(r => weeklyVisits[r.venue_id] = r.cnt);
+
+    // Monthly visits (for TOP month)
+    const mv2 = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [monthStart.toISOString()]
+    );
+    const monthlyVisits = {};
+    mv2.rows.forEach(r => monthlyVisits[r.venue_id] = r.cnt);
+
+    // Top category per venue
+    const tc = await pool.query(
+      `SELECT venue_id, category, COUNT(*)::int AS cnt FROM fp1_receipts WHERE category IS NOT NULL GROUP BY venue_id, category`
+    );
+    const topCategory = {};
+    tc.rows.forEach(r => {
+      if (!topCategory[r.venue_id] || r.cnt > topCategory[r.venue_id].cnt) topCategory[r.venue_id] = { cat: r.category, cnt: r.cnt };
+    });
+
+    // Top reason per venue
+    const tr = await pool.query(
+      `SELECT venue_id, reason, COUNT(*)::int AS cnt FROM fp1_receipts WHERE reason IS NOT NULL GROUP BY venue_id, reason`
+    );
+    const topReason = {};
+    tr.rows.forEach(r => {
+      if (!topReason[r.venue_id] || r.cnt > topReason[r.venue_id].cnt) topReason[r.venue_id] = { reason: r.reason, cnt: r.cnt };
+    });
+
+    // Find TOP week and TOP month venue IDs
+    let topWeekId = null, topWeekCnt = 0;
+    let topMonthId = null, topMonthCnt = 0;
+    Object.entries(weeklyVisits).forEach(([vid, cnt]) => { if (cnt > topWeekCnt) { topWeekId = Number(vid); topWeekCnt = cnt; } });
+    Object.entries(monthlyVisits).forEach(([vid, cnt]) => { if (cnt > topMonthCnt) { topMonthId = Number(vid); topMonthCnt = cnt; } });
+
+    const venues = r.rows.map(v => {
+      const tv_cnt = totalVisits[v.id] || 0;
+      const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
+      return {
+        ...v,
+        my_visits: myVisits[v.id] || 0,
+        total_visits: tv_cnt,
+        weekly_visits: weeklyVisits[v.id] || 0,
+        monthly_visits: monthlyVisits[v.id] || 0,
+        trial_remaining,
+        top_category: topCategory[v.id]?.cat || null,
+        top_reason: topReason[v.id]?.reason || null,
+        is_top_week: v.id === topWeekId,
+        is_top_month: v.id === topMonthId
+      };
+    });
     res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
