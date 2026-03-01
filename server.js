@@ -150,6 +150,22 @@ function isAdmin(userId) {
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
+const CONSENT_VERSION = "1.1";
+
+async function hasConsent(userId) {
+  const r = await pool.query(
+    `SELECT consent_version FROM fp1_foxes WHERE user_id=$1 AND consent_at IS NOT NULL LIMIT 1`,
+    [userId]
+  );
+  return r.rowCount > 0 && r.rows[0].consent_version === CONSENT_VERSION;
+}
+
+async function saveConsent(userId) {
+  await pool.query(
+    `UPDATE fp1_foxes SET consent_at=NOW(), consent_version=$1 WHERE user_id=$2`,
+    [CONSENT_VERSION, userId]
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════
    SCHEMA HELPERS
