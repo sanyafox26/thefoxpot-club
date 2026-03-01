@@ -446,6 +446,18 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
       <div style="font-size:11px;color:var(--muted);text-align:center">Anonimowo • 2 kliknięcia • bonus dla Ciebie</div>
     </div>
+    <div class="receipt-box" id="reasonBox" style="display:none">
+      <div class="receipt-title">⚡ Dlaczego tu?</div>
+      <div class="receipt-sub">1 klik · anonimowo · +1 pkt</div>
+      <div class="d-grid" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
+        <button class="d-btn" onclick="pickReason('fast')">⚡ Szybko</button>
+        <button class="d-btn" onclick="pickReason('tasty')">🔥 Smacznie</button>
+        <button class="d-btn" onclick="pickReason('cheap')">💸 Tanio</button>
+        <button class="d-btn" onclick="pickReason('chill')">🧘 Spokojnie</button>
+        <button class="d-btn" onclick="pickReason('social')">👥 Na spotkania</button>
+        <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="pickReason('skip')">Pomiń →</button>
+      </div>
+    </div>
     <div class="receipt-result" id="receiptResult">
       <span style="font-size:36px;display:block;margin-bottom:8px">💰</span>
       <div style="font-size:14px;font-weight:700;margin-bottom:4px">Rachunek zapisany!</div>
