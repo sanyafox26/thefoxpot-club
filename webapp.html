@@ -1173,7 +1173,7 @@ function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
 
 /* ═══ MAP — OpenStreetMap iframe ═══ */
-const S_map = { loaded: false, venues: [], filter: 'all', mapsKey: '' };
+const S_map = { loaded: false, venues: [], filter: 'all', sort: 'default', mapsKey: '' };
 
 function filterVenueMap(type, btn) {
   S_map.filter = type;
