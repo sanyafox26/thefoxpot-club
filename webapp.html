@@ -1262,7 +1262,7 @@ function updateMapMarkers(venues) {
       map: gMap,
       position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
       icon: {
-        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="52" height="28"><rect rx="8" width="52" height="28" fill="#f5a623"/><text x="26" y="19" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="13" fill="#0a0b14">${xy}</text></svg>`),
+        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="52" height="28"><rect rx="8" width="52" height="28" fill="${markerColor}"/><text x="26" y="19" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="13" fill="#0a0b14">${xy}</text></svg>`),
         scaledSize: new google.maps.Size(52, 28),
         anchor: new google.maps.Point(26, 14)
       },
