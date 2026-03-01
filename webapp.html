@@ -1231,6 +1231,51 @@ function renderMapList() {
   }).join('');
 }
 
+  function openVenueDetail(id) {
+  const v = S_map.venues.find(x => x.id === id);
+  if (!v) return;
+  const mapsUrl = v.lat && v.lng
+    ? `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.name+' '+v.city)}`;
+  const badge = v.is_trial
+    ? '<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">🎟️ Trial</span>'
+    : '<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">✅ Partner</span>';
+  const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
+  const rec = v.recommended ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--fox);margin-bottom:4px">🍽️ Rekomendacja lokalu</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.recommended)}</div>
+  </div>` : '';
+  q('venueModalContent').innerHTML = `
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:48px;margin-bottom:8px">🏪</div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
+      ${badge}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--fox);font-family:var(--mono)">${v.my_visits||0}</div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600">Twoje wizyty</div>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--accent2);font-family:var(--mono)">${v.total_visits||0}</div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600">Wszystkie</div>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--mono)">${v.discount_percent||10}%</div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
+      </div>
+    </div>
+    ${desc}${rec}
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
+      <a href="${mapsUrl}" target="_blank" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
+      <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
+    </div>
+  `;
+  q('venueModal').classList.add('open');
+  TG?.HapticFeedback?.selectionChanged();
+}
 async function loadMap() {
   if (S_map.loaded) return;
   S_map.loaded = true;
