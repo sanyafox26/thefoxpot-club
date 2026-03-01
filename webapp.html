@@ -1279,26 +1279,68 @@ function renderMapList() {
   }).join('');
 }
 
-  function openVenueDetail(id) {
+ function openVenueDetail(id) {
   const v = S_map.venues.find(x => x.id === id);
   if (!v) return;
   const mapsUrl = v.lat && v.lng
     ? `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.name+' '+v.city)}`;
-  const badge = v.is_trial
-    ? '<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">🎟️ Trial</span>'
-    : '<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">✅ Partner</span>';
-  const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
+
+  // Type + cuisine
+  const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
+  const typeLabel = typeMap[v.venue_type] || '';
+  const cuisineLabel = v.cuisine ? v.cuisine : '';
+  const typeLine = (typeLabel || cuisineLabel) ? `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${typeLabel}${typeLabel && cuisineLabel ? ' · ' : ''}${esc(cuisineLabel)}</div>` : '';
+
+  // Status badge
+  let badge = '';
+  if (v.is_trial) {
+    badge = `<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">⚠️ Tryb ograniczony</span>`;
+  } else {
+    badge = `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">🦊 Partner</span>`;
+  }
+
+  // TOP badges
+  let topBadge = '';
+  if (v.is_top_week) topBadge += `<span style="display:inline-block;background:rgba(255,215,0,.15);border:1px solid rgba(255,215,0,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--gold);font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
+  if (v.is_top_month) topBadge += `<span style="display:inline-block;background:rgba(160,123,255,.15);border:1px solid rgba(160,123,255,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent2);font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
+
+  // Trial remaining
+  const trialInfo = v.is_trial && v.trial_remaining !== null
+    ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--fox);font-weight:600">📊 Pozostało: ${v.trial_remaining} wizyt w tym miesiącu</div>`
+    : '';
+
+  // Recommendations
   const rec = v.recommended ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--fox);margin-bottom:4px">🍽️ Rekomendacja lokalu</div>
+    <div style="font-size:12px;font-weight:700;color:var(--fox);margin-bottom:4px">🍽 Polecane przez lokal</div>
     <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.recommended)}</div>
   </div>` : '';
+
+  // Fox top category
+  const catMap = {'main':'🍽 Danie główne','snack':'🥪 Przekąska','dessert':'🍰 Deser','coffee':'☕ Kawa','drink':'🥤 Napój','alcohol':'🍺 Alkohol','other':'🛒 Inne'};
+  const foxCat = v.top_category ? `<div style="background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px">🦊 Najczęściej wybierane</div>
+    <div style="font-size:13px;color:var(--muted)">${catMap[v.top_category] || esc(v.top_category)}</div>
+  </div>` : '';
+
+  // Fox top reason ("Why go here")
+  const reasonMap = {'fast':'⚡ Szybka obsługa','tasty':'🔥 Smaczne jedzenie','cheap':'💸 Tanio','chill':'🧘 Spokojnie','social':'👥 Dobre na spotkania'};
+  const foxReason = v.top_reason ? `<div style="background:rgba(124,92,252,.08);border:1px solid rgba(124,92,252,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--accent2);margin-bottom:4px">⚡ Dlaczego tu?</div>
+    <div style="font-size:13px;color:var(--muted)">${reasonMap[v.top_reason] || esc(v.top_reason)}</div>
+    <div style="font-size:10px;color:var(--muted2);margin-top:4px">Najczęściej wskazywane przez użytkowników</div>
+  </div>` : '';
+
+  // Description
+  const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
+
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
       <div style="font-size:48px;margin-bottom:8px">🏪</div>
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
+      ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
-      ${badge}
+      <div>${badge}${topBadge}</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
       <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
@@ -1314,52 +1356,7 @@ function renderMapList() {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>
-    ${desc}${rec}
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
-      <a href="${mapsUrl}" target="_blank" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
-      <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
-    </div>
-  `;
-  q('venueModal').classList.add('open');
-  TG?.HapticFeedback?.selectionChanged();
-}
-  function openVenueDetail(id) {
-  const v = S_map.venues.find(x => x.id === id);
-  if (!v) return;
-  const mapsUrl = v.lat && v.lng
-    ? `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.name+' '+v.city)}`;
-  const badge = v.is_trial
-    ? '<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">🎟️ Trial</span>'
-    : '<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">✅ Partner</span>';
-  const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
-  const rec = v.recommended ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--fox);margin-bottom:4px">🍽️ Rekomendacja lokalu</div>
-    <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.recommended)}</div>
-  </div>` : '';
-  q('venueModalContent').innerHTML = `
-    <div style="text-align:center;margin-bottom:16px">
-      <div style="font-size:48px;margin-bottom:8px">🏪</div>
-      <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
-      ${badge}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
-      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:var(--fox);font-family:var(--mono)">${v.my_visits||0}</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:600">Twoje wizyty</div>
-      </div>
-      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:var(--accent2);font-family:var(--mono)">${v.total_visits||0}</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:600">Wszystkie</div>
-      </div>
-      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--mono)">${v.discount_percent||10}%</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
-      </div>
-    </div>
-    ${desc}${rec}
+    ${trialInfo}${desc}${rec}${foxCat}${foxReason}
     <div style="display:flex;flex-direction:column;gap:8px">
       <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
       <a href="${mapsUrl}" target="_blank" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
