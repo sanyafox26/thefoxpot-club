@@ -1225,6 +1225,8 @@ function renderMapList() {
     if (S_map.filter === 'partner') return !v.is_trial;
     return true;
   }).filter(v => !search || v.name.toLowerCase().includes(search) || (v.address||'').toLowerCase().includes(search));
+  if (S_map.sort === 'most') venues.sort((a,b) => (b.total_visits||0) - (a.total_visits||0));
+  else if (S_map.sort === 'my') venues.sort((a,b) => (b.my_visits||0) - (a.my_visits||0));
   renderMapIframe(venues, S_map.mapsKey);
   if (!venues.length) {
     list.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">'+(search?'Nie znaleziono: «'+esc(search)+'»':'Brak lokali w tej kategorii')+'</div></div>';
