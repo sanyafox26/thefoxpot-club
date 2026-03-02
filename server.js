@@ -1254,10 +1254,10 @@ app.get("/api/venues", async (req, res) => {
     );
     av.rows.forEach(r => allData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
 
-    function findTop(data) {
+    function findTop(data, excludeIds) {
       let topId = null, topCnt = 0, topFirst = null;
       Object.entries(data).forEach(([vid, d]) => {
-        if (d.cnt < 1) return;
+        if (d.cnt < 1 || excludeIds.includes(Number(vid))) return;
         if (d.cnt > topCnt || (d.cnt === topCnt && (!topFirst || new Date(d.first) < new Date(topFirst)))) {
           topId = Number(vid); topCnt = d.cnt; topFirst = d.first;
         }
@@ -1265,9 +1265,9 @@ app.get("/api/venues", async (req, res) => {
       return topId;
     }
 
-    const topAllId = findTop(allData);
-    const topMonthId = findTop(monthlyData);
-    const topWeekId = findTop(weeklyData);
+    const topAllId = findTop(allData, []);
+    const topMonthId = findTop(monthlyData, [topAllId].filter(Boolean));
+    const topWeekId = findTop(weeklyData, [topAllId, topMonthId].filter(Boolean));
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
