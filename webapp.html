@@ -1306,13 +1306,6 @@ function renderMapList() {
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
    const topStyle = v.is_top_year ? 'border-color:rgba(124,58,237,.5);background:rgba(124,58,237,.08)' : v.is_top_month ? 'border-color:rgba(37,99,235,.5);background:rgba(37,99,235,.08)' : v.is_top_week ? 'border-color:rgba(234,179,8,.5);background:rgba(234,179,8,.08)' : '';
-```
-
----
-
-Тепер маркери на карті. Знайди через **Ctrl+F**:
-```
-updateMapMarkers
     return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon">🏪</div>
       <div class="venue-map-info" style="flex:1">
@@ -1348,10 +1341,17 @@ updateMapMarkers
     badge = `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">🦊 Partner</span>`;
   }
 
-  // TOP badges
-  let topBadge = '';
-  if (v.is_top_week) topBadge += `<span style="display:inline-block;background:rgba(255,215,0,.15);border:1px solid rgba(255,215,0,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--gold);font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
-  if (v.is_top_month) topBadge += `<span style="display:inline-block;background:rgba(160,123,255,.15);border:1px solid rgba(160,123,255,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent2);font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
+  // TOP badges (venue can have multiple)
+  let topBadges = '';
+  if (v.is_top_week) topBadges += `<span style="display:inline-block;background:rgba(234,179,8,.15);border:1px solid rgba(234,179,8,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#EAB308;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
+  if (v.is_top_month) topBadges += `<span style="display:inline-block;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#2563EB;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
+  if (v.is_top_year) topBadges += `<span style="display:inline-block;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#7C3AED;font-weight:700;margin-left:4px">🏆 Top wszech czasów</span>`;
+
+  // Vegan/Gluten-free badges
+  const tagsList = (v.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+  let dietBadges = '';
+  if (tagsList.includes('vegan')) dietBadges += `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.25);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700;margin-left:4px">🌱 Vegan</span>`;
+  if (tagsList.includes('gluten-free')) dietBadges += `<span style="display:inline-block;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);border-radius:20px;padding:3px 10px;font-size:11px;color:#F59E0B;font-weight:700;margin-left:4px">🌾 Gluten-free</span>`;
 
   // Trial remaining
   const trialInfo = v.is_trial && v.trial_remaining !== null
@@ -1388,7 +1388,7 @@ updateMapMarkers
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
-      <div>${badge}${topBadge}</div>
+      <div>${badge}${topBadges}${dietBadges}</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
       <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
