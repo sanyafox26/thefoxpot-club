@@ -1341,11 +1341,11 @@ function renderMapList() {
     badge = `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">🦊 Partner</span>`;
   }
 
-  // TOP badges (venue can have multiple)
+  // TOP badge (only highest priority: year > month > week)
   let topBadges = '';
-  if (v.is_top_week) topBadges += `<span style="display:inline-block;background:rgba(234,179,8,.15);border:1px solid rgba(234,179,8,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#EAB308;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
-  if (v.is_top_month) topBadges += `<span style="display:inline-block;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#2563EB;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
-  if (v.is_top_year) topBadges += `<span style="display:inline-block;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#7C3AED;font-weight:700;margin-left:4px">🏆 Top wszech czasów</span>`;
+  if (v.is_top_year) topBadges = `<span style="display:inline-block;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#7C3AED;font-weight:700;margin-left:4px">🏆 Top wszech czasów</span>`;
+  else if (v.is_top_month) topBadges = `<span style="display:inline-block;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#2563EB;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
+  else if (v.is_top_week) topBadges = `<span style="display:inline-block;background:rgba(234,179,8,.15);border:1px solid rgba(234,179,8,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#EAB308;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
 
   // Vegan/Gluten-free badges
   const tagsList = (v.tags || '').split(',').map(t => t.trim()).filter(Boolean);
