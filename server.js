@@ -1162,7 +1162,7 @@ app.get("/api/venues", async (req, res) => {
       }
     } catch(_){}
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -1254,10 +1254,10 @@ app.get("/api/venues", async (req, res) => {
     );
     av.rows.forEach(r => allData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
 
-    function findTop(data, excludeIds) {
+    function findTop(data) {
       let topId = null, topCnt = 0, topFirst = null;
       Object.entries(data).forEach(([vid, d]) => {
-        if (d.cnt < 1 || excludeIds.includes(Number(vid))) return;
+        if (d.cnt < 1) return;
         if (d.cnt > topCnt || (d.cnt === topCnt && (!topFirst || new Date(d.first) < new Date(topFirst)))) {
           topId = Number(vid); topCnt = d.cnt; topFirst = d.first;
         }
@@ -1265,14 +1265,15 @@ app.get("/api/venues", async (req, res) => {
       return topId;
     }
 
-    const topAllId = findTop(allData, []);
-    const topMonthId = findTop(monthlyData, [topAllId].filter(Boolean));
-    const topWeekId = findTop(weeklyData, [topAllId, topMonthId].filter(Boolean));
+    const topAllId = findTop(allData);
+    const topMonthId = findTop(monthlyData);
+    const topWeekId = findTop(weeklyData);
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
       return {
         ...v,
+        discount_percent: parseFloat(v.discount_percent) || 10,
         my_visits: myVisits[v.id] || 0,
         total_visits: tv_cnt,
         weekly_visits: weeklyVisits[v.id] || 0,
