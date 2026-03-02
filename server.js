@@ -382,6 +382,22 @@ async function migrate() {
    await ensureColumn("fp1_foxes",          "consent_at",            "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "consent_version",       "TEXT");
 
+  // V27: Reservations table for trial venues
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_reservations (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      venue_id INT NOT NULL REFERENCES fp1_venues(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT FALSE,
+      expired BOOLEAN NOT NULL DEFAULT FALSE,
+      penalty_applied BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reservations_venue ON fp1_reservations(venue_id, expires_at)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reservations_user ON fp1_reservations(user_id, expires_at)`);
+
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`); } catch {}
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_tg DROP NOT NULL`); } catch {}
 
@@ -1268,9 +1284,27 @@ app.get("/api/venues", async (req, res) => {
     const topAllId = findTop(allData, []);
     const topMonthId = findTop(monthlyData, [topAllId].filter(Boolean));
     const topWeekId = findTop(weeklyData, [topAllId, topMonthId].filter(Boolean));
+
+    // Get user's active reservations
+    let myReservations = {};
+    if (userId) {
+      const mr = await pool.query(
+        `SELECT venue_id, expires_at FROM fp1_reservations WHERE user_id=$1 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
+        [userId]
+      );
+      mr.rows.forEach(r => myReservations[r.venue_id] = r.expires_at);
+    }
+    // Count active reservations per trial venue (reduce remaining)
+    const activeRes = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_reservations WHERE used=FALSE AND expired=FALSE AND expires_at>NOW() GROUP BY venue_id`
+    );
+    const activeResByVenue = {};
+    activeRes.rows.forEach(r => activeResByVenue[r.venue_id] = r.cnt);
+
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
-      const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
+      const usedSlots = (trialUsed[v.id] || 0) + (activeResByVenue[v.id] || 0);
+      const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - usedSlots) : null;
       return {
         ...v,
         discount_percent: parseFloat(v.discount_percent) || 10,
@@ -1279,6 +1313,7 @@ app.get("/api/venues", async (req, res) => {
         weekly_visits: weeklyVisits[v.id] || 0,
         monthly_visits: monthlyVisits[v.id] || 0,
         trial_remaining,
+        my_reservation: myReservations[v.id] || null,
         top_category: topCategory[v.id]?.cat || null,
         top_reason: topReason[v.id]?.reason || null,
     is_top_week: v.id === topWeekId,
@@ -1597,6 +1632,11 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
       await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
       await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
       countedAdded = true;
+      // Mark reservation as used (if any)
+      await pool.query(
+        `UPDATE fp1_reservations SET used=TRUE WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
+        [userId, venueId]
+      );
 
       const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
       isFirstEver = tv.rows[0].c === 1;
@@ -1663,6 +1703,92 @@ app.post("/api/consent", requireWebAppAuth, async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// POST /api/reserve — Fox резервує місце в trial локалі (24h, min rating +1)
+app.post("/api/reserve", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+
+    const v = await getVenue(venueId);
+    if (!v || !v.is_trial) return res.status(400).json({ error: "Rezerwacja tylko dla lokali Trial" });
+
+    // Check min rating +1
+    const fox = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+    if ((fox.rows[0].rating || 0) < 1) return res.status(403).json({ error: "Minimalny rating: 1 punkt" });
+
+    // Check no active reservation for this user at this venue
+    const existing = await pool.query(
+      `SELECT 1 FROM fp1_reservations WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW() LIMIT 1`,
+      [userId, venueId]
+    );
+    if (existing.rowCount > 0) return res.status(400).json({ error: "Masz już aktywną rezerwację" });
+
+    // Check trial remaining (include active reservations as used)
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const mCount = await pool.query(
+      `SELECT COUNT(DISTINCT user_id)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND created_at >= $2`,
+      [venueId, monthStart.toISOString()]
+    );
+    const activeReservations = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_reservations WHERE venue_id=$1 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
+      [venueId]
+    );
+    const limit = v.monthly_visit_limit || 20;
+    const totalUsed = mCount.rows[0].c + activeReservations.rows[0].c;
+    if (totalUsed >= limit) {
+      return res.status(403).json({ error: "Brak wolnych miejsc w tym miesiącu", trial_limit_reached: true });
+    }
+
+    // Create reservation — expires end of today Warsaw time
+    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const expiresAt = new Date(warsawNow);
+    expiresAt.setHours(23, 59, 59, 999);
+
+    await pool.query(
+      `INSERT INTO fp1_reservations(user_id, venue_id, expires_at) VALUES($1,$2,$3)`,
+      [userId, venueId, expiresAt.toISOString()]
+    );
+    res.json({ ok: true, expires_at: expiresAt.toISOString(), remaining: limit - totalUsed - 1 });
+  } catch (e) {
+    console.error("API_RESERVE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// DELETE /api/reserve — Fox скасовує резервацію
+app.delete("/api/reserve", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    const del = await pool.query(
+      `DELETE FROM fp1_reservations WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW() RETURNING id`,
+      [userId, venueId]
+    );
+    res.json({ ok: true, deleted: del.rowCount });
+  } catch (e) {
+    console.error("API_RESERVE_DEL_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/reservations — поточні резервації Fox
+app.get("/api/reservations", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const r = await pool.query(
+      `SELECT r.venue_id, r.expires_at, v.name FROM fp1_reservations r JOIN fp1_venues v ON v.id=r.venue_id
+       WHERE r.user_id=$1 AND r.used=FALSE AND r.expired=FALSE AND r.expires_at>NOW() ORDER BY r.expires_at ASC`,
+      [userId]
+    );
+    res.json({ reservations: r.rows });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // POST /api/receipt/reason — "Dlaczego tu?" survey
 app.post("/api/receipt/reason", requireWebAppAuth, async (req, res) => {
   try {
@@ -1929,6 +2055,104 @@ setInterval(async () => {
     client.release();
   }
 }, 15 * 60 * 1000);
+
+// CRON: TOP reset — щонеділі 00:00 (TOP тижня), 1-го числа 00:00 (TOP місяця)
+// Перевіряє кожні 5 хв, шле адміну повідомлення про переможців
+let lastTopWeekReset = null;
+let lastTopMonthReset = null;
+
+setInterval(async () => {
+  try {
+    if (!bot || !ADMIN_TG_ID) return;
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const dayOfWeek = now.getDay(); // 0=Sunday
+    const dayOfMonth = now.getDate();
+    const hour = now.getHours();
+    const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+
+    // Sunday 00:xx — TOP тижня reset
+    if (dayOfWeek === 0 && hour === 0 && lastTopWeekReset !== todayKey) {
+      lastTopWeekReset = todayKey;
+      // Get last week's winner (previous Sunday to Saturday)
+      const weekEnd = new Date(now);
+      weekEnd.setHours(0, 0, 0, 0);
+      const weekStart = new Date(weekEnd);
+      weekStart.setDate(weekStart.getDate() - 7);
+      const topWeek = await pool.query(
+        `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
+         JOIN fp1_venues v ON v.id = cv.venue_id
+         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
+        [weekStart.toISOString(), weekEnd.toISOString()]
+      );
+      if (topWeek.rowCount > 0) {
+        const w = topWeek.rows[0];
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `🏆 TOP tygodnia: ${w.name} (${w.cnt} wizyt)\n📅 ${weekStart.toLocaleDateString("pl-PL")} — ${weekEnd.toLocaleDateString("pl-PL")}`
+        );
+        console.log(`[TopCron] Week winner: ${w.name} (${w.cnt})`);
+      } else {
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID), `🏆 TOP tygodnia: brak wizyt w tym tygodniu`);
+      }
+    }
+
+    // 1st of month 00:xx — TOP місяця reset
+    if (dayOfMonth === 1 && hour === 0 && lastTopMonthReset !== todayKey) {
+      lastTopMonthReset = todayKey;
+      // Get last month's winner
+      const monthEnd = new Date(now);
+      monthEnd.setHours(0, 0, 0, 0);
+      const monthStart = new Date(monthEnd);
+      monthStart.setMonth(monthStart.getMonth() - 1);
+      monthStart.setDate(1);
+      const topMonth = await pool.query(
+        `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
+         JOIN fp1_venues v ON v.id = cv.venue_id
+         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
+        [monthStart.toISOString(), monthEnd.toISOString()]
+      );
+      if (topMonth.rowCount > 0) {
+        const m = topMonth.rows[0];
+        const monthName = monthStart.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `👑 TOP miesiąca (${monthName}): ${m.name} (${m.cnt} wizyt)`
+        );
+        console.log(`[TopCron] Month winner: ${m.name} (${m.cnt})`);
+      } else {
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID), `👑 TOP miesiąca: brak wizyt w tym miesiącu`);
+      }
+    }
+  } catch (e) {
+    console.error("[TopCron] ERR", e?.message || e);
+  }
+}, 5 * 60 * 1000); // кожні 5 хвилин
+
+// CRON: Reservation expiry — штраф -5 за невикористану резервацію
+setInterval(async () => {
+  try {
+    const expired = await pool.query(
+      `SELECT id, user_id, venue_id FROM fp1_reservations
+       WHERE used=FALSE AND expired=FALSE AND penalty_applied=FALSE AND expires_at < NOW()
+       LIMIT 50`
+    );
+    for (const r of expired.rows) {
+      await pool.query(`UPDATE fp1_reservations SET expired=TRUE, penalty_applied=TRUE WHERE id=$1`, [r.id]);
+      await pool.query(`UPDATE fp1_foxes SET rating=GREATEST(0, rating-5) WHERE user_id=$1`, [String(r.user_id)]);
+      console.log(`[ReserveCron] Penalty -5 user=${r.user_id} venue=${r.venue_id}`);
+      if (bot) {
+        try {
+          const v = await pool.query(`SELECT name FROM fp1_venues WHERE id=$1`, [r.venue_id]);
+          await bot.telegram.sendMessage(Number(r.user_id),
+            `⚠️ Rezerwacja wygasła!\n🏪 ${v.rows[0]?.name || 'Lokal'}\n📉 -5 pkt rating\n\nNastępnym razem odwiedź lokal w dniu rezerwacji.`
+          );
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.error("[ReserveCron] ERR", e?.message || e);
+  }
+}, 10 * 60 * 1000); // кожні 10 хвилин
 
 /* ═══════════════════════════════════════════════════════════════
    GET /api/top
