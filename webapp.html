@@ -794,10 +794,21 @@ async function doCheckin(){
   if(S.otpTimer){clearInterval(S.otpTimer);S.otpTimer=null}
   try{
     const d=await api('/api/checkin','POST',{venue_id:Number(vId)});
-    if(d.already_today){showAlready(d.day);btn.disabled=false;btn.textContent='Generuj OTP ✓';return}
     const venue=S.venues.find(v=>v.id===Number(vId));
-   showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
-    startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10);
+    if(d.already_today){
+      // Repeat visit - still show OTP for discount, but mark as repeat
+      showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
+      startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10, true);
+      showErr('ciErr','');
+      const info=document.createElement('div');
+      info.className='ok-banner show';
+      info.textContent='ℹ️ Wizyta już zaliczona dziś. Zniżka nadal obowiązuje!';
+      q('ciErr').parentNode.insertBefore(info,q('ciErr').nextSibling);
+      setTimeout(()=>info.remove(),5000);
+    } else {
+      showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
+      startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10, false);
+    }
     TG?.HapticFeedback?.notificationOccurred('success');
   }catch(e){
     if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='Generuj OTP ✓';return}
@@ -810,8 +821,8 @@ async function doCheckin(){
 let receiptPending = null;
 let otpPollTimer = null;
 
-function showReceiptForm(venueId, venueName, discount) {
-  receiptPending = { venueId, venueName, discount };
+function showReceiptForm(venueId, venueName, discount, isRepeat) {
+  receiptPending = { venueId, venueName, discount, isRepeat: !!isRepeat };
   q('receiptDiscount').textContent = discount + '%';
   q('receiptVenue').textContent = venueName;
   q('receiptInput').value = '';
@@ -819,7 +830,7 @@ function showReceiptForm(venueId, venueName, discount) {
   q('receiptResult').classList.remove('show');
 }
 
-function startOtpPolling(venueId, venueName, discount) {
+function startOtpPolling(venueId, venueName, discount, isRepeat) {
   stopOtpPolling();
   otpPollTimer = setInterval(async () => {
     try {
@@ -827,7 +838,7 @@ function startOtpPolling(venueId, venueName, discount) {
       if (d.status === 'confirmed' && !d.receipt_done) {
         stopOtpPolling();
         q('otpBox').classList.remove('show');
-        showReceiptForm(venueId, venueName, discount);
+        showReceiptForm(venueId, venueName, discount, isRepeat);
         TG?.HapticFeedback?.notificationOccurred('success');
       } else if (d.status === 'confirmed' && d.receipt_done) {
         stopOtpPolling();
