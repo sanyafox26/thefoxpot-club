@@ -1221,13 +1221,53 @@ app.get("/api/venues", async (req, res) => {
       if (!topReason[r.venue_id] || r.cnt > topReason[r.venue_id].cnt) topReason[r.venue_id] = { reason: r.reason, cnt: r.cnt };
     });
 
-    // Find TOP week/month/all-time — min 1 visit required, one venue can have multiple TOPs
-    let topWeekId = null, topWeekCnt = 0;
-    let topMonthId = null, topMonthCnt = 0;
-    let topAllId = null, topAllCnt = 0;
-    Object.entries(weeklyVisits).forEach(([vid, cnt]) => { if (cnt >= 1 && cnt > topWeekCnt) { topWeekId = Number(vid); topWeekCnt = cnt; } });
-    Object.entries(monthlyVisits).forEach(([vid, cnt]) => { if (cnt >= 1 && cnt > topMonthCnt) { topMonthId = Number(vid); topMonthCnt = cnt; } });
-    Object.entries(totalVisits).forEach(([vid, cnt]) => { if (cnt >= 1 && cnt > topAllCnt) { topAllId = Number(vid); topAllCnt = cnt; } });
+    // TOP all-time > month > week (1 badge per venue, tiebreak: first to reach count)
+    // Week starts Sunday 00:00 Warsaw, Month starts 1st 00:00 Warsaw
+    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const dayOfWeek = warsawNow.getDay(); // 0=Sunday
+    const weekStart = new Date(warsawNow);
+    weekStart.setDate(weekStart.getDate() - dayOfWeek);
+    weekStart.setHours(0,0,0,0);
+
+    // Recount weekly from Sunday
+    const wv2 = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [weekStart.toISOString()]
+    );
+    const weeklyData = {};
+    wv2.rows.forEach(r => weeklyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    // Recount monthly from 1st
+    const monthStart2 = new Date(warsawNow);
+    monthStart2.setDate(1); monthStart2.setHours(0,0,0,0);
+    const mv3 = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [monthStart2.toISOString()]
+    );
+    const monthlyData = {};
+    mv3.rows.forEach(r => monthlyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    // All-time with first visit tiebreak
+    const allData = {};
+    const av = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits GROUP BY venue_id`
+    );
+    av.rows.forEach(r => allData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    function findTop(data, excludeIds) {
+      let topId = null, topCnt = 0, topFirst = null;
+      Object.entries(data).forEach(([vid, d]) => {
+        if (d.cnt < 1 || excludeIds.includes(Number(vid))) return;
+        if (d.cnt > topCnt || (d.cnt === topCnt && (!topFirst || new Date(d.first) < new Date(topFirst)))) {
+          topId = Number(vid); topCnt = d.cnt; topFirst = d.first;
+        }
+      });
+      return topId;
+    }
+
+    const topAllId = findTop(allData, []);
+    const topMonthId = findTop(monthlyData, [topAllId].filter(Boolean));
+    const topWeekId = findTop(weeklyData, [topAllId, topMonthId].filter(Boolean));
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - (trialUsed[v.id] || 0)) : null;
