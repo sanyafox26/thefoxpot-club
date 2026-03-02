@@ -1328,9 +1328,8 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
     }
 
     const alreadyToday = await hasCountedToday(venueId, userId);
-    if (alreadyToday) {
-      return res.json({ already_today: true, day: warsawDayKey() });
-    }
+    // Don't block! Fox can visit unlimited times per day for discount
+    // alreadyToday is passed to webapp so it knows bonuses won't apply
 
     const debounce = await pool.query(
       `SELECT 1 FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2
@@ -1347,7 +1346,7 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
       );
       if (existing.rowCount > 0) {
         return res.json({
-          already_today: false,
+          already_today: alreadyToday,
           otp: existing.rows[0].otp,
           expires_at: existing.rows[0].expires_at,
           venue_name: v.name,
@@ -1358,7 +1357,7 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
 
     const checkin = await createCheckin(venueId, userId);
     res.json({
-      already_today: false,
+      already_today: alreadyToday,
       otp:        checkin.otp,
       expires_at: checkin.expires_at,
       venue_name: v.name,
@@ -2478,12 +2477,12 @@ if (BOT_TOKEN) {
       let statusWarn = "";
       if (status?.type === "limited") statusWarn = `\n⚠️ Status "${status.reason}" do ${new Date(status.ends_at).toLocaleTimeString("pl-PL",{timeZone:"Europe/Warsaw"})}`;
       const already = await hasCountedToday(venueId, userId);
+      let repeatNote = '';
       if (already) {
-        const xy = await countXY(venueId, userId);
-        return ctx.reply(`DZIŚ JUŻ BYŁEŚ ✅\n🏪 ${v.name}\n📅 ${warsawDayKey()}\n📊 X/Y: ${xy.X}/${xy.Y}`);
+        repeatNote = '\nℹ️ Wizyta już zaliczona dziś. Zniżka nadal obowiązuje!';
       }
       const c = await createCheckin(venueId, userId);
-      await ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${v.name}${statusWarn}\n🔐 OTP: ${c.otp}\n\nPokaż personelowi.\nPanel: ${PUBLIC_URL}/panel`);
+      await ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${v.name}${statusWarn}${repeatNote}\n🔐 OTP: ${c.otp}\n\nPokaż personelowi.\nPanel: ${PUBLIC_URL}/panel`);
     } catch (e) { console.error("CHECKIN_ERR", e); await ctx.reply("Błąd check-inu."); }
   });
 
