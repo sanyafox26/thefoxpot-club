@@ -1226,6 +1226,14 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
     const spunToday   = await hasSpunToday(userId);
     const savedStats = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COUNT(*)::int AS receipt_count FROM fp1_receipts WHERE user_id=$1`, [userId]);
 
+    // Stamps per venue
+    const stampsQ = await pool.query(
+      `SELECT s.venue_id, v.name AS venue_name, s.emoji, SUM(s.delta)::int AS balance
+       FROM fp1_stamps s JOIN fp1_venues v ON v.id=s.venue_id
+       WHERE s.user_id=$1 GROUP BY s.venue_id, v.name, s.emoji HAVING SUM(s.delta)>0
+       ORDER BY v.name`, [userId]
+    );
+
     res.json({
       user_id:                  f.user_id,
       username:                 f.username,
@@ -1242,6 +1250,8 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       spin_prize:               spunToday?.prize_label || null,
       total_saved:              parseFloat(savedStats.rows[0].total_saved),
       receipt_count:            savedStats.rows[0].receipt_count,
+      stamps:                   stampsQ.rows,
+      data_contributions:       f.data_contributions || 0,
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
@@ -1846,10 +1856,15 @@ app.post("/api/reserve", requireWebAppAuth, async (req, res) => {
       return res.status(403).json({ error: "Brak wolnych miejsc w tym miesiącu", trial_limit_reached: true });
     }
 
-    // Create reservation — expires end of today Warsaw time
-    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
-    const expiresAt = new Date(warsawNow);
-    expiresAt.setHours(23, 59, 59, 999);
+    // Create reservation — expires end of today Warsaw time (23:59:59 Warsaw = proper UTC)
+    const wNow = new Date();
+    // Get current Warsaw date parts
+    const wStr = wNow.toLocaleDateString("en-CA", { timeZone: "Europe/Warsaw" }); // YYYY-MM-DD
+    // End of day Warsaw = YYYY-MM-DDT23:59:59+01:00 (or +02:00 summer)
+    const endOfDayWarsaw = new Date(wStr + "T23:59:59.999");
+    // Convert to UTC by using the offset
+    const wOffset = new Date(wNow.toLocaleString("en-US", { timeZone: "Europe/Warsaw" })).getTime() - new Date(wNow.toLocaleString("en-US", { timeZone: "UTC" })).getTime();
+    const expiresAt = new Date(endOfDayWarsaw.getTime() - wOffset);
 
     await pool.query(
       `INSERT INTO fp1_reservations(user_id, venue_id, expires_at) VALUES($1,$2,$3)`,
@@ -2481,7 +2496,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           <div><label>Emoji</label>
             <select name="emoji"><option>⭐</option><option>🦊</option><option>🔥</option><option>🎁</option><option>💎</option><option>🏆</option><option>👑</option><option>❤️</option><option>🍕</option><option>🍔</option><option>🌭</option><option>🍟</option><option>🍣</option><option>🍱</option><option>🍜</option><option>🍝</option><option>🥩</option><option>🍗</option><option>🥗</option><option>🥪</option><option>🌮</option><option>🌯</option><option>🥐</option><option>🍰</option><option>🎂</option><option>🧁</option><option>🍩</option><option>🍪</option><option>🍦</option><option>🍫</option><option>🍺</option><option>🍻</option><option>🍷</option><option>🍸</option><option>☕</option><option>🧋</option><option>🥤</option><option>🍹</option></select>
           </div>
-          <div><label>Akcja</label><select name="delta"><option value="1">+1 (dodaj)</option><option value="-1">-1 (użyj)</option></select></div>
+          <div><label>Akcja</label><select name="delta"><option value="1">+1 (dodaj)</option><option value="-1">-1 (użyj)</option><option value="-10">-10 (gratis / nagroda)</option></select></div>
           <div><label>Notatka (opcjonalnie)</label><input name="note" placeholder="np. darmowy deser"/></div>
         </div>
         <button type="submit" style="margin-top:10px">Zastosuj stempel</button>
@@ -2772,10 +2787,10 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
   const userId  = String(req.body.user_id || "").trim();
   const emoji   = ["⭐","🦊","🔥","🎁","💎","🏆","👑","❤️","🍕","🍔","🌭","🍟","🍣","🍱","🍜","🍝","🥩","🍗","🥗","🥪","🌮","🌯","🥐","🍰","🎂","🧁","🍩","🍪","🍦","🍫","🍺","🍻","🍷","🍸","☕","🧋","🥤","🍹"].includes(req.body.emoji) ? req.body.emoji : "⭐";
-  const delta   = Number(req.body.delta) === -1 ? -1 : 1;
+  const delta   = [-10,-1,1].includes(Number(req.body.delta)) ? Number(req.body.delta) : 1;
   const note    = String(req.body.note || "").trim().slice(0, 100);
   if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy Telegram ID.")}`);
-  if (delta === -1) { const bal = await stampBalance(venueId, userId); if (bal <= 0) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Gość nie ma stempli.")}`); }
+  if (delta < 0) { const bal = await stampBalance(venueId, userId); if (bal < Math.abs(delta)) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Gość nie ma wystarczająco stempli (saldo: "+bal+").")}`); }
   await pool.query(`INSERT INTO fp1_stamps(venue_id,user_id,emoji,delta,note) VALUES($1,$2,$3,$4,$5)`, [venueId, userId, emoji, delta, note||null]);
   const newBal = await stampBalance(venueId, userId);
   if (bot) {
