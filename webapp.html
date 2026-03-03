@@ -1428,6 +1428,18 @@ async function cancelReserve(venueId) {
   // Description
   const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
 
+  // Opening hours
+  const hoursBlock = v.opening_hours ? `<div style="background:rgba(255,255,255,.04);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">🕐 Godziny otwarcia</div>
+    <div style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-line">${esc(v.opening_hours)}</div>
+  </div>` : '';
+
+  // Status temporary
+  const statusBlock = v.status_temporary ? `<div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">⚠️ Status chwilowy</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.status_temporary)}</div>
+  </div>` : '';
+
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
       <div style="font-size:48px;margin-bottom:8px">🏪</div>
@@ -1450,7 +1462,7 @@ async function cancelReserve(venueId) {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>
-    ${trialInfo}${desc}${rec}${foxCat}${foxReason}
+    ${trialInfo}${statusBlock}${desc}${hoursBlock}${rec}${foxCat}${foxReason}
     <div style="display:flex;flex-direction:column;gap:8px">
       <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
       ${v.is_trial ? (v.my_reservation
