@@ -369,10 +369,32 @@ async function migrate() {
    await ensureColumn("fp1_venues",         "venue_type",            "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "cuisine",               "TEXT NOT NULL DEFAULT ''");
    await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
-  await ensureColumn("fp1_venues",         "opening_hours",         "TEXT NOT NULL DEFAULT ''");
-  await ensureColumn("fp1_venues",         "status_temporary",      "TEXT NOT NULL DEFAULT ''");
-  await ensureColumn("fp1_venues",         "google_place_id",       "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
+
+  // ── V27: NEW CHOICE SYSTEM (parallel to old category/reason) ──
+  await ensureColumn("fp1_receipts",       "choice_source",         "TEXT");      // top3 / category / custom
+  await ensureColumn("fp1_receipts",       "agg_category",          "TEXT");      // main/snack/dessert/drink/alcohol/other
+  await ensureColumn("fp1_receipts",       "dish_id",               "INT");       // FK to venue_dishes if top3
+  await ensureColumn("fp1_receipts",       "custom_text",           "TEXT");      // user-typed dish name
+  await ensureColumn("fp1_receipts",       "bonus_awarded_base",    "BOOLEAN DEFAULT FALSE");
+  await ensureColumn("fp1_receipts",       "bonus_awarded_mini",    "BOOLEAN DEFAULT FALSE");
+
+  // data_contributions counter on foxes
+  await ensureColumn("fp1_foxes",          "data_contributions",    "INT NOT NULL DEFAULT 0");
+
+  // venue_dishes table (Top 3 per venue)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_dishes (
+      id          BIGSERIAL PRIMARY KEY,
+      venue_id    BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      category    TEXT NOT NULL,
+      sort_order  INT NOT NULL,
+      is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(venue_id, sort_order)
+    )
+  `);
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
   await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
@@ -662,11 +684,16 @@ const ACHIEVEMENTS = {
   vip_diamond:  { label: "VIP Diamond",      emoji: "💎", rating: 200, check: (s) => s.total_visits >= 301 },
   spin_10:      { label: "10 spinów",        emoji: "🎰", rating: 15,  check: (s) => s.total_spins >= 10  },
   spin_30:      { label: "30 spinów",        emoji: "🎰", rating: 50,  check: (s) => s.total_spins >= 30  },
+  // Data & Insight achievements
+  data_10:      { label: "Insight Fox",      emoji: "🧠", rating: 10,  check: (s) => s.data_contributions >= 10  },
+  data_25:      { label: "Local Analyst",    emoji: "🧠", rating: 25,  check: (s) => s.data_contributions >= 25  },
+  data_50:      { label: "Data Alpha",       emoji: "🧠", rating: 50,  check: (s) => s.data_contributions >= 50  },
+  data_150:     { label: "Master of Insight",emoji: "🧠", rating: 150, check: (s) => s.data_contributions >= 150 },
 };
 
 async function checkAchievements(userId, extraStats = {}) {
   const uid = String(userId);
-  const fox = await pool.query(`SELECT streak_best FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [uid]);
+  const fox = await pool.query(`SELECT streak_best, data_contributions FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [uid]);
   if (fox.rowCount === 0) return [];
 
   const totalVisits  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
@@ -680,6 +707,7 @@ async function checkAchievements(userId, extraStats = {}) {
     invites_sent: invitesSent.rows[0].c,
     streak_best:  fox.rows[0].streak_best || 0,
     total_spins:  totalSpins.rows[0].c,
+    data_contributions: fox.rows[0].data_contributions || 0,
     is_pioneer:   extraStats.is_pioneer || false,
     is_night:     extraStats.is_night   || false,
     is_morning:   extraStats.is_morning || false,
@@ -1111,109 +1139,6 @@ app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "priva
 app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
 
-// ── PUBLIC VENUE TEASER PAGE ── /venue/:id ──
-app.get("/venue/:id", async (req, res) => {
-  try {
-    const venueId = parseInt(req.params.id);
-    if (!venueId) return res.status(404).send(pageShell("Nie znaleziono", `<div class="card"><h1>🔍 Lokal nie znaleziony</h1><p>Sprawdź link i spróbuj ponownie.</p><a href="/">← Strona główna</a></div>`));
-    const vr = await pool.query(
-      `SELECT id, name, city, address, venue_type, cuisine, tags, description, is_trial, discount_percent, opening_hours, status_temporary, google_place_id FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`,
-      [venueId]
-    );
-    const venue = vr.rows[0];
-    if (!venue) return res.status(404).send(pageShell("Nie znaleziono", `<div class="card"><h1>🔍 Lokal nie znaleziony</h1><p>Sprawdź link i spróbuj ponownie.</p><a href="/">← Strona główna</a></div>`));
-
-    // Count total visits
-    const cvr = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
-    const totalVisits = cvr.rows[0]?.cnt || 0;
-
-    // Count unique foxes
-    const ufr = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
-    const uniqueFoxes = ufr.rows[0]?.cnt || 0;
-
-    // TOP badge (simplified check)
-    const topLabel = "";
-
-    const discount = parseFloat(venue.discount_percent) || 10;
-    const tags = venue.tags ? venue.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
-    const veganBadge = tags.includes("vegan") ? `<span style="background:#1a3a1a;color:#4ade80;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">🌱 Vegan</span>` : "";
-    const gfBadge = tags.includes("gluten-free") ? `<span style="background:#3a2a0a;color:#fbbf24;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">🌾 Gluten-free</span>` : "";
-    const trialBadge = venue.is_trial ? `<span style="background:#2a1a0a;color:#fb923c;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">🧪 Tryb próbny</span>` : "";
-    const typeLine = [venue.venue_type, venue.cuisine].filter(Boolean).join(" · ");
-
-    const html = pageShell(`${venue.name} — The FoxPot Club`, `
-      <div style="text-align:center;padding:32px 16px 16px">
-        ${venue.google_place_id
-          ? `<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,0.04)">
-              <img src="/api/venue-photo/${venue.id}?w=400" alt="${escapeHtml(venue.name)}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'font-size:48px;display:flex;align-items:center;justify-content:center;height:100%\\'>🦊</div>'"/>
-            </div>`
-          : `<div style="font-size:48px;margin-bottom:12px">🦊</div>`}
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4);margin-bottom:4px">The FoxPot Club</div>
-      </div>
-      <div class="card" style="text-align:center">
-        <h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(venue.name)}</h1>
-        ${typeLine ? `<p style="color:rgba(255,255,255,0.5);font-size:13px;margin-bottom:10px">${escapeHtml(typeLine)}</p>` : ""}
-        <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">
-          ${veganBadge}${gfBadge}${trialBadge}
-        </div>
-        <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:4px">📍 ${escapeHtml(venue.address || "")}${venue.city ? ", " + escapeHtml(venue.city) : ""}</p>
-        ${venue.description ? `<p style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:10px;line-height:1.5">${escapeHtml(venue.description)}</p>` : ""}
-      </div>
-
-      ${venue.status_temporary ? `<div class="card" style="border-color:rgba(251,191,36,0.3);background:rgba(251,191,36,0.06);padding:14px 16px">
-        <div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">⚠️ Status chwilowy</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">${escapeHtml(venue.status_temporary)}</div>
-      </div>` : ""}
-
-      ${venue.opening_hours ? `<div class="card" style="padding:14px 16px">
-        <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.5);margin-bottom:4px">🕐 Godziny otwarcia</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;white-space:pre-line">${escapeHtml(venue.opening_hours)}</div>
-      </div>` : ""}
-
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 0">
-        <div class="card" style="text-align:center;padding:14px 8px">
-          <div style="font-size:24px;font-weight:800;color:#f5a623">${discount}%</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">zniżka Fox</div>
-        </div>
-        <div class="card" style="text-align:center;padding:14px 8px">
-          <div style="font-size:24px;font-weight:800;color:#7c5cfc">${totalVisits}</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">wizyt</div>
-        </div>
-        <div class="card" style="text-align:center;padding:14px 8px">
-          <div style="font-size:24px;font-weight:800;color:#2ecc71">${uniqueFoxes}</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Fox'ów</div>
-        </div>
-      </div>
-
-      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,0.3);background:rgba(245,166,35,0.06)">
-        <div style="font-size:28px;margin-bottom:8px">🔒</div>
-        <h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zniżkę ${discount}% jako Fox</h2>
-        <p style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;line-height:1.5">
-          The FoxPot Club to prywatny klub dla smakoszy.<br/>
-          Dołącz przez Telegram i korzystaj ze zniżek w najlepszych lokalach Warszawy.
-        </p>
-        <a href="https://t.me/TheFoxPotBot/app" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none;box-shadow:0 4px 20px rgba(245,166,35,0.4)">
-          🦊 Dołącz do FoxPot Club
-        </a>
-        <p style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:12px">Potrzebujesz kodu zaproszenia od aktywnego Fox'a</p>
-      </div>
-
-      <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,0.25)">
-        <a href="/" style="color:rgba(255,255,255,0.35)">thefoxpot.club</a> · 
-        <a href="/partners" style="color:rgba(255,255,255,0.35)">Dla restauracji</a> · 
-        <a href="/privacy" style="color:rgba(255,255,255,0.35)">Polityka prywatności</a>
-      </div>
-    `, `
-      body{background:#0a0b14}
-      .card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}
-    `);
-    res.send(html);
-  } catch (e) {
-    console.error("venue teaser error:", e);
-    res.status(500).send(pageShell("Błąd", `<div class="card"><h1>❌ Błąd serwera</h1><p>${escapeHtml(String(e?.message||e))}</p></div>`));
-  }
-});
-
 app.get("/health", async (_req, res) => {
   try {
     const now = await dbNow(), spots = await founderSpotsLeft();
@@ -1273,39 +1198,6 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 });
 
 // GET /api/venues
-// ── GOOGLE PLACE PHOTO PROXY ──
-app.get("/api/venue-photo/:id", async (req, res) => {
-  try {
-    const venueId = parseInt(req.params.id);
-    const maxW = parseInt(req.query.w) || 400;
-    const vr = await pool.query(`SELECT google_place_id FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
-    const placeId = vr.rows[0]?.google_place_id;
-    if (!placeId) return res.status(404).json({ error: "no_photo" });
-    const key = process.env.GOOGLE_MAPS_KEY;
-    if (!key) return res.status(500).json({ error: "no_api_key" });
-
-    // Step 1: Get photo reference from Place Details
-    const https = require("https");
-    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=photos&key=${key}`;
-    const details = await new Promise((resolve, reject) => {
-      https.get(detailsUrl, (r) => {
-        let data = "";
-        r.on("data", c => data += c);
-        r.on("end", () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-      }).on("error", reject);
-    });
-    const photoRef = details?.result?.photos?.[0]?.photo_reference;
-    if (!photoRef) return res.status(404).json({ error: "no_photo_ref" });
-
-    // Step 2: Redirect to Google photo (browser follows redirect to actual image)
-    const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxW}&photo_reference=${photoRef}&key=${key}`;
-    res.redirect(photoUrl);
-  } catch (e) {
-    console.error("venue-photo error:", e);
-    res.status(500).json({ error: String(e?.message || e) });
-  }
-});
-
 app.get("/api/venues", async (req, res) => {
   try {
     let userId = null;
@@ -1317,7 +1209,7 @@ app.get("/api/venues", async (req, res) => {
       }
     } catch(_){}
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -1375,6 +1267,19 @@ app.get("/api/venues", async (req, res) => {
     tr.rows.forEach(r => {
       if (!topReason[r.venue_id] || r.cnt > topReason[r.venue_id].cnt) topReason[r.venue_id] = { reason: r.reason, cnt: r.cnt };
     });
+
+    // Top dish name per venue (from new choice system)
+    const tdq = await pool.query(
+      `SELECT r.venue_id, d.name, COUNT(*)::int AS cnt
+       FROM fp1_receipts r JOIN fp1_venue_dishes d ON d.id = r.dish_id
+       WHERE r.dish_id IS NOT NULL GROUP BY r.venue_id, d.name`
+    );
+    const topDish = {};
+    tdq.rows.forEach(r => {
+      if (!topDish[r.venue_id] || r.cnt > topDish[r.venue_id].cnt) topDish[r.venue_id] = { name: r.name, cnt: r.cnt };
+    });
+    // Flatten to just name
+    Object.keys(topDish).forEach(k => topDish[k] = topDish[k].name);
 
     // TOP all-time > year > month > week (1 badge per venue, tiebreak: first to reach count)
     // Week starts Sunday 00:00 Warsaw, Month starts 1st 00:00 Warsaw, Year starts Jan 1
@@ -1474,6 +1379,7 @@ app.get("/api/venues", async (req, res) => {
         my_reservation: myReservations[v.id] || null,
         top_category: topCategory[v.id]?.cat || null,
         top_reason: topReason[v.id]?.reason || null,
+        top_dish_name: topDish[v.id] || null,
     is_top_week: v.id === topWeekId,
         is_top_month: v.id === topMonthId,
         is_top_year: v.id === topYearId,
@@ -1709,27 +1615,6 @@ app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
   }
 });
 // GET /api/checkin/status — polling: чи OTP підтверджений?
-app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
-  try {
-    const userId = String(req.tgUser.id);
-    const venueId = Number(req.query.venue_id);
-    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
-    const day = warsawDayKey();
-    const r = await pool.query(
-      `SELECT id, confirmed_at FROM fp1_checkins
-       WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [userId, venueId, day]
-    );
-    if (r.rowCount === 0) return res.json({ status: "no_checkin" });
-    const row = r.rows[0];
-    if (row.confirmed_at) {
-      const dup = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`, [userId, venueId, day]);
-      return res.json({ status: "confirmed", receipt_done: dup.rowCount > 0, checkin_id: row.id });
-    }
-    return res.json({ status: "pending" });
-  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
-});// GET /api/checkin/status — polling: чи OTP підтверджений?
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
@@ -2489,6 +2374,46 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </div>
     </div>
     <div class="card">
+      <h2>🍽 Top 3 dania (promowane)</h2>
+      <p class="muted" style="margin-bottom:12px">Te dania zobaczą Foxy po check-inie. Wybierz swoje najlepsze!</p>
+      <div id="dishesForm">
+        <div id="dish1Row" class="grid2" style="margin-bottom:8px"><div><label>#1 Nazwa</label><input id="dish1name" maxlength="40" placeholder="np. Burger wołowy"/></div><div><label>Kategoria</label><select id="dish1cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish2Row" class="grid2" style="margin-bottom:8px"><div><label>#2 Nazwa</label><input id="dish2name" maxlength="40" placeholder="np. Latte"/></div><div><label>Kategoria</label><select id="dish2cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish3Row" class="grid2" style="margin-bottom:8px"><div><label>#3 Nazwa</label><input id="dish3name" maxlength="40" placeholder="np. Tiramisu"/></div><div><label>Kategoria</label><select id="dish3cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <button type="button" onclick="saveDishes()" style="width:100%;margin-top:6px">💾 Zapisz dania</button>
+        <div id="dishesMsg" style="margin-top:8px"></div>
+      </div>
+      <script>
+        async function loadDishes(){
+          try{
+            const r=await fetch('/panel/venue/dishes',{credentials:'same-origin'});
+            const d=await r.json();
+            if(d.dishes) d.dishes.forEach(dish=>{
+              const n=document.getElementById('dish'+dish.sort_order+'name');
+              const c=document.getElementById('dish'+dish.sort_order+'cat');
+              if(n) n.value=dish.name||'';
+              if(c) c.value=dish.category||'main';
+            });
+          }catch(e){console.error(e)}
+        }
+        async function saveDishes(){
+          const dishes=[];
+          for(let i=1;i<=3;i++){
+            const n=document.getElementById('dish'+i+'name').value.trim();
+            const c=document.getElementById('dish'+i+'cat').value;
+            if(n) dishes.push({sort_order:i,name:n,category:c,is_active:true});
+          }
+          if(dishes.length===0){document.getElementById('dishesMsg').innerHTML='<div class="err">Podaj co najmniej 1 danie</div>';return;}
+          try{
+            const r=await fetch('/panel/venue/dishes',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({dishes})});
+            const d=await r.json();
+            document.getElementById('dishesMsg').innerHTML=d.ok?'<div class="ok">✅ Zapisano!</div>':'<div class="err">'+d.error+'</div>';
+          }catch(e){document.getElementById('dishesMsg').innerHTML='<div class="err">Błąd: '+e.message+'</div>';}
+        }
+        loadDishes();
+      </script>
+    </div>
+    <div class="card">
       <h2>Emoji-stemple</h2>
       <form method="POST" action="/panel/stamps">
         <div class="grid2">
@@ -2503,6 +2428,172 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </form>
     </div>`));
 });
+
+// ── PANEL: GET venue dishes (Top 3) ──
+app.get("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  try {
+    const r = await pool.query(
+      `SELECT id, name, category, sort_order, is_active FROM fp1_venue_dishes WHERE venue_id=$1 ORDER BY sort_order ASC`,
+      [venueId]
+    );
+    res.json({ dishes: r.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── PANEL: PUT venue dishes (upsert Top 3) ──
+app.put("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const AGG_WHITELIST = ["main","snack","dessert","drink","alcohol","other"];
+  try {
+    const dishes = req.body.dishes;
+    if (!Array.isArray(dishes) || dishes.length > 3) return res.status(400).json({ error: "Podaj do 3 dań" });
+    for (const d of dishes) {
+      const name = String(d.name || "").trim();
+      const cat = String(d.category || "").trim();
+      const order = parseInt(d.sort_order);
+      const active = d.is_active !== false;
+      if (name.length < 2 || name.length > 40) return res.status(400).json({ error: `Nazwa "${name}" — 2-40 znaków` });
+      if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: `Nieznana kategoria: ${cat}` });
+      if (![1,2,3].includes(order)) return res.status(400).json({ error: `sort_order musi być 1, 2 lub 3` });
+      await pool.query(
+        `INSERT INTO fp1_venue_dishes(venue_id, name, category, sort_order, is_active, updated_at)
+         VALUES($1,$2,$3,$4,$5,NOW())
+         ON CONFLICT(venue_id, sort_order) DO UPDATE SET name=$2, category=$3, is_active=$5, updated_at=NOW()`,
+        [venueId, name, cat, order, active]
+      );
+    }
+    const r = await pool.query(`SELECT id, name, category, sort_order, is_active FROM fp1_venue_dishes WHERE venue_id=$1 ORDER BY sort_order`, [venueId]);
+    res.json({ ok: true, dishes: r.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── MINI APP: GET venue dishes for Fox ──
+app.get("/api/venues/:venue_id/dishes", async (req, res) => {
+  try {
+    const venueId = parseInt(req.params.venue_id);
+    const r = await pool.query(
+      `SELECT id, name, category, sort_order FROM fp1_venue_dishes WHERE venue_id=$1 AND is_active=TRUE ORDER BY sort_order ASC LIMIT 3`,
+      [venueId]
+    );
+    res.json({ dishes: r.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── MINI APP: POST choice after check-in ──
+app.post("/api/checkin/:checkin_id/choice", requireWebAppAuth, async (req, res) => {
+  const AGG_WHITELIST = ["main","snack","dessert","drink","alcohol","other"];
+  try {
+    const userId = req.tgUser.id;
+    const checkinId = parseInt(req.params.checkin_id);
+    const { dish_id, agg_category, custom_text } = req.body;
+
+    // Find the receipt for this checkin
+    const rr = await pool.query(
+      `SELECT id, venue_id, choice_source FROM fp1_receipts WHERE checkin_id=$1 AND user_id=$2 ORDER BY id DESC LIMIT 1`,
+      [checkinId, userId]
+    );
+    if (rr.rowCount === 0) return res.status(404).json({ error: "receipt_not_found" });
+    const receipt = rr.rows[0];
+
+    // Already submitted?
+    if (receipt.choice_source) return res.status(400).json({ error: "choice_already_made" });
+
+    let source, aggCat, dishIdVal = null, customVal = null;
+    let baseBonus = false, miniBonus = false;
+
+    if (dish_id) {
+      // ── TOP3: Fox picked a venue dish ──
+      const dr = await pool.query(
+        `SELECT id, category FROM fp1_venue_dishes WHERE id=$1 AND venue_id=$2 AND is_active=TRUE LIMIT 1`,
+        [dish_id, receipt.venue_id]
+      );
+      if (dr.rowCount === 0) return res.status(400).json({ error: "dish_not_found" });
+      source = "top3";
+      aggCat = dr.rows[0].category;
+      dishIdVal = dr.rows[0].id;
+
+    } else if (custom_text) {
+      // ── CUSTOM: Fox typed their own ──
+      const cat = String(agg_category || "").trim();
+      if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: "agg_category_required" });
+      const text = String(custom_text || "").trim();
+
+      // Antispam validation
+      const valid = validateCustomText(text, receipt.venue_id, userId);
+      if (!valid.ok) return res.json({ ok: false, error: valid.error, base_bonus: false, mini_bonus: false });
+
+      // Check duplicate for same venue
+      const dupVenue = await pool.query(
+        `SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND custom_text=$3 LIMIT 1`,
+        [userId, receipt.venue_id, text]
+      );
+      if (dupVenue.rowCount > 0) return res.json({ ok: false, error: "already_submitted_for_venue", base_bonus: false, mini_bonus: false });
+
+      // Check 3x same text in 7 days
+      const dup7d = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM fp1_receipts WHERE user_id=$1 AND custom_text=$2 AND created_at > NOW() - INTERVAL '7 days'`,
+        [userId, text]
+      );
+      if (dup7d.rows[0].c >= 3) return res.json({ ok: false, error: "too_many_same_text", base_bonus: false, mini_bonus: false });
+
+      source = "custom";
+      aggCat = cat;
+      customVal = text;
+
+    } else if (agg_category) {
+      // ── CATEGORY: Fox picked a category ──
+      const cat = String(agg_category || "").trim();
+      if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: "invalid_category" });
+      source = "category";
+      aggCat = cat;
+
+    } else {
+      return res.status(400).json({ error: "no_choice" });
+    }
+
+    // Save choice
+    await pool.query(
+      `UPDATE fp1_receipts SET choice_source=$1, agg_category=$2, dish_id=$3, custom_text=$4 WHERE id=$5`,
+      [source, aggCat, dishIdVal, customVal, receipt.id]
+    );
+
+    // Base bonus (+1 rating) — always for valid choice
+    await pool.query(`UPDATE fp1_receipts SET bonus_awarded_base=TRUE WHERE id=$1`, [receipt.id]);
+    await pool.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
+    baseBonus = true;
+
+    // Mini bonus (+1 rating) — only for valid custom
+    if (source === "custom" && customVal) {
+      await pool.query(`UPDATE fp1_receipts SET bonus_awarded_mini=TRUE WHERE id=$1`, [receipt.id]);
+      await pool.query(`UPDATE fp1_foxes SET rating = rating + 1, data_contributions = data_contributions + 1 WHERE user_id=$1`, [userId]);
+      miniBonus = true;
+      // Check data achievements
+      await checkAchievements(userId);
+    }
+
+    res.json({ ok: true, base_bonus: baseBonus, mini_bonus: miniBonus });
+  } catch (e) {
+    console.error("choice error:", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── Antispam validator for custom text ──
+function validateCustomText(text) {
+  if (!text || typeof text !== "string") return { ok: false, error: "empty" };
+  const t = text.trim();
+  if (t.length < 3 || t.length > 30) return { ok: false, error: "length_3_30" };
+  const words = t.split(/\s+/);
+  if (words.length > 2) return { ok: false, error: "max_2_words" };
+  // Only letters (unicode) + one space between
+  if (!/^[\p{L}]+(\s[\p{L}]+)?$/u.test(t)) return { ok: false, error: "letters_only" };
+  // Not only digits
+  if (/^\d+$/.test(t)) return { ok: false, error: "no_digits_only" };
+  // No URLs
+  if (/https?:|www\.|\.com|\.pl|\.ua/i.test(t)) return { ok: false, error: "no_urls" };
+  return { ok: true };
+}
 
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
@@ -2634,7 +2725,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <form method="POST" action="/admin/venues/${v.id}/reject" style="display:inline"><button type="submit" class="danger">❌ Odrzuć</button></form>
       </div>`).join("");
 
-  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td><td><a href="/admin/venues/${v.id}/edit">✏️</a></td></tr>`).join("");
+  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td></tr>`).join("");
   const foxesHtml  = foxes.rows.map(f => `<tr><td>${f.user_id}</td><td>${escapeHtml(f.username||"—")}</td><td>${f.rating}</td><td>${f.invites}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td>${f.streak_current||0} 🔥 (rek: ${f.streak_best||0})</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td></tr>`).join("");
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
@@ -2713,59 +2804,6 @@ app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
   const v = await getVenue(venueId);
   await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
   res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
-});
-
-// ── ADMIN: Edit venue ──
-app.get("/admin/venues/:id/edit", requireAdminAuth, async (req, res) => {
-  const venueId = parseInt(req.params.id);
-  const v = await getVenue(venueId);
-  if (!v) return res.redirect("/admin?err=Venue+not+found");
-  res.send(pageShell(`Edytuj — ${v.name}`, `
-    <div class="card">
-      <div class="topbar"><h1>✏️ ${escapeHtml(v.name)}</h1><a href="/admin">← Panel</a></div>
-      ${flash(req)}
-      <form method="POST" action="/admin/venues/${v.id}/edit">
-        <label>Nazwa</label><input name="name" value="${escapeHtml(v.name||"")}"/>
-        <label>Miasto</label><input name="city" value="${escapeHtml(v.city||"")}"/>
-        <label>Adres</label><input name="address" value="${escapeHtml(v.address||"")}"/>
-        <label>Typ (fastfood/restauracja/kawiarnia/bar/streetfood/inne)</label><input name="venue_type" value="${escapeHtml(v.venue_type||"")}"/>
-        <label>Kuchnia</label><input name="cuisine" value="${escapeHtml(v.cuisine||"")}"/>
-        <label>Opis</label><textarea name="description" rows="3">${escapeHtml(v.description||"")}</textarea>
-        <label>Polecane przez lokal</label><textarea name="recommended" rows="2">${escapeHtml(v.recommended||"")}</textarea>
-        <label>Tags (vegan,gluten-free)</label><input name="tags" value="${escapeHtml(v.tags||"")}"/>
-        <label>Godziny otwarcia (np. Pn-Pt: 10-22, Sob: 11-23, Nd: zamknięte)</label><textarea name="opening_hours" rows="3">${escapeHtml(v.opening_hours||"")}</textarea>
-        <label>Status chwilowy (np. "Dziś ograniczony dostęp" — puste = brak)</label><input name="status_temporary" value="${escapeHtml(v.status_temporary||"")}"/>
-        <label>Google Place ID (do zdjęć — znajdź na Google Maps)</label><input name="google_place_id" value="${escapeHtml(v.google_place_id||"")}" placeholder="np. ChIJ..."/>
-        <div class="grid2" style="margin-top:12px">
-          <div><label>Lat</label><input name="lat" value="${v.lat||""}"/></div>
-          <div><label>Lng</label><input name="lng" value="${v.lng||""}"/></div>
-        </div>
-        <label>Zniżka %</label><input name="discount_percent" type="number" value="${parseFloat(v.discount_percent)||10}"/>
-        <div style="margin-top:14px"><button type="submit">💾 Zapisz zmiany</button></div>
-      </form>
-    </div>
-  `));
-});
-
-app.post("/admin/venues/:id/edit", requireAdminAuth, async (req, res) => {
-  const venueId = parseInt(req.params.id);
-  const b = req.body;
-  try {
-    await pool.query(
-      `UPDATE fp1_venues SET name=$1, city=$2, address=$3, venue_type=$4, cuisine=$5, description=$6, recommended=$7, tags=$8, opening_hours=$9, status_temporary=$10, lat=$11, lng=$12, discount_percent=$13, google_place_id=$14 WHERE id=$15`,
-      [
-        String(b.name||"").trim(), String(b.city||"").trim(), String(b.address||"").trim(),
-        String(b.venue_type||"").trim(), String(b.cuisine||"").trim(), String(b.description||"").trim(),
-        String(b.recommended||"").trim(), String(b.tags||"").trim(), String(b.opening_hours||"").trim(),
-        String(b.status_temporary||"").trim(),
-        b.lat ? parseFloat(b.lat) : null, b.lng ? parseFloat(b.lng) : null,
-        parseFloat(b.discount_percent) || 10, String(b.google_place_id||"").trim(), venueId
-      ]
-    );
-    res.redirect(`/admin/venues/${venueId}/edit?ok=${encodeURIComponent("Zapisano!")}`);
-  } catch (e) {
-    res.redirect(`/admin/venues/${venueId}/edit?err=${encodeURIComponent(String(e?.message||e))}`);
-  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
