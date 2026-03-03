@@ -1434,6 +1434,16 @@ app.get("/api/venues", async (req, res) => {
     const activeResByVenue = {};
     activeRes.rows.forEach(r => activeResByVenue[r.venue_id] = r.cnt);
 
+    // My stamps per venue
+    let myStamps = {};
+    if (userId) {
+      const ms = await pool.query(
+        `SELECT venue_id, emoji, SUM(delta)::int AS balance FROM fp1_stamps WHERE user_id=$1 GROUP BY venue_id, emoji HAVING SUM(delta)>0`,
+        [userId]
+      );
+      ms.rows.forEach(r => myStamps[r.venue_id] = { emoji: r.emoji, balance: r.balance });
+    }
+
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const usedSlots = (trialUsed[v.id] || 0) + (activeResByVenue[v.id] || 0);
@@ -1447,6 +1457,7 @@ app.get("/api/venues", async (req, res) => {
         monthly_visits: monthlyVisits[v.id] || 0,
         trial_remaining,
         my_reservation: myReservations[v.id] || null,
+        my_stamps: myStamps[v.id] || null,
         top_category: topCategory[v.id]?.cat || null,
         top_reason: topReason[v.id]?.reason || null,
         top_dish_name: topDish[v.id] || null,
