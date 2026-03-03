@@ -432,21 +432,42 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <button class="receipt-btn" id="receiptBtn" onclick="submitReceipt()">💰 Zapisz rachunek</button>
     </div>
     <div class="receipt-box" id="categoryBox" style="display:none">
-      <div class="receipt-title">🍽️ Co wybrałeś?</div>
-      <div class="receipt-sub">1 klik · anonimowo · lepsze bonusy</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        <button class="d-btn" onclick="pickCategory('main')">🍽️ Danie główne</button>
-        <button class="d-btn" onclick="pickCategory('snack')">🥪 Szybka przekąska</button>
-        <button class="d-btn" onclick="pickCategory('dessert')">🍰 Deser</button>
-        <button class="d-btn" onclick="pickCategory('coffee')">☕ Kawa</button>
-        <button class="d-btn" onclick="pickCategory('drink')">🥤 Napój</button>
-        <button class="d-btn" onclick="pickCategory('alcohol')">🍺 Alkohol</button>
-        <button class="d-btn" onclick="pickCategory('other')">🛒 Inne</button>
-        <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="pickCategory('skip')">Pomiń →</button>
-      </div>
-      <div style="font-size:11px;color:var(--muted);text-align:center">Anonimowo • 2 kliknięcia • bonus dla Ciebie</div>
-    </div>
-    <div class="receipt-box" id="reasonBox" style="display:none">
+       <div class="receipt-title" id="choiceTitle">🍽️ Co wybrałeś?</div>
+       <div class="receipt-sub" id="choiceSub">Wybierz danie lub kategorię · +1 pkt</div>
+       <div id="choiceScreen1">
+         <div id="dishButtons" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+           <button class="d-btn" onclick="showChoiceScreen2()">➕ Inne</button>
+           <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="skipChoice()">Pomiń →</button>
+         </div>
+       </div>
+       <div id="choiceScreen2" style="display:none">
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+           <button class="d-btn" onclick="pickAggCategory('main')">🍽 Główne</button>
+           <button class="d-btn" onclick="pickAggCategory('snack')">🥗 Przystawka</button>
+           <button class="d-btn" onclick="pickAggCategory('dessert')">🍰 Deser</button>
+           <button class="d-btn" onclick="pickAggCategory('drink')">☕ Napój</button>
+           <button class="d-btn" onclick="pickAggCategory('alcohol')">🍺 Alkohol</button>
+           <button class="d-btn" onclick="pickAggCategory('other')">📦 Inne</button>
+         </div>
+         <button class="d-btn" style="width:100%;background:rgba(124,92,252,.1);border-color:rgba(124,92,252,.3);color:var(--accent2)" onclick="showChoiceScreen3()">✍️ Wpisz swoje (+mini bonus)</button>
+       </div>
+       <div id="choiceScreen3" style="display:none">
+         <div style="margin-bottom:10px">
+           <select id="customCatSelect" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:8px">
+             <option value="">— Wybierz kategorię —</option>
+             <option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option>
+             <option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option>
+           </select>
+           <input id="customDishInput" type="text" maxlength="30" placeholder="Np. kaczka" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:4px"/>
+           <div style="font-size:11px;color:var(--muted)">1–2 słowa, bez linków · +1 pkt bonus</div>
+           <div id="customError" style="font-size:12px;color:var(--red);margin-top:4px;display:none"></div>
+         </div>
+         <button class="d-btn" style="width:100%;background:rgba(124,92,252,.15);border-color:rgba(124,92,252,.3);color:var(--accent2);font-weight:700" onclick="submitCustomDish()">💾 Zapisz (+mini bonus)</button>
+       </div>
+       <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Anonimowo • bonus dla Ciebie</div>
+     </div>
+     <div class="receipt-box" id="reasonBox" style="display:none">
       <div class="receipt-title">⚡ Dlaczego tu?</div>
       <div class="receipt-sub">1 klik · anonimowo · +1 pkt</div>
       <div class="d-grid" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
@@ -821,8 +842,8 @@ async function doCheckin(){
 let receiptPending = null;
 let otpPollTimer = null;
 
-function showReceiptForm(venueId, venueName, discount, isRepeat) {
-  receiptPending = { venueId, venueName, discount, isRepeat: !!isRepeat };
+function showReceiptForm(venueId, venueName, discount, isRepeat, checkinId) {
+  receiptPending = { venueId, venueName, discount, isRepeat: !!isRepeat, checkinId: checkinId||null };
   q('receiptDiscount').textContent = discount + '%';
   q('receiptVenue').textContent = venueName;
   q('receiptInput').value = '';
@@ -838,7 +859,7 @@ function startOtpPolling(venueId, venueName, discount, isRepeat) {
       if (d.status === 'confirmed' && !d.receipt_done) {
         stopOtpPolling();
         q('otpBox').classList.remove('show');
-        showReceiptForm(venueId, venueName, discount, isRepeat);
+        showReceiptForm(venueId, venueName, discount, isRepeat, d.checkin_id);
         TG?.HapticFeedback?.notificationOccurred('success');
       } else if (d.status === 'confirmed' && d.receipt_done) {
         stopOtpPolling();
@@ -886,29 +907,109 @@ async function submitReceipt() {
   }
   btn.disabled = false; btn.textContent = '💰 Zapisz rachunek';
 }
-  function showCategoryPick() {
+    function showCategoryPick() {
   q('categoryBox').style.display = 'block';
   q('categoryBox').classList.add('show');
+  q('choiceScreen1').style.display = 'block';
+  q('choiceScreen2').style.display = 'none';
+  q('choiceScreen3').style.display = 'none';
+  // Load venue dishes
+  if (receiptPending && receiptPending.venueId) {
+    loadVenueDishes(receiptPending.venueId);
+  }
 }
-async function pickCategory(cat) {
+async function loadVenueDishes(venueId) {
+  try {
+    const d = await api('/api/venues/' + venueId + '/dishes', 'GET');
+    const container = q('dishButtons');
+    if (d.dishes && d.dishes.length > 0) {
+      const catIcons = {main:'🍽',snack:'🥗',dessert:'🍰',drink:'☕',alcohol:'🍺',other:'📦'};
+      container.innerHTML = d.dishes.map(dish =>
+        '<button class="d-btn" style="text-align:left;padding:12px 16px" onclick="pickDish(' + dish.id + ')">' +
+        (catIcons[dish.category]||'📦') + ' ' + esc(dish.name) + '</button>'
+      ).join('');
+    } else {
+      container.innerHTML = '';
+      showChoiceScreen2();
+    }
+  } catch(e) {
+    q('dishButtons').innerHTML = '';
+    showChoiceScreen2();
+  }
+}
+async function pickDish(dishId) {
   q('categoryBox').style.display = 'none';
   q('categoryBox').classList.remove('show');
-  if (cat === 'skip' || !receiptPending) {
-    showReasonPick();
-    return;
-  }
+  if (!receiptPending) { showReasonPick(); return; }
   try {
-    const d = await api('/api/receipt/category', 'POST', {
-      venue_id: receiptPending.venueId,
-      category: cat
-    });
-    if (d.bonus_points) {
+    const d = await api('/api/checkin/' + receiptPending.checkinId + '/choice', 'POST', { dish_id: dishId });
+    if (d.ok) {
       const detail = q('receiptDetail');
-      detail.textContent += '\n🎯 +' + d.bonus_points + ' pkt za kategorię!';
+      if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za wybór!';
     }
     TG?.HapticFeedback?.notificationOccurred('success');
   } catch(e) { /* ignore */ }
   showReasonPick();
+}
+function showChoiceScreen2() {
+  q('choiceScreen1').style.display = 'none';
+  q('choiceScreen2').style.display = 'block';
+  q('choiceScreen3').style.display = 'none';
+  q('choiceSub').textContent = 'Wybierz kategorię · +1 pkt';
+}
+function showChoiceScreen3() {
+  q('choiceScreen2').style.display = 'none';
+  q('choiceScreen3').style.display = 'block';
+  q('choiceSub').textContent = 'Wpisz nazwę · +2 pkt';
+  q('customError').style.display = 'none';
+}
+async function pickAggCategory(cat) {
+  q('categoryBox').style.display = 'none';
+  q('categoryBox').classList.remove('show');
+  if (!receiptPending) { showReasonPick(); return; }
+  try {
+    const d = await api('/api/checkin/' + receiptPending.checkinId + '/choice', 'POST', { agg_category: cat });
+    if (d.ok) {
+      const detail = q('receiptDetail');
+      if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za kategorię!';
+    }
+    TG?.HapticFeedback?.notificationOccurred('success');
+  } catch(e) { /* ignore */ }
+  showReasonPick();
+}
+async function submitCustomDish() {
+  const cat = q('customCatSelect').value;
+  const text = q('customDishInput').value.trim();
+  const errEl = q('customError');
+  if (!cat) { errEl.textContent = 'Wybierz kategorię!'; errEl.style.display = 'block'; return; }
+  if (!text || text.length < 3) { errEl.textContent = 'Minimum 3 znaki'; errEl.style.display = 'block'; return; }
+  if (text.split(/\s+/).length > 2) { errEl.textContent = 'Maksimum 2 słowa'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  q('categoryBox').style.display = 'none';
+  q('categoryBox').classList.remove('show');
+  if (!receiptPending) { showReasonPick(); return; }
+  try {
+    const d = await api('/api/checkin/' + receiptPending.checkinId + '/choice', 'POST', { agg_category: cat, custom_text: text });
+    if (d.ok) {
+      const detail = q('receiptDetail');
+      if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za wybór!';
+      if (d.mini_bonus) detail.textContent += '\n🧠 +1 pkt mini-bonus za dane!';
+    } else if (d.error) {
+      // soft fail — no penalty
+    }
+    TG?.HapticFeedback?.notificationOccurred('success');
+  } catch(e) { /* ignore */ }
+  showReasonPick();
+}
+function skipChoice() {
+  q('categoryBox').style.display = 'none';
+  q('categoryBox').classList.remove('show');
+  showReasonPick();
+}
+async function pickCategory(cat) {
+  // Legacy backward compat — redirect to new flow
+  if (cat === 'skip') { skipChoice(); return; }
+  pickAggCategory(cat);
 }
 
 function showReasonPick() {
@@ -1412,9 +1513,9 @@ async function cancelReserve(venueId) {
 
   // Fox top category
   const catMap = {'main':'🍽 Danie główne','snack':'🥪 Przekąska','dessert':'🍰 Deser','coffee':'☕ Kawa','drink':'🥤 Napój','alcohol':'🍺 Alkohol','other':'🛒 Inne'};
-  const foxCat = v.top_category ? `<div style="background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+  const foxCat = (v.top_dish_name || v.top_category) ? `<div style="background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px">🦊 Najczęściej wybierane</div>
-    <div style="font-size:13px;color:var(--muted)">${catMap[v.top_category] || esc(v.top_category)}</div>
+    <div style="font-size:13px;color:var(--muted)">${v.top_dish_name ? esc(v.top_dish_name) : (catMap[v.top_category] || esc(v.top_category))}</div>
   </div>` : '';
 
   // Fox top reason ("Why go here")
@@ -1428,25 +1529,9 @@ async function cancelReserve(venueId) {
   // Description
   const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
 
-  // Opening hours
-  const hoursBlock = v.opening_hours ? `<div style="background:rgba(255,255,255,.04);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">🕐 Godziny otwarcia</div>
-    <div style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-line">${esc(v.opening_hours)}</div>
-  </div>` : '';
-
-  // Status temporary
-  const statusBlock = v.status_temporary ? `<div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">⚠️ Status chwilowy</div>
-    <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.status_temporary)}</div>
-  </div>` : '';
-
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
-      ${v.google_place_id
-        ? `<div style="width:100%;height:180px;border-radius:var(--radius);overflow:hidden;margin-bottom:12px;background:var(--card-bg)">
-            <img src="${BASE}/api/venue-photo/${v.id}?w=400" alt="${esc(v.name)}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'font-size:48px;display:flex;align-items:center;justify-content:center;height:100%\\'>🏪</div>'"/>
-          </div>`
-        : `<div style="font-size:48px;margin-bottom:8px">🏪</div>`}
+      <div style="font-size:48px;margin-bottom:8px">🏪</div>
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
@@ -1466,7 +1551,7 @@ async function cancelReserve(venueId) {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>
-    ${trialInfo}${statusBlock}${desc}${hoursBlock}${rec}${foxCat}${foxReason}
+    ${trialInfo}${desc}${rec}${foxCat}${foxReason}
     <div style="display:flex;flex-direction:column;gap:8px">
       <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
       ${v.is_trial ? (v.my_reservation
