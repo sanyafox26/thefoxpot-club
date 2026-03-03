@@ -371,6 +371,7 @@ async function migrate() {
    await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "opening_hours",         "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "status_temporary",      "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "google_place_id",       "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
@@ -1116,7 +1117,7 @@ app.get("/venue/:id", async (req, res) => {
     const venueId = parseInt(req.params.id);
     if (!venueId) return res.status(404).send(pageShell("Nie znaleziono", `<div class="card"><h1>🔍 Lokal nie znaleziony</h1><p>Sprawdź link i spróbuj ponownie.</p><a href="/">← Strona główna</a></div>`));
     const vr = await pool.query(
-      `SELECT id, name, city, address, venue_type, cuisine, tags, description, is_trial, discount_percent, opening_hours, status_temporary FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`,
+      `SELECT id, name, city, address, venue_type, cuisine, tags, description, is_trial, discount_percent, opening_hours, status_temporary, google_place_id FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`,
       [venueId]
     );
     const venue = vr.rows[0];
@@ -1142,7 +1143,11 @@ app.get("/venue/:id", async (req, res) => {
 
     const html = pageShell(`${venue.name} — The FoxPot Club`, `
       <div style="text-align:center;padding:32px 16px 16px">
-        <div style="font-size:48px;margin-bottom:12px">🦊</div>
+        ${venue.google_place_id
+          ? `<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,0.04)">
+              <img src="/api/venue-photo/${venue.id}?w=400" alt="${escapeHtml(venue.name)}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'font-size:48px;display:flex;align-items:center;justify-content:center;height:100%\\'>🦊</div>'"/>
+            </div>`
+          : `<div style="font-size:48px;margin-bottom:12px">🦊</div>`}
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4);margin-bottom:4px">The FoxPot Club</div>
       </div>
       <div class="card" style="text-align:center">
@@ -1268,6 +1273,39 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 });
 
 // GET /api/venues
+// ── GOOGLE PLACE PHOTO PROXY ──
+app.get("/api/venue-photo/:id", async (req, res) => {
+  try {
+    const venueId = parseInt(req.params.id);
+    const maxW = parseInt(req.query.w) || 400;
+    const vr = await pool.query(`SELECT google_place_id FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
+    const placeId = vr.rows[0]?.google_place_id;
+    if (!placeId) return res.status(404).json({ error: "no_photo" });
+    const key = process.env.GOOGLE_MAPS_KEY;
+    if (!key) return res.status(500).json({ error: "no_api_key" });
+
+    // Step 1: Get photo reference from Place Details
+    const https = require("https");
+    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=photos&key=${key}`;
+    const details = await new Promise((resolve, reject) => {
+      https.get(detailsUrl, (r) => {
+        let data = "";
+        r.on("data", c => data += c);
+        r.on("end", () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+      }).on("error", reject);
+    });
+    const photoRef = details?.result?.photos?.[0]?.photo_reference;
+    if (!photoRef) return res.status(404).json({ error: "no_photo_ref" });
+
+    // Step 2: Redirect to Google photo (browser follows redirect to actual image)
+    const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxW}&photo_reference=${photoRef}&key=${key}`;
+    res.redirect(photoUrl);
+  } catch (e) {
+    console.error("venue-photo error:", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 app.get("/api/venues", async (req, res) => {
   try {
     let userId = null;
@@ -1279,7 +1317,7 @@ app.get("/api/venues", async (req, res) => {
       }
     } catch(_){}
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -2697,6 +2735,7 @@ app.get("/admin/venues/:id/edit", requireAdminAuth, async (req, res) => {
         <label>Tags (vegan,gluten-free)</label><input name="tags" value="${escapeHtml(v.tags||"")}"/>
         <label>Godziny otwarcia (np. Pn-Pt: 10-22, Sob: 11-23, Nd: zamknięte)</label><textarea name="opening_hours" rows="3">${escapeHtml(v.opening_hours||"")}</textarea>
         <label>Status chwilowy (np. "Dziś ograniczony dostęp" — puste = brak)</label><input name="status_temporary" value="${escapeHtml(v.status_temporary||"")}"/>
+        <label>Google Place ID (do zdjęć — znajdź na Google Maps)</label><input name="google_place_id" value="${escapeHtml(v.google_place_id||"")}" placeholder="np. ChIJ..."/>
         <div class="grid2" style="margin-top:12px">
           <div><label>Lat</label><input name="lat" value="${v.lat||""}"/></div>
           <div><label>Lng</label><input name="lng" value="${v.lng||""}"/></div>
@@ -2713,14 +2752,14 @@ app.post("/admin/venues/:id/edit", requireAdminAuth, async (req, res) => {
   const b = req.body;
   try {
     await pool.query(
-      `UPDATE fp1_venues SET name=$1, city=$2, address=$3, venue_type=$4, cuisine=$5, description=$6, recommended=$7, tags=$8, opening_hours=$9, status_temporary=$10, lat=$11, lng=$12, discount_percent=$13 WHERE id=$14`,
+      `UPDATE fp1_venues SET name=$1, city=$2, address=$3, venue_type=$4, cuisine=$5, description=$6, recommended=$7, tags=$8, opening_hours=$9, status_temporary=$10, lat=$11, lng=$12, discount_percent=$13, google_place_id=$14 WHERE id=$15`,
       [
         String(b.name||"").trim(), String(b.city||"").trim(), String(b.address||"").trim(),
         String(b.venue_type||"").trim(), String(b.cuisine||"").trim(), String(b.description||"").trim(),
         String(b.recommended||"").trim(), String(b.tags||"").trim(), String(b.opening_hours||"").trim(),
         String(b.status_temporary||"").trim(),
         b.lat ? parseFloat(b.lat) : null, b.lng ? parseFloat(b.lng) : null,
-        parseFloat(b.discount_percent) || 10, venueId
+        parseFloat(b.discount_percent) || 10, String(b.google_place_id||"").trim(), venueId
       ]
     );
     res.redirect(`/admin/venues/${venueId}/edit?ok=${encodeURIComponent("Zapisano!")}`);
