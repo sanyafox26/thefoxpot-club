@@ -1139,6 +1139,37 @@ app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "priva
 app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
 
+
+// PUBLIC VENUE TEASER PAGE
+app.get("/venue/:id", async (req, res) => {
+  try {
+    const venueId = parseInt(req.params.id);
+    if (!venueId) return res.status(404).send("Not found");
+    const vr = await pool.query(`SELECT id,name,city,address,venue_type,cuisine,tags,description,is_trial,discount_percent,opening_hours,status_temporary,google_place_id FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
+    const v = vr.rows[0];
+    if (!v) return res.status(404).send(pageShell("Nie znaleziono",'<div class="card"><h1>Lokal nie znaleziony</h1></div>'));
+    const cv = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`,[venueId]);
+    const uf = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`,[venueId]);
+    const visits=cv.rows[0]?.cnt||0, foxes=uf.rows[0]?.cnt||0;
+    const disc=parseFloat(v.discount_percent)||10;
+    const tgs=v.tags?v.tags.split(",").map(t=>t.trim()).filter(Boolean):[];
+    const vB=tgs.includes("vegan")?`<span style="background:#1a3a1a;color:#4ade80;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">Vegan</span>`:"";
+    const gB=tgs.includes("gluten-free")?`<span style="background:#3a2a0a;color:#fbbf24;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">Gluten-free</span>`:"";
+    const tpL=[v.venue_type,v.cuisine].filter(Boolean).join(" \u00b7 ");
+    const stH=v.status_temporary?`<div class="card" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06);padding:14px 16px"><div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">Status</div><div style="font-size:13px;color:rgba(255,255,255,.6)">${escapeHtml(v.status_temporary)}</div></div>`:"";
+    const hrH=v.opening_hours?`<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:4px">Godziny otwarcia</div><div style="font-size:13px;color:rgba(255,255,255,.7);line-height:1.6;white-space:pre-line">${escapeHtml(v.opening_hours)}</div></div>`:"";
+    const phH=v.google_place_id?`<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,.04)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#129418;'"/></div>`:`<div style="font-size:48px;margin-bottom:12px">&#129418;</div>`;
+    res.send(pageShell(`${v.name} \u2014 The FoxPot Club`,`
+      <div style="text-align:center;padding:32px 16px 16px">${phH}<div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.4)">The FoxPot Club</div></div>
+      <div class="card" style="text-align:center"><h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(v.name)}</h1>${tpL?`<p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:10px">${escapeHtml(tpL)}</p>`:""}<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${vB}${gB}</div><p style="font-size:14px;color:rgba(255,255,255,.7)">${escapeHtml(v.address||"")}${v.city?", "+escapeHtml(v.city):""}</p>${v.description?`<p style="font-size:13px;color:rgba(255,255,255,.5);margin-top:10px;line-height:1.5">${escapeHtml(v.description)}</p>`:""}</div>
+      ${stH}${hrH}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 0"><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#f5a623">${disc}%</div><div style="font-size:11px;color:rgba(255,255,255,.4)">zni&#380;ka</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#7c5cfc">${visits}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">wizyt</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#2ecc71">${foxes}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">Fox'&#243;w</div></div></div>
+      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)"><div style="font-size:28px;margin-bottom:8px">&#128274;</div><h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zni&#380;k&#281; ${disc}% jako Fox</h2><p style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:16px;line-height:1.5">The FoxPot Club to prywatny klub dla smakoszy.<br/>Do&#322;&#261;cz przez Telegram.</p><a href="https://t.me/TheFoxPotBot/app" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none">&#129418; Do&#322;&#261;cz do FoxPot Club</a><p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:12px">Potrzebujesz kodu zaproszenia</p></div>
+      <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.25)"><a href="/" style="color:rgba(255,255,255,.35)">thefoxpot.club</a></div>
+    `,`body{background:#0a0b14}.card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}`));
+  } catch(e) { console.error("venue teaser err:",e); res.status(500).send("Error"); }
+});
+
 app.get("/health", async (_req, res) => {
   try {
     const now = await dbNow(), spots = await founderSpotsLeft();
