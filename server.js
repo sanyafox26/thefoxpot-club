@@ -2487,111 +2487,66 @@ app.post("/api/checkin/:checkin_id/choice", requireWebAppAuth, async (req, res) 
     const userId = req.tgUser.id;
     const checkinId = parseInt(req.params.checkin_id);
     const { dish_id, agg_category, custom_text } = req.body;
-
-    // Find the receipt for this checkin
     const rr = await pool.query(
-      `SELECT id, venue_id, choice_source FROM fp1_receipts WHERE checkin_id=$1 AND user_id=$2 ORDER BY id DESC LIMIT 1`,
-      [checkinId, userId]
-    );
+      `SELECT id, venue_id, choice_source, bonus_awarded_base, bonus_awarded_mini
+       FROM fp1_receipts WHERE checkin_id=$1 AND user_id=$2 AND amount_paid > 0
+       ORDER BY id DESC LIMIT 1`, [checkinId, userId]);
     if (rr.rowCount === 0) return res.status(404).json({ error: "receipt_not_found" });
     const receipt = rr.rows[0];
-
-    // Already submitted?
     if (receipt.choice_source) return res.status(400).json({ error: "choice_already_made" });
-
     let source, aggCat, dishIdVal = null, customVal = null;
-    let baseBonus = false, miniBonus = false;
-
     if (dish_id) {
-      // ── TOP3: Fox picked a venue dish ──
-      const dr = await pool.query(
-        `SELECT id, category FROM fp1_venue_dishes WHERE id=$1 AND venue_id=$2 AND is_active=TRUE LIMIT 1`,
-        [dish_id, receipt.venue_id]
-      );
+      const dr = await pool.query(`SELECT id, category FROM fp1_venue_dishes WHERE id=$1 AND venue_id=$2 AND is_active=TRUE LIMIT 1`, [dish_id, receipt.venue_id]);
       if (dr.rowCount === 0) return res.status(400).json({ error: "dish_not_found" });
-      source = "top3";
-      aggCat = dr.rows[0].category;
-      dishIdVal = dr.rows[0].id;
-
+      source = "top3"; aggCat = dr.rows[0].category; dishIdVal = dr.rows[0].id;
     } else if (custom_text) {
-      // ── CUSTOM: Fox typed their own ──
       const cat = String(agg_category || "").trim();
       if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: "agg_category_required" });
       const text = String(custom_text || "").trim();
-
-      // Antispam validation
-      const valid = validateCustomText(text, receipt.venue_id, userId);
+      const valid = validateCustomText(text);
       if (!valid.ok) return res.json({ ok: false, error: valid.error, base_bonus: false, mini_bonus: false });
-
-      // Check duplicate for same venue
-      const dupVenue = await pool.query(
-        `SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND custom_text=$3 LIMIT 1`,
-        [userId, receipt.venue_id, text]
-      );
-      if (dupVenue.rowCount > 0) return res.json({ ok: false, error: "already_submitted_for_venue", base_bonus: false, mini_bonus: false });
-
-      // Check 3x same text in 7 days
-      const dup7d = await pool.query(
-        `SELECT COUNT(*)::int AS c FROM fp1_receipts WHERE user_id=$1 AND custom_text=$2 AND created_at > NOW() - INTERVAL '7 days'`,
-        [userId, text]
-      );
-      if (dup7d.rows[0].c >= 3) return res.json({ ok: false, error: "too_many_same_text", base_bonus: false, mini_bonus: false });
-
-      source = "custom";
-      aggCat = cat;
-      customVal = text;
-
+      const dupV = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND custom_text=$3 LIMIT 1`, [userId, receipt.venue_id, text]);
+      if (dupV.rowCount > 0) return res.json({ ok: false, error: "already_submitted_for_venue", base_bonus: false, mini_bonus: false });
+      const dup7 = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_receipts WHERE user_id=$1 AND custom_text=$2 AND created_at > NOW()-INTERVAL '7 days'`, [userId, text]);
+      if (dup7.rows[0].c >= 3) return res.json({ ok: false, error: "too_many_same_text", base_bonus: false, mini_bonus: false });
+      source = "custom"; aggCat = cat; customVal = text;
     } else if (agg_category) {
-      // ── CATEGORY: Fox picked a category ──
       const cat = String(agg_category || "").trim();
       if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: "invalid_category" });
-      source = "category";
-      aggCat = cat;
-
-    } else {
-      return res.status(400).json({ error: "no_choice" });
-    }
-
-    // Save choice
-    await pool.query(
-      `UPDATE fp1_receipts SET choice_source=$1, agg_category=$2, dish_id=$3, custom_text=$4 WHERE id=$5`,
-      [source, aggCat, dishIdVal, customVal, receipt.id]
-    );
-
-    // Base bonus (+1 rating) — always for valid choice
-    await pool.query(`UPDATE fp1_receipts SET bonus_awarded_base=TRUE WHERE id=$1`, [receipt.id]);
-    await pool.query(`UPDATE fp1_foxes SET rating = rating + 1 WHERE user_id=$1`, [userId]);
-    baseBonus = true;
-
-    // Mini bonus (+1 rating) — only for valid custom
+      source = "category"; aggCat = cat;
+    } else { return res.status(400).json({ error: "no_choice" }); }
+    // ATOMIC: save choice only if choice_source IS NULL
+    const upd = await pool.query(
+      `UPDATE fp1_receipts SET choice_source=$1, agg_category=$2, dish_id=$3, custom_text=$4
+       WHERE id=$5 AND choice_source IS NULL RETURNING id`,
+      [source, aggCat, dishIdVal, customVal, receipt.id]);
+    if (upd.rowCount === 0) return res.status(400).json({ error: "choice_already_made" });
+    let baseBonus = false, miniBonus = false;
+    // ATOMIC: base bonus
+    const bUpd = await pool.query(
+      `UPDATE fp1_receipts SET bonus_awarded_base=TRUE WHERE id=$1 AND (bonus_awarded_base IS NULL OR bonus_awarded_base=FALSE) RETURNING id`, [receipt.id]);
+    if (bUpd.rowCount > 0) { await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]); baseBonus = true; }
+    // ATOMIC: mini bonus (custom only)
     if (source === "custom" && customVal) {
-      await pool.query(`UPDATE fp1_receipts SET bonus_awarded_mini=TRUE WHERE id=$1`, [receipt.id]);
-      await pool.query(`UPDATE fp1_foxes SET rating = rating + 1, data_contributions = data_contributions + 1 WHERE user_id=$1`, [userId]);
-      miniBonus = true;
-      // Check data achievements
-      await checkAchievements(userId);
+      const mUpd = await pool.query(
+        `UPDATE fp1_receipts SET bonus_awarded_mini=TRUE WHERE id=$1 AND (bonus_awarded_mini IS NULL OR bonus_awarded_mini=FALSE) RETURNING id`, [receipt.id]);
+      if (mUpd.rowCount > 0) { await pool.query(`UPDATE fp1_foxes SET rating=rating+1, data_contributions=data_contributions+1 WHERE user_id=$1`, [userId]); miniBonus = true; await checkAchievements(userId); }
     }
-
     res.json({ ok: true, base_bonus: baseBonus, mini_bonus: miniBonus });
-  } catch (e) {
-    console.error("choice error:", e);
-    res.status(500).json({ error: String(e?.message || e) });
-  }
+  } catch (e) { console.error("choice error:", e); res.status(500).json({ error: String(e?.message || e) }); }
 });
 
 // ── Antispam validator for custom text ──
+// Antispam: pure text validation
 function validateCustomText(text) {
   if (!text || typeof text !== "string") return { ok: false, error: "empty" };
   const t = text.trim();
   if (t.length < 3 || t.length > 30) return { ok: false, error: "length_3_30" };
   const words = t.split(/\s+/);
   if (words.length > 2) return { ok: false, error: "max_2_words" };
-  // Only letters (unicode) + one space between
   if (!/^[\p{L}]+(\s[\p{L}]+)?$/u.test(t)) return { ok: false, error: "letters_only" };
-  // Not only digits
   if (/^\d+$/.test(t)) return { ok: false, error: "no_digits_only" };
-  // No URLs
-  if (/https?:|www\.|\.com|\.pl|\.ua/i.test(t)) return { ok: false, error: "no_urls" };
+  if (/https?:|www\.|\.[a-z]{2,}/i.test(t)) return { ok: false, error: "no_urls" };
   return { ok: true };
 }
 
