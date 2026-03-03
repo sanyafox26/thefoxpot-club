@@ -1291,8 +1291,15 @@ app.get("/api/venues", async (req, res) => {
       return topId;
     }
 
-    // Priority: all-time > year > month > week (each excludes higher-priority winners)
-    const topAllTimeId = findTop(allData, []);
+    // Priority: alltime > year > month > week (each excludes higher-priority winners)
+    // AllTime activates only after at least 1 full calendar year has passed
+    // (i.e., there must be counted visits in a previous calendar year)
+    const prevYearEnd = new Date(warsawNow); prevYearEnd.setMonth(0, 1); prevYearEnd.setHours(0,0,0,0);
+    const hasPrevYear = await pool.query(
+      `SELECT 1 FROM fp1_counted_visits WHERE created_at < $1 LIMIT 1`,
+      [prevYearEnd.toISOString()]
+    );
+    const topAllTimeId = hasPrevYear.rowCount > 0 ? findTop(allData, []) : null;
     const topYearId = findTop(yearlyData, [topAllTimeId].filter(Boolean));
     const topMonthId = findTop(monthlyData, [topAllTimeId, topYearId].filter(Boolean));
     const topWeekId = findTop(weeklyData, [topAllTimeId, topYearId, topMonthId].filter(Boolean));
