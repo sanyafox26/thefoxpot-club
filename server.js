@@ -1,1595 +1,3223 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<meta name="theme-color" content="#0a0b14"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="FoxPot"/>
-<title>The FoxPot Club</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0b14;--bg2:#10121f;--bg3:#161929;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --fox:#f5a623;--fox2:#e8842a;--accent:#7c5cfc;--accent2:#a07bff;
-  --green:#2ecc71;--red:#e74c3c;--gold:#ffd700;--text:#f0f0f5;
-  --muted:rgba(240,240,245,0.45);--muted2:rgba(240,240,245,0.25);
-  --card-bg:rgba(255,255,255,0.04);--card-border:rgba(255,255,255,0.08);
-  --radius:18px;--radius-sm:12px;
-  --font:'Outfit',sans-serif;--mono:'Inter Tight',sans-serif;
-  --safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px);
+"use strict";
+
+/**
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V24.0
+ *
+ * NOWOŚCI V24:
+ *  ✅ POST /api/venue/scan     — Fox сканує QR локалу (+1 rating, +5 invites, obligation 24h)
+ *  ✅ POST /api/venue/checkin  — Fox робить check-in в локалі (виконує obligation)
+ *  ✅ Штрафна система: 1-й раз -10 + блок до ранку, 2-й -20, 3-й -50 + бан 7 днів
+ *  ✅ Лічильник порушень скидається після відбуття 7-денного бану
+ *  ✅ CRON кожні 15 хв — автоштраф за прострочені obligations
+ *
+ * V23 (без змін):
+ *  ✅ POST /api/invite/create
+ *  ✅ GET  /api/invite/stats
+ *
+ * V20 (без змін):
+ *  ✅ GET  /webapp               — serwuje webapp.html (Telegram Mini App)
+ *  ✅ GET  /api/profile          — profil użytkownika (auth Telegram initData)
+ *  ✅ GET  /api/venues           — lista aktywnych lokali
+ *  ✅ POST /api/checkin          — generuje OTP dla check-inu
+ *  ✅ POST /api/spin             — daily spin
+ *  ✅ GET  /api/achievements     — lista osiągnięć użytkownika
+ *  ✅ GET  /api/top              — leaderboard Top 10 + moja pozycja
+ */
+
+const express  = require("express");
+const crypto   = require("crypto");
+const path     = require("path");
+const { Telegraf, Markup } = require("telegraf");
+const { Pool }             = require("pg");
+
+const app = express();
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+/* ═══════════════════════════════════════════════════════════════
+   ENV
+═══════════════════════════════════════════════════════════════ */
+const BOT_TOKEN      = (process.env.BOT_TOKEN      || "").trim();
+const DATABASE_URL   = (process.env.DATABASE_URL   || "").trim();
+const PUBLIC_URL     = (process.env.PUBLIC_URL     || "").trim().replace(/\/+$/, "");
+const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "wh").trim();
+const COOKIE_SECRET  = (process.env.COOKIE_SECRET  || `${WEBHOOK_SECRET}_cookie`).trim();
+const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "admin_foxpot_2025").trim();
+const ADMIN_TG_ID    = (process.env.ADMIN_TG_ID    || "").trim();
+const PORT           = process.env.PORT || 8080;
+
+if (!DATABASE_URL) console.error("❌ DATABASE_URL missing");
+if (!BOT_TOKEN)    console.error("❌ BOT_TOKEN missing");
+if (!PUBLIC_URL)   console.error("❌ PUBLIC_URL missing");
+
+/* ═══════════════════════════════════════════════════════════════
+   DB
+═══════════════════════════════════════════════════════════════ */
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: DATABASE_URL && DATABASE_URL.includes("railway")
+    ? { rejectUnauthorized: false }
+    : undefined,
+});
+
+async function dbNow() {
+  const r = await pool.query("SELECT NOW() AS now");
+  return r.rows[0].now;
 }
-html{height:100%;-webkit-tap-highlight-color:transparent}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100%;overflow-x:hidden;-webkit-font-smoothing:antialiased}
-body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");background-repeat:repeat;pointer-events:none;z-index:0;opacity:.6}
-#app{position:relative;z-index:1;max-width:430px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;padding-bottom:calc(72px + var(--safe-bot))}
 
-/* HEADER */
-.header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;position:sticky;top:0;z-index:100;background:linear-gradient(to bottom,var(--bg) 80%,transparent);backdrop-filter:blur(8px)}
-.logo{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800;letter-spacing:-.3px}
-.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--fox),var(--fox2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 16px rgba(245,166,35,.35)}
-.ver-badge{font-size:11px;color:var(--muted);font-family:var(--mono);background:var(--card-bg);border:1px solid var(--card-border);padding:3px 8px;border-radius:20px}
-
-/* SCREENS */
-.screen{display:none;flex-direction:column;flex:1;padding:0 16px;animation:fadeIn .25s ease}
-.screen.active{display:flex}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-/* BOTTOM NAV */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;display:flex;background:rgba(16,18,31,.92);backdrop-filter:blur(20px);border-top:1px solid var(--border);padding-bottom:var(--safe-bot)}
-.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;font-size:10px;color:var(--muted);cursor:pointer;border:none;background:none;font-family:var(--font);font-weight:600;letter-spacing:.3px;transition:color .2s,transform .15s;-webkit-user-select:none;user-select:none}
-.nav-btn .nav-icon{font-size:20px;line-height:1;transition:transform .2s}
-.nav-btn.active{color:var(--fox)}
-.nav-btn.active .nav-icon{transform:scale(1.15)}
-.nav-btn:active{transform:scale(.92)}
-
-/* CARDS */
-.card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:16px;margin-bottom:12px;position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.03) 0%,transparent 60%);pointer-events:none}
-.card-title{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
-
-/* PROFILE */
-.profile-hero{background:linear-gradient(135deg,#1a1030 0%,#0d1220 50%,#0a1018 100%);border:1px solid var(--card-border);border-radius:var(--radius);padding:24px 20px 20px;margin-bottom:12px;position:relative;overflow:hidden}
-.profile-hero::before{content:'';display:none}
-.profile-avatar{width:64px;height:64px;background:linear-gradient(135deg,var(--fox),var(--fox2));border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:32px;margin-bottom:12px;box-shadow:0 8px 24px rgba(245,166,35,.3)}
-.profile-name{font-size:20px;font-weight:800;line-height:1.2;margin-bottom:4px}
-.profile-tag{font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:12px}
-.founder-badge{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(90deg,rgba(255,215,0,.15),rgba(255,215,0,.08));border:1px solid rgba(255,215,0,.3);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:12px}
-.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
-.stat-box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-sm);padding:10px 8px;text-align:center}
-.stat-val{font-size:20px;font-weight:800;line-height:1;margin-bottom:3px;font-family:var(--mono)}
-.stat-lbl{font-size:10px;color:var(--muted);letter-spacing:.5px;font-weight:600}
-.fox-color .stat-val{color:var(--fox)}
-.purple-color .stat-val{color:var(--accent2)}
-.green-color .stat-val{color:var(--green)}
-
-/* STREAK */
-.streak-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
-.streak-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.streak-lbl{font-size:12px;color:var(--muted);font-weight:600}
-.streak-val{font-size:14px;font-weight:800;color:var(--fox)}
-.bar-bg{height:6px;background:rgba(255,255,255,.08);border-radius:10px;overflow:hidden}
-.bar-fg{height:100%;background:linear-gradient(90deg,var(--fox),var(--fox2));border-radius:10px;transition:width .8s cubic-bezier(.4,0,.2,1);min-width:4px}
-
-/* INFO GRID */
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px}
-.info-cell .info-lbl{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.5px;margin-bottom:3px;text-transform:uppercase}
-.info-cell .info-val{font-weight:700;display:flex;align-items:center;gap:6px}
-.change-btn{background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;color:var(--fox);cursor:pointer;font-family:var(--font)}
-
-/* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
-.modal-overlay.open{display:flex;animation:fadeIn .2s ease}
-.modal-sheet{background:var(--bg2);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:20px 16px 32px;width:100%;max-width:430px;max-height:80vh;overflow-y:auto;animation:slideUp .25s cubic-bezier(.34,1.56,.64,1)}
-@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-.modal-title{font-size:17px;font-weight:800;margin-bottom:16px;text-align:center}
-.d-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.d-btn{padding:12px 10px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);font-size:13px;font-weight:600;font-family:var(--font);color:var(--text);cursor:pointer;text-align:center;transition:all .15s}
-.d-btn:active{transform:scale(.95)}
-.d-btn.sel{background:rgba(245,166,35,.15);border-color:rgba(245,166,35,.4);color:var(--fox)}
-.modal-close{width:100%;padding:14px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;margin-top:12px}
-
-/* SPIN */
-.spin-hero{background:linear-gradient(160deg,#1a0a2e 0%,#0d1220 100%);border:1px solid rgba(124,92,252,.2);border-radius:var(--radius);padding:28px 20px;text-align:center;margin-bottom:12px;position:relative;overflow:hidden}
-.spin-hero::before{content:'';position:absolute;top:-40%;left:50%;transform:translateX(-50%);width:200px;height:200px;background:radial-gradient(circle,rgba(124,92,252,.2) 0%,transparent 70%);pointer-events:none}
-.spin-title{font-size:24px;font-weight:800;margin-bottom:4px;position:relative;z-index:1}
-.spin-sub{font-size:13px;color:var(--muted);position:relative;z-index:1}
-
-/* SLOT MACHINE */
-.slot-machine{background:rgba(0,0,0,.4);border:2px solid rgba(124,92,252,.3);border-radius:20px;padding:16px;margin:16px 0;position:relative;z-index:1;overflow:hidden}
-.slot-machine::before{content:'';position:absolute;left:50%;top:0;bottom:0;transform:translateX(-50%);width:56px;background:rgba(124,92,252,.08);border-left:1px solid rgba(124,92,252,.2);border-right:1px solid rgba(124,92,252,.2);pointer-events:none}
-.slot-reels{display:flex;justify-content:center;gap:8px}
-.reel{width:52px;height:52px;display:flex;align-items:center;justify-content:center;font-size:30px;position:relative;overflow:hidden;transition:transform .15s}
-.reel.spinning{animation:reelBounce .12s ease-in-out infinite alternate}
-@keyframes reelBounce{from{transform:translateY(-4px)}to{transform:translateY(4px)}}
-.reel.winner{animation:winPop .35s ease-in-out 3}
-@keyframes winPop{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
-.slot-dots{display:flex;justify-content:center;gap:4px;margin-top:8px}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--border2)}
-.dot.on{background:var(--fox)}
-
-.spin-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--radius-sm);color:white;font-size:16px;font-weight:800;font-family:var(--font);cursor:pointer;position:relative;z-index:1;transition:opacity .2s,transform .15s;letter-spacing:.3px;box-shadow:0 4px 20px rgba(124,92,252,.35)}
-.spin-btn:active:not(:disabled){transform:scale(.97)}
-.spin-btn:disabled{opacity:.45;cursor:not-allowed}
-
-.spin-result{display:none;border-radius:var(--radius-sm);padding:16px;text-align:center;margin-top:12px;position:relative;z-index:1}
-.spin-result.show{display:block;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
-.spin-result.win{background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.25)}
-.spin-result.used{background:rgba(124,92,252,.08);border:1px solid rgba(124,92,252,.2)}
-@keyframes bounceIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
-.result-emoji{font-size:40px;margin-bottom:8px;display:block}
-.result-label{font-size:18px;font-weight:800}
-.result-sub{font-size:12px;color:var(--muted);margin-top:6px}
-.spin-stats{display:flex;justify-content:center;gap:20px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
-.ss-item{text-align:center}
-.ss-val{font-size:18px;font-weight:800;font-family:var(--mono);color:var(--fox)}
-.ss-lbl{font-size:10px;color:var(--muted);font-weight:600;margin-top:2px}
-
-/* PRIZES TABLE */
-.prize-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px}
-.prize-row:last-child{border-bottom:none}
-.prize-left{display:flex;align-items:center;gap:10px}
-.prize-emoji{font-size:20px;width:28px;text-align:center}
-.prize-name{font-weight:600}
-.prize-chance{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--card-bg);border:1px solid var(--border);padding:3px 8px;border-radius:20px}
-
-/* CHECK-IN */
-.checkin-hero{background:linear-gradient(135deg,#0a1a12 0%,#0d1220 100%);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius);padding:24px 20px;text-align:center;margin-bottom:12px}
-.checkin-title{font-size:22px;font-weight:800;margin-bottom:6px}
-.checkin-sub{font-size:13px;color:var(--muted)}
-.venue-lbl{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;display:block}
-.venue-select{width:100%;padding:13px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);font-weight:600;appearance:none;cursor:pointer;outline:none;margin-bottom:12px}
-.venue-select:focus{border-color:var(--green)}
-.checkin-btn{width:100%;padding:18px;background:linear-gradient(135deg,#1a7a42,var(--green));border:none;border-radius:var(--radius-sm);color:white;font-size:17px;font-weight:800;font-family:var(--font);cursor:pointer;transition:all .2s;letter-spacing:.3px;box-shadow:0 4px 28px rgba(46,204,113,.45),0 0 0 0 rgba(46,204,113,.4);margin-bottom:12px;animation:glowPulse 2s ease-in-out infinite}
-.checkin-btn:active:not(:disabled){transform:scale(.97)}
-.checkin-btn:disabled{opacity:.4;cursor:not-allowed}
-
-/* OTP BOX */
-.otp-box{display:none;background:var(--bg3);border:2px solid var(--green);border-radius:var(--radius);padding:24px;text-align:center;margin-bottom:12px;animation:fadeIn .3s ease}
-.otp-box.show{display:block}
-.otp-lbl{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:8px}
-.otp-code{font-size:48px;font-weight:800;font-family:var(--mono);letter-spacing:8px;color:var(--green);text-shadow:0 0 20px rgba(46,204,113,.4);margin:8px 0}
-.otp-venue{font-size:14px;color:var(--muted);margin-bottom:4px}
-.otp-timer{font-size:12px;color:var(--muted);font-family:var(--mono)}
-.otp-timer span{color:var(--fox)}
-.timer-expired{color:var(--red)!important}
-
-/* CHECK-IN RESULT */
-.cr-box{display:none;border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px}
-.cr-box.show{display:block;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
-.cr-box.success{background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.25)}
-.cr-box.already{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2)}
-.cr-icon{font-size:44px;margin-bottom:10px;display:block}
-.cr-title{font-size:18px;font-weight:800;margin-bottom:6px}
-.cr-sub{font-size:13px;color:var(--muted);line-height:1.5}
-.cr-stats{display:flex;justify-content:center;gap:20px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
-.crs-item{text-align:center}
-.crs-val{font-size:20px;font-weight:800;font-family:var(--mono);color:var(--fox)}
-.crs-lbl{font-size:10px;color:var(--muted);font-weight:600;margin-top:2px}
-
-/* VENUES LIST */
-.venue-card{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:opacity .15s}
-.venue-card:last-child{border-bottom:none}
-.venue-card:active{opacity:.7}
-.venue-icon{width:40px;height:40px;background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-.venue-info{flex:1;min-width:0}
-.venue-name{font-size:14px;font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.venue-meta{font-size:11px;color:var(--muted)}
-.venue-id{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--card-bg);border:1px solid var(--border);padding:3px 7px;border-radius:8px;flex-shrink:0}
-
-/* ACHIEVEMENTS */
-.ach-cat{margin-bottom:16px}
-.ach-cat-title{font-size:13px;font-weight:800;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.ach-cnt{font-size:10px;font-family:var(--mono);color:var(--muted);background:var(--card-bg);border:1px solid var(--border);padding:2px 6px;border-radius:10px;margin-left:auto}
-.ach-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.ach-item{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:12px;position:relative;overflow:hidden}
-.ach-item.done{background:rgba(245,166,35,.07);border-color:rgba(245,166,35,.25)}
-.ach-item.done::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(245,166,35,.05) 0%,transparent 60%)}
-.ach-emoji{font-size:24px;margin-bottom:6px;display:block}
-.ach-label{font-size:12px;font-weight:700;margin-bottom:3px}
-.ach-bonus{font-size:11px;color:var(--fox);font-family:var(--mono)}
-.ach-lock{font-size:10px;color:var(--muted2);font-family:var(--mono)}
-.ach-check{position:absolute;top:8px;right:8px;width:18px;height:18px;background:var(--fox);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px}
-
-/* LEADERBOARD */
-.top-hero{background:linear-gradient(135deg,#1a1030 0%,#0d1220 100%);border:1px solid rgba(124,92,252,.2);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px}
-.top-title{font-size:22px;font-weight:800;margin-bottom:4px}
-.top-sub{font-size:13px;color:var(--muted)}
-.leader-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);margin-bottom:6px;transition:transform .15s}
-.leader-row:active{transform:scale(.98)}
-.leader-row.me{background:rgba(124,92,252,.1);border-color:rgba(124,92,252,.3)}
-.leader-row.p1{background:rgba(255,215,0,.07);border-color:rgba(255,215,0,.25)}
-.leader-row.p2{background:rgba(192,192,192,.06);border-color:rgba(192,192,192,.2)}
-.leader-row.p3{background:rgba(205,127,50,.06);border-color:rgba(205,127,50,.2)}
-.leader-pos{font-size:16px;font-weight:800;font-family:var(--mono);width:32px;text-align:center;flex-shrink:0}
-.leader-av{width:36px;height:36px;background:linear-gradient(135deg,var(--fox),var(--fox2));border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-.leader-info{flex:1;min-width:0}
-.leader-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.leader-sub{font-size:11px;color:var(--muted);margin-top:1px}
-.leader-pts{font-size:16px;font-weight:800;font-family:var(--mono);color:var(--fox);flex-shrink:0}
-.my-pos-card{background:rgba(124,92,252,.08);border:1px solid rgba(124,92,252,.25);border-radius:var(--radius-sm);padding:12px 14px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:700}
-.my-pos-right{font-family:var(--mono);color:var(--accent2)}
-
-/* INVITES */
-.inv-hero{background:linear-gradient(135deg,#0e1a2a 0%,#0d1220 60%,#0a0b14 100%);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius);padding:24px 20px;margin-bottom:12px;position:relative;overflow:hidden;text-align:center}
-.inv-hero::before{content:'🎟️';position:absolute;right:-8px;top:-8px;font-size:80px;opacity:.07;transform:rotate(20deg)}
-.inv-hero-title{font-size:22px;font-weight:800;margin-bottom:6px}
-.inv-hero-sub{font-size:13px;color:var(--muted);line-height:1.5}
-.inv-available{display:inline-flex;align-items:center;gap:8px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:8px 20px;margin:14px 0 0;font-size:22px;font-weight:800;color:var(--fox)}
-.inv-available span{font-size:13px;font-weight:600;color:var(--muted)}
-.inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
-.inv-stat{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:12px 8px;text-align:center}
-.inv-stat-val{font-size:22px;font-weight:800;font-family:var(--mono);color:var(--fox);line-height:1}
-.inv-stat-lbl{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-top:4px}
-.inv-gen-btn{width:100%;padding:18px;background:linear-gradient(135deg,#a85c00,var(--fox));border:none;border-radius:var(--radius-sm);color:#0a0b14;font-size:17px;font-weight:800;font-family:var(--font);cursor:pointer;transition:all .2s;letter-spacing:.3px;box-shadow:0 4px 28px rgba(245,166,35,.4);margin-bottom:12px}
-.inv-gen-btn:active:not(:disabled){transform:scale(.97)}
-.inv-gen-btn:disabled{opacity:.4;cursor:not-allowed}
-.inv-code-box{display:none;background:var(--bg3);border:2px solid var(--fox);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
-.inv-code-box.show{display:block}
-.inv-code-lbl{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:8px}
-.inv-code{font-size:32px;font-weight:800;font-family:var(--mono);letter-spacing:6px;color:var(--fox);text-shadow:0 0 20px rgba(245,166,35,.35);margin:8px 0 16px;word-break:break-all}
-.inv-code-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.inv-copy-btn{padding:13px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
-.inv-copy-btn:active{transform:scale(.95)}
-.inv-copy-btn.copied{background:rgba(46,204,113,.1);border-color:rgba(46,204,113,.3);color:var(--green)}
-.inv-share-btn{padding:13px;background:linear-gradient(135deg,#0077c2,#229ed9);border:none;border-radius:var(--radius-sm);color:white;font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
-.inv-share-btn:active{transform:scale(.95)}
-.inv-code-note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
-.inv-recent-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
-.inv-recent-row:last-child{border-bottom:none}
-.inv-recent-code{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:2px;color:var(--text)}
-.inv-recent-used{font-size:11px;font-family:var(--mono)}
-.inv-recent-used.yes{color:var(--muted)}
-.inv-recent-used.no{color:var(--green)}
-.inv-recent-date{font-size:10px;color:var(--muted2)}
-.how-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
-.how-row:last-child{border-bottom:none}
-.how-num{width:28px;height:28px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--fox);flex-shrink:0}
-.how-text{font-size:13px;line-height:1.5}
-.how-text strong{color:var(--fox)}
-.inv-progress{margin-top:12px}
-.inv-progress-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.inv-progress-lbl{font-size:12px;color:var(--muted);font-weight:600}
-.inv-progress-val{font-size:13px;font-weight:800;color:var(--fox)}
-.inv-bar-bg{height:8px;background:rgba(255,255,255,.06);border-radius:10px;overflow:hidden}
-.inv-bar-fg{height:100%;background:linear-gradient(90deg,var(--fox),var(--fox2));border-radius:10px;transition:width .8s cubic-bezier(.4,0,.2,1);min-width:4px}
-
-/* STATES */
-.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;gap:12px;color:var(--muted);font-size:14px}
-.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--fox);border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.empty{text-align:center;padding:32px 20px;color:var(--muted)}
-.empty-icon{font-size:40px;margin-bottom:12px}
-.empty-text{font-size:14px;font-weight:600}
-.empty-sub{font-size:12px;margin-top:6px}
-.err-banner{background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.25);border-radius:var(--radius-sm);padding:12px 16px;font-size:13px;font-weight:600;color:#ff8a80;margin-bottom:12px;display:none}
-.err-banner.show{display:block}
-.ok-banner{background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.25);border-radius:var(--radius-sm);padding:12px 16px;font-size:13px;font-weight:600;color:#69f0ae;margin-bottom:12px;display:none}
-.ok-banner.show{display:block;animation:fadeIn .3s ease}
-.welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px}
-.welcome-fox{font-size:72px;margin-bottom:16px;animation:float 3s ease-in-out infinite}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-@keyframes glowPulse{0%,100%{box-shadow:0 4px 28px rgba(46,204,113,.45),0 0 0 0 rgba(46,204,113,.3)}50%{box-shadow:0 4px 28px rgba(46,204,113,.6),0 0 20px 4px rgba(46,204,113,.2)}}
-.welcome-title{font-size:26px;font-weight:800;margin-bottom:8px}
-.welcome-sub{font-size:14px;color:var(--muted);line-height:1.6;max-width:280px}
-.screen-title{font-size:20px;font-weight:800;margin-bottom:4px}
-/* MAP SCREEN */
-.map-hero{background:linear-gradient(135deg,#0a1a12 0%,#0d1220 100%);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px}
-.map-title{font-size:22px;font-weight:800;margin-bottom:4px}
-.map-sub{font-size:13px;color:var(--muted)}
-.map-iframe{width:100%;height:340px;border:none;border-radius:var(--radius);margin-bottom:12px;display:block}
-.venue-map-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .15s;text-decoration:none;color:var(--text)}
-.venue-map-card:active{transform:scale(.98);opacity:.85}
-.venue-map-icon{width:44px;height:44px;background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.venue-map-info{flex:1;min-width:0}
-.venue-map-name{font-size:14px;font-weight:700;margin-bottom:2px}
-.venue-map-addr{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.venue-map-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;flex-shrink:0}
-.badge-trial{background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);color:var(--fox)}
-.badge-partner{background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.25);color:var(--green)}
-.map-filter{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px}
-.map-filter-btn{padding:7px 14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:20px;font-size:12px;font-weight:700;font-family:var(--font);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0}
-.map-filter-btn.active{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.3);color:var(--green)}
-
-.screen-sub{font-size:13px;color:var(--muted);margin-bottom:16px}
-  /* RECEIPT */
-.receipt-box{display:none;background:linear-gradient(135deg,#0a1a12 0%,#0d1220 100%);border:1px solid rgba(46,204,113,.2);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px;animation:fadeIn .3s ease}
-.receipt-box.show{display:block}
-.receipt-title{font-size:16px;font-weight:800;margin-bottom:4px}
-.receipt-sub{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5}
-.receipt-input{width:100%;padding:14px 16px;background:var(--bg3);border:2px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:20px;font-family:var(--mono);font-weight:800;text-align:center;outline:none;margin-bottom:10px}
-.receipt-input:focus{border-color:var(--green)}
-.receipt-input::placeholder{color:var(--muted2);font-size:14px;font-weight:500}
-.receipt-btn{width:100%;padding:14px;background:linear-gradient(135deg,#1a7a42,var(--green));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;font-family:var(--font);cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(46,204,113,.3)}
-.receipt-btn:active:not(:disabled){transform:scale(.97)}
-.receipt-btn:disabled{opacity:.4;cursor:not-allowed}
-.receipt-result{display:none;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.25);border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
-.receipt-result.show{display:block}
-.receipt-saved{font-size:28px;font-weight:800;color:var(--green);font-family:var(--mono)}
-.receipt-detail{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
-.savings-card{background:rgba(46,204,113,.06);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius);padding:16px;margin-bottom:12px}
-.savings-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
-.savings-lbl{font-size:12px;color:var(--muted);font-weight:600}
-.savings-val{font-size:14px;font-weight:800;font-family:var(--mono);color:var(--green)}
-</style>
-</head>
-<body>
-<div id="app">
-
-  <header class="header">
-    <div class="logo">
-      <div class="logo-icon" style="background:none;box-shadow:none;padding:0"><img src="data:image/png;base64,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" style="width:32px;height:32px;object-fit:contain;display:block" alt=""/></div>
-      FoxPot
-    </div>
-   <span class="ver-badge">V26</span>
-  </header>
-
-  <!-- PROFIL -->
-  <section class="screen active" id="screen-profile">
-    <div id="pLoading" class="loading"><div class="spinner"></div>Ładowanie profilu…</div>
-    <div id="pContent" style="display:none">
-      <div class="profile-hero" style="position:relative">
-        <div style="position:absolute;top:16px;right:16px;text-align:right">
-          <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px">WARTOŚĆ Z FOXPOT</div>
-          <div style="font-size:22px;font-weight:800;color:var(--green);font-family:var(--mono);line-height:1.2" id="pSaved">0 zł</div>
-        </div>
-        <div class="profile-avatar" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));box-shadow:0 8px 24px rgba(245,166,35,.2)"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="58" height="58" style="display:block;margin:2px auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
-        <div class="profile-name" id="pName">Fox</div>
-        <div class="profile-tag" id="pTag">@username</div>
-        <div class="founder-badge" id="pFounder" style="display:none">👑 <span id="pFounderTxt"></span></div>
-        <div class="stats-grid">
-          <div class="stat-box fox-color"><div class="stat-val" id="pRating">0</div><div class="stat-lbl">PUNKTY</div></div>
-          <div class="stat-box purple-color"><div class="stat-val" id="pInvites">0</div><div class="stat-lbl">ZAPR.</div></div>
-          <div class="stat-box green-color"><div class="stat-val" id="pVisits">0</div><div class="stat-lbl">WIZYTY</div></div>
-        </div>
-      </div>
-      
-      <div class="streak-card">
-        <div class="card-title">🔥 Streak</div>
-        <div class="streak-row"><span class="streak-lbl" id="pStreakLbl">Do bonusu</span><span class="streak-val" id="pStreakVal">0 dni</span></div>
-        <div class="bar-bg"><div class="bar-fg" id="pStreakBar" style="width:0%"></div></div>
-        <div class="streak-row" style="margin-top:8px;margin-bottom:0">
-          <span class="streak-lbl">Rekord</span>
-          <span class="streak-val" id="pStreakBest" style="color:var(--muted)">0 dni</span>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">📍 Informacje</div>
-        <div class="info-grid">
-          <div class="info-cell"><div class="info-lbl">Miasto</div><div class="info-val" id="pCity">Warsaw</div></div>
-          <div class="info-cell">
-            <div class="info-lbl">Dzielnica</div>
-            <div class="info-val">
-              <span id="pDistrict">—</span>
-              <button class="change-btn" onclick="openDistrictModal()">zmień</button>
-            </div>
-          </div>
-          <div class="info-cell"><div class="info-lbl">❄️ Freeze</div><div class="info-val" id="pFreeze">0</div></div>
-          <div class="info-cell"><div class="info-lbl">Spin dziś</div><div class="info-val" id="pSpinToday">—</div></div>
-        </div>
-      </div>
-    </div>
-    <div id="pError" class="err-banner"></div>
-    <div id="pUnauth" style="display:none">
-      <div class="welcome">
-        <div class="welcome-fox"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="80" height="80" style="display:block;margin:0 auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
-        <div class="welcome-title">THE FOXPOT CLUB</div>
-        <div class="welcome-sub">Otwórz tę aplikację przez bota Telegram, aby zobaczyć swój profil.</div>
-     </div>
-    </div>
-    <div style="display:flex;justify-content:center;gap:16px;padding:16px 0 8px">
-      <a href="/rules" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
-      <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
-      <a href="/privacy" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Polityka Prywatności</a>
-    </div>
-  </section>
-  <!-- CHECK-IN -->
-  <div id="consentOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(6px)">
-      <div style="background:#12131f;border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:28px 24px;max-width:380px;width:100%;text-align:center">
-        <div style="font-size:40px;margin-bottom:12px">🦊</div>
-        <div style="font-size:18px;font-weight:800;margin-bottom:8px">Zaakceptuj warunki</div>
-        <div style="font-size:13px;color:rgba(240,240,245,.5);line-height:1.7;margin-bottom:20px">
-          Aby korzystać z programu, zaakceptuj regulamin i politykę prywatności.
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-          <a href="/rules" target="_blank" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">📋 Regulamin →</a>
-          <a href="/privacy" target="_blank" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">🔒 Polityka Prywatności →</a>
-        </div>
-        <button id="consentAcceptBtn" onclick="acceptConsent()" style="width:100%;padding:14px;background:linear-gradient(135deg,#f5a623,#e8842a);border:none;border-radius:12px;color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">✅ Akceptuję i kontynuuję</button>
-      </div>
-    </div>
-  <section class="screen" id="screen-checkin">
-    <div class="checkin-hero">
-      <div class="checkin-title">📍 Check-in</div>
-      <div class="checkin-sub">Pokaż kod OTP personelowi lokalu</div>
-    </div>
-    <div id="ciErr" class="err-banner"></div>
-    <div id="ciOk" class="ok-banner"></div>
-    <div class="cr-box" id="crBox">
-      <span class="cr-icon" id="crIcon">✅</span>
-      <div class="cr-title" id="crTitle">Wizyta potwierdzona!</div>
-      <div class="cr-sub" id="crSub"></div>
-      <div class="cr-stats" id="crStats" style="display:none">
-        <div class="crs-item"><div class="crs-val" id="crVisits">0</div><div class="crs-lbl">WIZYTY</div></div>
-        <div class="crs-item"><div class="crs-val" id="crPoints">0</div><div class="crs-lbl">PUNKTY</div></div>
-      </div>
-    </div>
-    <div class="otp-box" id="otpBox">
-      <div class="otp-lbl">Pokaż ten kod personelowi</div>
-      <div class="otp-code" id="otpCode">000000</div>
-      <div class="otp-venue" id="otpVenue">Lokal</div>
-      <div class="otp-timer">Ważny przez: <span id="otpTimer">10:00</span></div>
-    </div>
-    <div class="receipt-box" id="receiptBox">
-      <div class="receipt-title">🧾 Wpisz kwotę rachunku</div>
-      <div class="receipt-sub">Wpisz kwotę którą zapłaciłeś (po zniżce FoxPot).<br>Zniżka: <strong id="receiptDiscount">10%</strong> w <strong id="receiptVenue">lokalu</strong></div>
-      <input class="receipt-input" id="receiptInput" type="number" inputmode="decimal" min="1" max="5000" placeholder="np. 45.00 zł" step="0.01"/>
-      <div style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.4;text-align:center">Kwota przybliżona · używana tylko do statystyk (anonimowo)</div>
-      <button class="receipt-btn" id="receiptBtn" onclick="submitReceipt()">💰 Zapisz rachunek</button>
-    </div>
-    <div class="receipt-box" id="categoryBox" style="display:none">
-       <div class="receipt-title" id="choiceTitle">🍽️ Co wybrałeś?</div>
-       <div class="receipt-sub" id="choiceSub">Wybierz danie lub kategorię · +1 pkt</div>
-       <div id="choiceScreen1">
-         <div id="dishButtons" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
-         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-           <button class="d-btn" onclick="showChoiceScreen2()">➕ Inne</button>
-           <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="skipChoice()">Pomiń →</button>
-         </div>
-       </div>
-       <div id="choiceScreen2" style="display:none">
-         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-           <button class="d-btn" onclick="pickAggCategory('main')">🍽 Główne</button>
-           <button class="d-btn" onclick="pickAggCategory('snack')">🥗 Przystawka</button>
-           <button class="d-btn" onclick="pickAggCategory('dessert')">🍰 Deser</button>
-           <button class="d-btn" onclick="pickAggCategory('drink')">☕ Napój</button>
-           <button class="d-btn" onclick="pickAggCategory('alcohol')">🍺 Alkohol</button>
-           <button class="d-btn" onclick="pickAggCategory('other')">📦 Inne</button>
-         </div>
-         <button class="d-btn" style="width:100%;background:rgba(124,92,252,.1);border-color:rgba(124,92,252,.3);color:var(--accent2)" onclick="showChoiceScreen3()">✍️ Wpisz swoje (+mini bonus)</button>
-       </div>
-       <div id="choiceScreen3" style="display:none">
-         <div style="margin-bottom:10px">
-           <select id="customCatSelect" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:8px">
-             <option value="">— Wybierz kategorię —</option>
-             <option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option>
-             <option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option>
-           </select>
-           <input id="customDishInput" type="text" maxlength="30" placeholder="Np. kaczka" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:4px"/>
-           <div style="font-size:11px;color:var(--muted)">1–2 słowa, bez linków · +1 pkt bonus</div>
-           <div id="customError" style="font-size:12px;color:var(--red);margin-top:4px;display:none"></div>
-         </div>
-         <button class="d-btn" style="width:100%;background:rgba(124,92,252,.15);border-color:rgba(124,92,252,.3);color:var(--accent2);font-weight:700" onclick="submitCustomDish()">💾 Zapisz (+mini bonus)</button>
-       </div>
-       <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Anonimowo • bonus dla Ciebie</div>
-     </div>
-     <div class="receipt-box" id="reasonBox" style="display:none">
-      <div class="receipt-title">⚡ Dlaczego tu?</div>
-      <div class="receipt-sub">1 klik · anonimowo · +1 pkt</div>
-      <div class="d-grid" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
-        <button class="d-btn" onclick="pickReason('fast')">⚡ Szybko</button>
-        <button class="d-btn" onclick="pickReason('tasty')">🔥 Smacznie</button>
-        <button class="d-btn" onclick="pickReason('cheap')">💸 Tanio</button>
-        <button class="d-btn" onclick="pickReason('chill')">🧘 Spokojnie</button>
-        <button class="d-btn" onclick="pickReason('social')">👥 Na spotkania</button>
-        <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="pickReason('skip')">Pomiń →</button>
-      </div>
-    </div>
-    <div class="receipt-result" id="receiptResult">
-      <span style="font-size:36px;display:block;margin-bottom:8px">💰</span>
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">Rachunek zapisany!</div>
-      <div class="receipt-saved" id="receiptSaved">Zaoszczędzono: 0 zł</div>
-      <div class="receipt-detail" id="receiptDetail"></div>
-    </div>
-    <label class="venue-lbl">Wybierz lokal</label>
-    <select class="venue-select" id="venueSelect"><option value="">— wybierz lokal —</option></select>
-    <button class="checkin-btn" id="ciBtn" onclick="doCheckin()">Generuj OTP ✓</button>
-    <div class="card">
-      <div class="card-title">AKTYWNE LOKALE</div>
-      <div id="venuesList"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-  </section>
-
-  <!-- SPIN -->
-  <section class="screen" id="screen-spin">
-    <div class="spin-hero">
-      <div class="spin-title">🎁 Daily Bonus</div>
-      <div class="spin-sub">Twój codzienny bonus!</div>
-      <div class="slot-machine">
-        <div class="slot-reels" id="slotReels">
-          <div class="reel" id="r0"><span id="s0">🦊</span></div>
-          <div class="reel" id="r1"><span id="s1">💎</span></div>
-          <div class="reel" id="r2"><span id="s2">⭐</span></div>
-          <div class="reel" id="r3"><span id="s3">🎁</span></div>
-          <div class="reel" id="r4"><span id="s4">👑</span></div>
-        </div>
-        <div class="slot-dots">
-          <div class="dot on"></div><div class="dot"></div><div class="dot"></div>
-        </div>
-      </div>
-      <button class="spin-btn" id="spinBtn" onclick="doSpin()">🎁 Odbierz bonus!</button>
-      <div class="spin-result" id="spinResult">
-        <span class="result-emoji" id="resEmoji">🎁</span>
-        <div class="result-label" id="resLabel">+2 punkty!</div>
-        <div class="result-sub" id="resSub">Następny spin jutro</div>
-        <div class="spin-stats" id="spinStats" style="display:none">
-          <div class="ss-item"><div class="ss-val" id="ssRating">0</div><div class="ss-lbl">PUNKTY</div></div>
-          <div class="ss-item"><div class="ss-val" id="ssInvites">0</div><div class="ss-lbl">ZAPR.</div></div>
-          <div class="ss-item"><div class="ss-val" id="ssFreeze">0</div><div class="ss-lbl">FREEZE</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">NAGRODY I SZANSE</div>
-      <div class="prize-row"><div class="prize-left"><span class="prize-emoji">🎁</span><span class="prize-name">+2 punkty</span></div><span class="prize-chance">60%</span></div>
-      <div class="prize-row"><div class="prize-left"><span class="prize-emoji">⭐</span><span class="prize-name">+5 punktów</span></div><span class="prize-chance">20%</span></div>
-      <div class="prize-row"><div class="prize-left"><span class="prize-emoji">🎟️</span><span class="prize-name">+1 zaproszenie</span></div><span class="prize-chance">10%</span></div>
-      <div class="prize-row"><div class="prize-left"><span class="prize-emoji">💎</span><span class="prize-name">+15 punktów</span></div><span class="prize-chance">7%</span></div>
-      <div class="prize-row"><div class="prize-left"><span class="prize-emoji">❄️</span><span class="prize-name">+1 Freeze streak</span></div><span class="prize-chance">3%</span></div>
-    </div>
-  </section>
-
-  <!-- ZAPROSZENIA -->
-  <section class="screen" id="screen-invites">
-    <div id="invLoading" class="loading"><div class="spinner"></div>Ładowanie…</div>
-    <div id="invContent" style="display:none">
-      <div class="inv-hero">
-        <div class="inv-hero-title">🎟️ Zaproszenia</div>
-        <div class="inv-hero-sub">Zapraszaj znajomych do The FoxPot Club.<br>Zyskujesz punkty za każdą aktywną osobę.</div>
-        <div class="inv-available"><span id="invCount">0</span><span>dostępnych zaproszeń</span></div>
-      </div>
-      <div class="inv-stats">
-        <div class="inv-stat"><div class="inv-stat-val" id="invTotal">0</div><div class="inv-stat-lbl">ZAPROSZONYCH</div></div>
-        <div class="inv-stat"><div class="inv-stat-val" id="invActive">0</div><div class="inv-stat-lbl">AKTYWNYCH</div></div>
-        <div class="inv-stat"><div class="inv-stat-val" id="invGenerated">0</div><div class="inv-stat-lbl">KODÓW</div></div>
-      </div>
-      <div class="card" id="invProgressCard" style="display:none">
-        <div class="card-title">AKTYWNOŚĆ ZAPROSZEŃ</div>
-        <div class="inv-progress">
-          <div class="inv-progress-row"><span class="inv-progress-lbl">Aktywnych Fox</span><span class="inv-progress-val" id="invPct">0%</span></div>
-          <div class="inv-bar-bg"><div class="inv-bar-fg" id="invBar" style="width:0%"></div></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:6px" id="invProgressTxt"></div>
-        </div>
-      </div>
-      <div id="invErr" class="err-banner"></div>
-      <button class="inv-gen-btn" id="invGenBtn" onclick="genInvite()">🎟️ Generuj kod zaproszenia</button>
-      <div class="inv-code-box" id="invCodeBox">
-        <div class="inv-code-lbl">Twój kod zaproszenia</div>
-        <div class="inv-code" id="invCodeTxt">XXXXXXXXXX</div>
-        <div class="inv-code-actions">
-          <button class="inv-copy-btn" id="invCopyBtn" onclick="copyCode()">📋 Kopiuj kod</button>
-          <button class="inv-share-btn" onclick="shareCode()">✈️ Wyślij w Telegram</button>
-        </div>
-        <div class="inv-code-note">Prześlij ten kod znajomemu. Wpisze go jako:<br><strong>/start TWÓJ_KOD</strong> w bocie @thefoxpot_club_bot</div>
-      </div>
-      <div class="card" id="invRecentCard" style="display:none">
-        <div class="card-title">OSTATNIE KODY</div>
-        <div id="invRecentList"></div>
-      </div>
-      <div class="card">
-        <div class="card-title">JAK TO DZIAŁA</div>
-        <div class="how-row"><div class="how-num">1</div><div class="how-text">Generujesz kod (kosztuje <strong>1 zaproszenie</strong>)</div></div>
-        <div class="how-row"><div class="how-num">2</div><div class="how-text">Znajomy wpisuje <strong>/start KOD</strong> w bocie</div></div>
-        <div class="how-row"><div class="how-num">3</div><div class="how-text">Ty dostajesz <strong>+1 pkt</strong> gdy zarejestruje się przez Twój kod</div></div>
-        <div class="how-row"><div class="how-num">4</div><div class="how-text">Ty dostajesz <strong>+5 pkt</strong> gdy zrobi pierwszą wizytę w lokalu</div></div>
-        <div class="how-row"><div class="how-num">5</div><div class="how-text">Za każde <strong>5 wizyt</strong> w lokalach automatycznie dostajesz nowe zaproszenie</div></div>
-      </div>
-    </div>
-    <div id="invUnauth" style="display:none">
-      <div class="welcome">
-        <div class="welcome-fox">🎟️</div>
-        <div class="welcome-title">Zaproszenia</div>
-        <div class="welcome-sub">Otwórz przez Telegram, aby zarządzać zaproszeniami.</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- OSIĄGNIĘCIA -->
-  <section class="screen" id="screen-achievements">
-    <div class="screen-title">🏆 Osiągnięcia</div>
-    <div class="screen-sub" id="achSummary">Ładowanie…</div>
-    <div id="achLoading" class="loading"><div class="spinner"></div></div>
-    <div id="achContent"></div>
-  </section>
-
-  <!-- TOP -->
-  <section class="screen" id="screen-top">
-    <div class="top-hero">
-      <div class="top-title">🦊 Top Fox</div>
-      <div class="top-sub">Ranking 10 najlepszych graczy</div>
-    </div>
-    <div id="topLoading" class="loading"><div class="spinner"></div></div>
-    <div id="topContent"></div>
-  </section>
-
-
- <!-- ═══ MAPA LOKALI ═══ -->
-  <section class="screen" id="screen-map">
-    <div class="map-hero">
-      <div class="map-title">🗺️ Mapa Lokali</div>
-      <div class="map-sub">Partnerzy The FoxPot Club w Warszawie</div>
-    </div>
-
-    <input id="mapSearch" type="text" placeholder="🔍 Szukaj lokalu…" style="width:100%;padding:12px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);outline:none;margin-bottom:10px" oninput="renderMapList()"/>
-
-    <div class="map-filter">
-      <button class="map-filter-btn active" onclick="filterVenueMap('all',this)">Wszystkie</button>
-      <button class="map-filter-btn" onclick="filterVenueMap('partner',this)">✅ Partnerzy</button>
-      <button class="map-filter-btn" onclick="filterVenueMap('trial',this)">🎟️ Trial</button>
-    </div>
-    <div class="map-filter" style="margin-top:6px">
-      <button class="map-filter-btn active" onclick="sortVenueMap('default',this)">Domyślne</button>
-      <button class="map-filter-btn" onclick="sortVenueMap('most',this)">🔥 Popularne</button>
-      <button class="map-filter-btn" onclick="sortVenueMap('my',this)">🦊 Moje</button>
-    </div>
-
-   <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
-
-    <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
-    <div id="mapList"></div>
-  </section>
-
-  <!-- VENUE DETAIL MODAL -->
-  <div class="modal-overlay" id="venueModal" onclick="if(event.target===this)this.classList.remove('open')">
-    <div class="modal-sheet" id="venueModalContent"></div>
-  </div>
-
-  <!-- BOTTOM NAV -->
-  <nav class="bottom-nav">
-    <button class="nav-btn active" id="nav-profile"      onclick="go('profile')">      <span class="nav-icon"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="22" height="22" style="display:inline-block;vertical-align:middle" alt="🦊" onerror="this.outerHTML='🦊'"/></span>Profil</button>
-    <button class="nav-btn"        id="nav-checkin"      onclick="go('checkin')">      <span class="nav-icon">📍</span>Check-in</button>
-    <button class="nav-btn"        id="nav-map"          onclick="go('map')">          <span class="nav-icon">🗺️</span>Mapa</button>
-    <button class="nav-btn"        id="nav-spin"         onclick="go('spin')">         <span class="nav-icon">🎁</span>Bonus</button>
-    <button class="nav-btn"        id="nav-achievements" onclick="go('achievements')"> <span class="nav-icon">🏆</span>Osiągnięcia</button>
-  </nav>
-
-  <!-- DISTRICT MODAL -->
-  <div class="modal-overlay" id="districtModal" onclick="closeModalOutside(event)">
-    <div class="modal-sheet">
-      <div class="modal-title">📍 Wybierz dzielnicę</div>
-      <div class="d-grid" id="dGrid"></div>
-      <button class="modal-close" onclick="closeDistrictModal()">Zamknij</button>
-    </div>
-  </div>
-
-</div>
-<script>
-const BASE = window.location.origin;
-const TG   = window.Telegram?.WebApp;
-if(TG){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor('#0a0b14')}
-const TG_USER   = TG?.initDataUnsafe?.user || null;
-const INIT_DATA = TG?.initData || '';
-
-const DISTRICTS = [
-  "Śródmieście","Praga-Południe","Mokotów","Żoliborz","Wola","Ursynów",
-  "Praga-Północ","Targówek","Bielany","Bemowo","Białołęka","Wilanów","Inna dzielnica"
+/* ═══════════════════════════════════════════════════════════════
+   РАЙОНИ ВАРШАВИ
+═══════════════════════════════════════════════════════════════ */
+const WARSAW_DISTRICTS = [
+  "Śródmieście", "Praga-Południe", "Mokotów", "Żoliborz",
+  "Wola", "Ursynów", "Praga-Północ", "Targówek",
+  "Bielany", "Bemowo", "Białołęka", "Wilanów", "Inna dzielnica",
 ];
 
-const S = {
-  cur:'profile', profileLoaded:false, venuesLoaded:false,
-  achLoaded:false, topLoaded:false, invLoaded:false,
-  profile:null, venues:[], otpTimer:null,
-  spinDone:false, district:null, lastCode:null,
-};
-
-function go(name){
-  if(S.cur===name)return;
-  S.cur=name;
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('screen-'+name).classList.add('active');
-  document.getElementById('nav-'+name).classList.add('active');
-  TG?.HapticFeedback?.selectionChanged();
-  if(name==='profile'&&!S.profileLoaded)      loadProfile();
-  if(name==='checkin'&&!S.venuesLoaded)        loadVenues();
-  if(name==='achievements'&&!S.achLoaded)      loadAchievements();
-  if(name==='top'&&!S.topLoaded)               loadTop();
-  if(name==='invites'&&!S.invLoaded)           loadInvites();
-  if(name==='map'&&!S_map.loaded)               loadMap();
-}
-
-async function api(path,method='GET',body=null){
-  const opts={method,headers:{'Content-Type':'application/json','X-Telegram-Init-Data':INIT_DATA}};
-  if(body) opts.body=JSON.stringify(body);
-  const res=await fetch(BASE+path,opts);
-  const data=await res.json();
-  if(!res.ok) throw new Error(data?.error||'HTTP '+res.status);
-  return data;
-}
-
-async function loadProfile(){
-  S.profileLoaded=true;
-  const $l=q('pLoading'),$c=q('pContent'),$e=q('pError'),$u=q('pUnauth');
-  if(!TG_USER){$l.style.display='none';$u.style.display='block';return}
-  try{
-    const d=await api('/api/profile');
-    S.profile=d; S.district=d.district;
-    q('pName').textContent=(TG_USER.first_name||'')+' '+(TG_USER.last_name||'');
-    q('pTag').textContent=TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4);
-    if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='FOUNDER FOX #'+d.founder_number}
-    q('pRating').textContent=d.rating??0;
-    q('pInvites').textContent=d.invites??0;
-    q('pVisits').textContent=d.total_visits??0;
-    const cur=d.streak_current||0,best=d.streak_best||0;
-    q('pStreakVal').textContent=cur+' dni';
-    q('pStreakBest').textContent=best+' dni';
-    let pct=0,lbl='Streak';
-    if(cur<7){pct=(cur/7)*100;lbl=`Do +5 pkt: ${7-cur} dni`}
-    else if(cur<30){pct=(cur/30)*100;lbl=`Do +15 pkt: ${30-cur} dni`}
-    else if(cur<90){pct=(cur/90)*100;lbl=`Do +50 pkt: ${90-cur} dni`}
-    else if(cur<365){pct=(cur/365)*100;lbl=`Do +200 pkt: ${365-cur} dni`}
-    else{pct=100;lbl='🏆 Maksymalny!'}
-    q('pStreakBar').style.width=Math.min(100,pct)+'%';
-    q('pStreakLbl').textContent=lbl;
-    q('pCity').textContent=d.city||'Warsaw';
-    q('pDistrict').textContent=d.district||'—';
-    q('pFreeze').textContent=d.streak_freeze_available??0;
-    q('pSpinToday').textContent=d.spun_today?'✅ '+(d.spin_prize||'kręcono'):'❌ nie kręcono';
-    q('pSaved').textContent=(d.total_saved||0).toFixed(0)+' zł';
-    $l.style.display='none'; $c.style.display='block';
-    S.spinDone=!!d.spun_today;
-    if(S.spinDone) markSpinDone(d.spin_prize);
-  }catch(e){
-    $l.style.display='none';
-    if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
-    else{$e.textContent='⚠️ '+e.message;$e.classList.add('show')}
+async function sendDistrictKeyboard(ctx, mode = "register") {
+  const text = mode === "register"
+    ? `📍 Ostatni krok!\n\nW jakiej dzielnicy Warszawy mieszkasz?\n\n(Pomaga nam znaleźć lokale w pobliżu)`
+    : `📍 Wybierz swoją dzielnicę:`;
+  const buttons = [];
+  const main = WARSAW_DISTRICTS.slice(0, -1);
+  for (let i = 0; i < main.length; i += 2) {
+    const row = [Markup.button.callback(main[i], `district_${main[i]}`)];
+    if (main[i + 1]) row.push(Markup.button.callback(main[i + 1], `district_${main[i + 1]}`));
+    buttons.push(row);
   }
+  buttons.push([Markup.button.callback("🗺️ Inna dzielnica", `district_Inna dzielnica`)]);
+  await ctx.reply(text, Markup.inlineKeyboard(buttons));
 }
 
-function openDistrictModal(){
-  const grid=q('dGrid');
-  grid.innerHTML=DISTRICTS.map(d=>
-    `<button class="d-btn${S.district===d?' sel':''}" onclick="selectDistrict('${d.replace(/'/g,"\\'")}')">${esc(d)}</button>`
-  ).join('');
-  q('districtModal').classList.add('open');
-  TG?.HapticFeedback?.selectionChanged();
-}
-function closeDistrictModal(){q('districtModal').classList.remove('open')}
-function closeModalOutside(e){if(e.target===q('districtModal'))closeDistrictModal()}
-async function selectDistrict(d){
-  if(!TG_USER)return;
-  try{
-    await api('/api/district','POST',{district:d});
-    S.district=d;
-    q('pDistrict').textContent=d;
-    closeDistrictModal();
-    TG?.HapticFeedback?.notificationOccurred('success');
-  }catch(e){alert('Błąd: '+e.message)}
+/* ═══════════════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════════════ */
+function warsawDayKey(d = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(d);
+  const y   = parts.find(p => p.type === "year").value;
+  const m   = parts.find(p => p.type === "month").value;
+  const day = parts.find(p => p.type === "day").value;
+  return `${y}-${m}-${day}`;
 }
 
-async function loadVenues(){
-  S.venuesLoaded=true;
-  try{
-    const data=await api('/api/venues');
-    S.venues=data.venues||[];
-    const sel=q('venueSelect');
-    sel.innerHTML='<option value="">— wybierz lokal —</option>';
-    S.venues.forEach(v=>{
-      const o=document.createElement('option');
-      o.value=v.id; o.textContent=v.name+' ('+v.city+')';
-      sel.appendChild(o);
-    });
-    const list=q('venuesList');
-    if(!S.venues.length){list.innerHTML='<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">Brak aktywnych lokali</div></div>';return}
-    list.innerHTML=S.venues.map(v=>`
-      <div class="venue-card" onclick="pickVenue(${v.id})">
-        <div class="venue-icon">🏪</div>
-        <div class="venue-info"><div class="venue-name">${esc(v.name)}</div><div class="venue-meta">${esc(v.city)}${v.address?' · '+esc(v.address):''}</div></div>
-        <span class="venue-id">ID ${v.id}</span>
-      </div>`).join('');
-  }catch(e){
-    q('venuesList').innerHTML='<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd ładowania</div></div>';
+function warsawWeekBounds(d = new Date()) {
+  const wDay = warsawDayKey(d);
+  const dt   = new Date(`${wDay}T00:00:00+01:00`);
+  const dow  = dt.getDay();
+  const diff = (dow === 0 ? -6 : 1 - dow);
+  const mon  = new Date(dt.getTime() + diff * 86400000);
+  const sun  = new Date(mon.getTime() + 6  * 86400000);
+  const fmt  = x => x.toISOString().slice(0, 10);
+  return { mon: fmt(mon), sun: fmt(sun) };
+}
+
+function warsawHour() {
+  return Number(new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Warsaw", hour: "numeric", hour12: false,
+  }).format(new Date()));
+}
+
+function otp6() {
+  return String(crypto.randomInt(100000, 999999));
+}
+
+function genInviteCode(len = 10) {
+  const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(len);
+  let out = "";
+  for (let i = 0; i < len; i++) out += alpha[bytes[i] % alpha.length];
+  return out;
+}
+
+function pinHash(pin, salt) {
+  return crypto.createHmac("sha256", salt).update(pin).digest("hex");
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function isAdmin(userId) {
+  return ADMIN_TG_ID && String(userId) === String(ADMIN_TG_ID);
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+const CONSENT_VERSION = "1.1";
+
+async function hasConsent(userId) {
+  const r = await pool.query(
+    `SELECT consent_version FROM fp1_foxes WHERE user_id=$1 AND consent_at IS NOT NULL LIMIT 1`,
+    [userId]
+  );
+  return r.rowCount > 0 && r.rows[0].consent_version === CONSENT_VERSION;
+}
+
+async function saveConsent(userId) {
+  await pool.query(
+    `UPDATE fp1_foxes SET consent_at=NOW(), consent_version=$1 WHERE user_id=$2`,
+    [CONSENT_VERSION, userId]
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SCHEMA HELPERS
+═══════════════════════════════════════════════════════════════ */
+async function hasColumn(table, col) {
+  const r = await pool.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema='public' AND table_name=$1 AND column_name=$2 LIMIT 1`,
+    [table, col]
+  );
+  return r.rowCount > 0;
+}
+
+async function ensureColumn(table, col, ddl) {
+  if (!(await hasColumn(table, col)))
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+}
+
+async function ensureIndex(sql) {
+  try { await pool.query(sql); }
+  catch (e) { console.warn("INDEX_WARN", e?.message || e); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MIGRATIONS
+═══════════════════════════════════════════════════════════════ */
+let COUNTED_DAY_COL = "war_day";
+
+async function migrate() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venues (
+      id           BIGSERIAL PRIMARY KEY,
+      name         TEXT        NOT NULL DEFAULT 'Venue',
+      city         TEXT        NOT NULL DEFAULT 'Warsaw',
+      address      TEXT        NOT NULL DEFAULT '',
+      pin_hash     TEXT,
+      pin_salt     TEXT,
+      status       TEXT        NOT NULL DEFAULT 'active',
+      approved     BOOLEAN     NOT NULL DEFAULT FALSE,
+      fox_nick     TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_foxes (
+      id                   BIGSERIAL PRIMARY KEY,
+      user_id              BIGINT UNIQUE,
+      username             TEXT,
+      rating               INT         NOT NULL DEFAULT 1,
+      invites              INT         NOT NULL DEFAULT 3,
+      invites_from_5visits INT         NOT NULL DEFAULT 0,
+      city                 TEXT        NOT NULL DEFAULT 'Warsaw',
+      invited_by_user_id   BIGINT,
+      invite_code_used     TEXT,
+      invite_used_at       TIMESTAMPTZ,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_checkins (
+      id                    BIGSERIAL PRIMARY KEY,
+      venue_id              BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      user_id               BIGINT,
+      otp                   TEXT        NOT NULL,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at            TIMESTAMPTZ NOT NULL,
+      confirmed_at          TIMESTAMPTZ,
+      confirmed_by_venue_id BIGINT,
+      war_day               TEXT
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_counted_visits (
+      id         BIGSERIAL PRIMARY KEY,
+      venue_id   BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      user_id    BIGINT NOT NULL,
+      war_day    TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_invites (
+      id                 BIGSERIAL PRIMARY KEY,
+      code               TEXT UNIQUE NOT NULL,
+      max_uses           INT  NOT NULL DEFAULT 1,
+      uses               INT  NOT NULL DEFAULT 0,
+      created_by_user_id BIGINT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_invite_uses (
+      id              BIGSERIAL PRIMARY KEY,
+      invite_id       BIGINT NOT NULL REFERENCES fp1_invites(id) ON DELETE CASCADE,
+      used_by_user_id BIGINT NOT NULL,
+      used_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(invite_id, used_by_user_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_status (
+      id         BIGSERIAL PRIMARY KEY,
+      venue_id   BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      type       TEXT        NOT NULL,
+      reason     TEXT,
+      starts_at  TIMESTAMPTZ NOT NULL,
+      ends_at    TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_stamps (
+      id         BIGSERIAL PRIMARY KEY,
+      venue_id   BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      user_id    BIGINT NOT NULL,
+      emoji      TEXT   NOT NULL DEFAULT '⭐',
+      delta      INT    NOT NULL DEFAULT 1,
+      note       TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_achievements (
+      id               BIGSERIAL PRIMARY KEY,
+      user_id          BIGINT      NOT NULL,
+      achievement_code TEXT        NOT NULL,
+      unlocked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, achievement_code)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_daily_spins (
+      id             BIGSERIAL PRIMARY KEY,
+      user_id        BIGINT    NOT NULL,
+      spin_date      DATE      NOT NULL,
+      prize_type     TEXT      NOT NULL,
+      prize_value    INT       NOT NULL DEFAULT 0,
+      prize_label    TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, spin_date)
+    )
+  `);
+
+   /* ── V26: таблиця receipts (чеки) ── */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_receipts (
+      id               BIGSERIAL PRIMARY KEY,
+      user_id          BIGINT      NOT NULL,
+      venue_id         BIGINT      NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      checkin_id       BIGINT,
+      amount_paid      NUMERIC(10,2) NOT NULL,
+      amount_original  NUMERIC(10,2) NOT NULL,
+      discount_percent NUMERIC(5,2)  NOT NULL DEFAULT 0,
+      discount_saved   NUMERIC(10,2) NOT NULL DEFAULT 0,
+      bonuses_awarded  BOOLEAN     NOT NULL DEFAULT FALSE,
+      war_day          TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_receipts_user  ON fp1_receipts(user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_receipts_venue ON fp1_receipts(venue_id)`);
+   await ensureColumn("fp1_receipts", "category", "TEXT");
+  /* ── V24: нова таблиця venue_obligations ── */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_obligations (
+      id                 BIGSERIAL PRIMARY KEY,
+      user_id            BIGINT      NOT NULL,
+      venue_id           VARCHAR(50) NOT NULL,
+      venue_name         VARCHAR(200),
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at         TIMESTAMPTZ NOT NULL,
+      fulfilled          BOOLEAN     NOT NULL DEFAULT FALSE,
+      fulfilled_at       TIMESTAMPTZ,
+      violation_count    INT         NOT NULL DEFAULT 0,
+      banned_until       TIMESTAMPTZ,
+      last_violation_at  TIMESTAMPTZ
+    )
+  `);
+  await pool.query(`UPDATE fp1_venues SET discount_percent=10 WHERE discount_percent!=10`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_obligations_expires ON fp1_venue_obligations(expires_at)`);
+
+  await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
+  await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
+  await ensureColumn("fp1_foxes",          "invites_from_5visits",  "INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_foxes",          "invited_by_user_id",    "BIGINT");
+  await ensureColumn("fp1_foxes",          "invite_code_used",      "TEXT");
+  await ensureColumn("fp1_foxes",          "invite_used_at",        "TIMESTAMPTZ");
+  await ensureColumn("fp1_venues",         "address",               "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "fox_nick",              "TEXT");
+  await ensureColumn("fp1_venues",         "approved",              "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_venues",         "ref_code",              "TEXT UNIQUE");
+  await ensureColumn("fp1_venues",         "staff_bonus_enabled",   "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_venues",         "staff_bonus_amount",    "INT NOT NULL DEFAULT 2");
+  await ensureColumn("fp1_venues",         "is_trial",              "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_venues",         "monthly_visit_limit",   "INT NOT NULL DEFAULT 20");
+  await ensureColumn("fp1_venues",         "discount_percent",      "NUMERIC(5,2) NOT NULL DEFAULT 10");
+  await ensureColumn("fp1_venues",         "lat",                   "NUMERIC(10,7)");
+  await ensureColumn("fp1_venues",         "lng",                   "NUMERIC(10,7)");
+   await ensureColumn("fp1_venues",         "description",           "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "recommended",           "TEXT NOT NULL DEFAULT ''");
+   await ensureColumn("fp1_venues",         "venue_type",            "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "cuisine",               "TEXT NOT NULL DEFAULT ''");
+   await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_receipts",       "reason",                "TEXT");
+
+  // ── V27: NEW CHOICE SYSTEM (parallel to old category/reason) ──
+  await ensureColumn("fp1_receipts",       "choice_source",         "TEXT");      // top3 / category / custom
+  await ensureColumn("fp1_receipts",       "agg_category",          "TEXT");      // main/snack/dessert/drink/alcohol/other
+  await ensureColumn("fp1_receipts",       "dish_id",               "INT");       // FK to venue_dishes if top3
+  await ensureColumn("fp1_receipts",       "custom_text",           "TEXT");      // user-typed dish name
+  await ensureColumn("fp1_receipts",       "bonus_awarded_base",    "BOOLEAN DEFAULT FALSE");
+  await ensureColumn("fp1_receipts",       "bonus_awarded_mini",    "BOOLEAN DEFAULT FALSE");
+
+  // data_contributions counter on foxes
+  await ensureColumn("fp1_foxes",          "data_contributions",    "INT NOT NULL DEFAULT 0");
+
+  // venue_dishes table (Top 3 per venue)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_dishes (
+      id          BIGSERIAL PRIMARY KEY,
+      venue_id    BIGINT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      category    TEXT NOT NULL,
+      sort_order  INT NOT NULL,
+      is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(venue_id, sort_order)
+    )
+  `);
+  await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
+  await ensureColumn("fp1_foxes",          "founder_number",        "INT");
+  await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "district",              "TEXT");
+  await ensureColumn("fp1_foxes",          "streak_current",        "INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_foxes",          "streak_last_date",      "DATE");
+  await ensureColumn("fp1_foxes",          "streak_freeze_available","INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_foxes",          "streak_best",           "INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_daily_spins",    "prize_label",           "TEXT");
+   await ensureColumn("fp1_foxes",          "consent_at",            "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "consent_version",       "TEXT");
+
+  // V27: Reservations table for trial venues
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_reservations (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      venue_id INT NOT NULL REFERENCES fp1_venues(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT FALSE,
+      expired BOOLEAN NOT NULL DEFAULT FALSE,
+      penalty_applied BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reservations_venue ON fp1_reservations(venue_id, expires_at)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reservations_user ON fp1_reservations(user_id, expires_at)`);
+
+  try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_tg DROP NOT NULL`); } catch {}
+
+  if (ADMIN_TG_ID) {
+    await pool.query(
+      `UPDATE fp1_foxes SET founder_number=NULL, founder_registered_at=NULL WHERE user_id=$1`,
+      [ADMIN_TG_ID]
+    );
+    console.log(`✅ Founder number скинуто для адміна (TG ID: ${ADMIN_TG_ID})`);
   }
-}
-function pickVenue(id){q('venueSelect').value=String(id);TG?.HapticFeedback?.selectionChanged()}
 
-  function showConsent() {
-  const el = q('consentOverlay');
-  el.style.display = 'flex';
-  el.style.alignItems = 'center';
-  el.style.justifyContent = 'center';
-}
-async function acceptConsent() {
-  const btn = q('consentAcceptBtn');
-  btn.disabled = true; btn.textContent = 'Zapisuję…';
-  try {
-    await api('/api/consent', 'POST');
-    q('consentOverlay').style.display = 'none';
-    TG?.HapticFeedback?.notificationOccurred('success');
-  } catch(e) { showErr('ciErr', '❌ ' + e.message); }
-  btn.disabled = false; btn.textContent = '✅ Akceptuję i kontynuuję';
-}
-async function doCheckin(){
-  if(!TG_USER)return showErr('ciErr','Otwórz przez Telegram.');
-  const vId=q('venueSelect').value;
-  if(!vId)return showErr('ciErr','Wybierz lokal.');
-  const btn=q('ciBtn');
-  btn.disabled=true; btn.textContent='Generowanie…';
-  hideBanners();
-  q('crBox').classList.remove('show');
-  q('otpBox').classList.remove('show');
-  if(S.otpTimer){clearInterval(S.otpTimer);S.otpTimer=null}
-  try{
-    const d=await api('/api/checkin','POST',{venue_id:Number(vId)});
-    const venue=S.venues.find(v=>v.id===Number(vId));
-    if(d.already_today){
-      // Repeat visit - still show OTP for discount, but mark as repeat
-      showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
-      startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10, true);
-      showErr('ciErr','');
-      const info=document.createElement('div');
-      info.className='ok-banner show';
-      info.textContent='ℹ️ Wizyta już zaliczona dziś. Zniżka nadal obowiązuje!';
-      q('ciErr').parentNode.insertBefore(info,q('ciErr').nextSibling);
-      setTimeout(()=>info.remove(),5000);
-    } else {
-      showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
-      startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10, false);
+  await ensureIndex(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_founder_number ON fp1_foxes(founder_number) WHERE founder_number IS NOT NULL`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_achievements_user   ON fp1_achievements(user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp        ON fp1_checkins(otp)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires    ON fp1_checkins(expires_at)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_invites_code        ON fp1_invites(code)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_status_vid    ON fp1_venue_status(venue_id, type, ends_at)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_stamps_venue_user   ON fp1_stamps(venue_id, user_id)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_daily_spins_user    ON fp1_daily_spins(user_id, spin_date)`);
+
+  const venuesNoCode = await pool.query(`SELECT id FROM fp1_venues WHERE ref_code IS NULL`);
+  for (const v of venuesNoCode.rows) {
+    let code = null;
+    for (let i = 0; i < 20; i++) {
+      const c = genInviteCode(8);
+      const ex = await pool.query(`SELECT 1 FROM fp1_venues WHERE ref_code=$1 LIMIT 1`, [c]);
+      if (ex.rowCount === 0) { code = c; break; }
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
-  }catch(e){
-    if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='Generuj OTP ✓';return}
-    showErr('ciErr','Błąd: '+e.message);
+    if (code) await pool.query(`UPDATE fp1_venues SET ref_code=$1 WHERE id=$2`, [code, v.id]);
   }
-  btn.disabled=false; btn.textContent='Generuj OTP ✓';
-}
-  /* ═══ RECEIPT SYSTEM ═══ */
-/* ═══ RECEIPT SYSTEM ═══ */
-let receiptPending = null;
-let otpPollTimer = null;
 
-function showReceiptForm(venueId, venueName, discount, isRepeat, checkinId) {
-  receiptPending = { venueId, venueName, discount, isRepeat: !!isRepeat, checkinId: checkinId||null };
-  q('receiptDiscount').textContent = discount + '%';
-  q('receiptVenue').textContent = venueName;
-  q('receiptInput').value = '';
-  q('receiptBox').classList.add('show');
-  q('receiptResult').classList.remove('show');
-}
+  await pool.query(`UPDATE fp1_counted_visits SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
+  await pool.query(`UPDATE fp1_checkins SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
 
-function startOtpPolling(venueId, venueName, discount, isRepeat) {
-  stopOtpPolling();
-  otpPollTimer = setInterval(async () => {
-    try {
-      const d = await api(`/api/checkin/status?venue_id=${venueId}`);
-      if (d.status === 'confirmed' && !d.receipt_done) {
-        stopOtpPolling();
-        q('otpBox').classList.remove('show');
-        showReceiptForm(venueId, venueName, discount, isRepeat, d.checkin_id);
-        TG?.HapticFeedback?.notificationOccurred('success');
-      } else if (d.status === 'confirmed' && d.receipt_done) {
-        stopOtpPolling();
-        q('otpBox').classList.remove('show');
-        q('ciOk').textContent = '✅ Wizyta i rachunek już zapisane!';
-        q('ciOk').classList.add('show');
-      }
-    } catch (e) { /* ignore polling errors */ }
-  }, 3000);
-}
+  await pool.query(`
+    WITH ranked AS (
+      SELECT user_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+      FROM fp1_foxes
+      WHERE founder_number IS NULL AND ($1 = '' OR user_id != $1::bigint)
+    )
+    UPDATE fp1_foxes SET founder_number=ranked.rn, founder_registered_at=NOW()
+    FROM ranked WHERE fp1_foxes.user_id=ranked.user_id AND ranked.rn <= 1000
+  `, [ADMIN_TG_ID || ""]);
 
-function stopOtpPolling() {
-  if (otpPollTimer) { clearInterval(otpPollTimer); otpPollTimer = null; }
-}
+  const hasDayKey = await hasColumn("fp1_counted_visits", "day_key");
+  COUNTED_DAY_COL = hasDayKey ? "day_key" : "war_day";
+  console.log("✅ COUNTED_DAY_COL =", COUNTED_DAY_COL);
 
-async function submitReceipt() {
-  if (!receiptPending) return;
-  const amt = parseFloat(q('receiptInput').value);
-  if (!amt || amt < 1 || amt > 5000) return showErr('ciErr', 'Wpisz kwotę 1-5000 zł');
-  const btn = q('receiptBtn');
-  btn.disabled = true; btn.textContent = 'Zapisuję…';
-  try {
-    const d = await api('/api/receipt', 'POST', {
-      venue_id: receiptPending.venueId,
-      amount_paid: amt
-    });
-    q('receiptBox').classList.remove('show');
-    const saved = d.receipt?.discount_saved || 0;
-    const orig = d.receipt?.amount_original || 0;
-    q('receiptSaved').textContent = 'Zaoszczędzono: ' + saved.toFixed(2) + ' zł';
-    let detail = 'Zapłacono: ' + amt.toFixed(2) + ' zł · Przed zniżką: ~' + orig.toFixed(2) + ' zł';
-    if (d.bonuses?.achievements?.length) detail += '\n🏆 ' + d.bonuses.achievements.map(a => a.emoji + ' ' + a.label).join(', ');
-    if (d.bonuses?.first_ever) detail += '\n🎉 Pierwsza wizyta! +10 pkt';
-    if (d.bonuses?.invites_added > 0) detail += '\n🎁 +' + d.bonuses.invites_added + ' zaproszenie';
-    q('receiptDetail').textContent = detail;
-   showCategoryPick();
-    TG?.HapticFeedback?.notificationOccurred('success');
-    if (d.stats) {
-      if (q('pRating')) q('pRating').textContent = d.stats.rating;
-      if (q('pVisits')) S.profileLoaded = false;
+  const vc = await pool.query("SELECT COUNT(*)::int AS c FROM fp1_venues");
+  if (vc.rows[0].c === 0) {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = pinHash("123456", salt);
+    // Demo venues with real Warsaw coordinates
+    const demoVenues = [
+     { name: "Fox Pub Centrum",    city: "Warsaw", address: "ul. Nowy Świat 22",       lat: 52.2319, lng: 21.0222, is_trial: false, discount: 10 },
+      { name: "Złoty Kebab",        city: "Warsaw", address: "ul. Chmielna 15",          lat: 52.2297, lng: 21.0122, is_trial: true,  discount: 10 },
+      { name: "Craft Beer Corner",  city: "Warsaw", address: "ul. Mokotowska 48",        lat: 52.2180, lng: 21.0180, is_trial: false, discount: 10 },
+      { name: "Praga Street Food",  city: "Warsaw", address: "ul. Ząbkowska 6",          lat: 52.2506, lng: 21.0444, is_trial: true,  discount: 10 },
+      { name: "Bistro Żoliborz",    city: "Warsaw", address: "pl. Wilsona 2",            lat: 52.2680, lng: 20.9934, is_trial: false, discount: 10 },
+    ];
+    for (const v of demoVenues) {
+      await pool.query(
+       `INSERT INTO fp1_venues(name,city,address,pin_hash,pin_salt,approved,lat,lng,is_trial,monthly_visit_limit,discount_percent)
+         VALUES($1,$2,$3,$4,$5,TRUE,$6,$7,$8,20,$9)`,
+        [v.name, v.city, v.address, hash, salt, v.lat, v.lng, v.is_trial, v.discount || 10]
+      );
     }
-  } catch(e) {
-    if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='💰 Zapisz rachunek';return}
-    showErr('ciErr', '❌ ' + e.message);
-  }
-  btn.disabled = false; btn.textContent = '💰 Zapisz rachunek';
-}
-    function showCategoryPick() {
-  q('categoryBox').style.display = 'block';
-  q('categoryBox').classList.add('show');
-  q('choiceScreen1').style.display = 'block';
-  q('choiceScreen2').style.display = 'none';
-  q('choiceScreen3').style.display = 'none';
-  // Load venue dishes
-  if (receiptPending && receiptPending.venueId) {
-    loadVenueDishes(receiptPending.venueId);
-  }
-}
-async function loadVenueDishes(venueId) {
-  try {
-    const d = await api('/api/venues/' + venueId + '/dishes', 'GET');
-    const container = q('dishButtons');
-    if (d.dishes && d.dishes.length > 0) {
-      const catIcons = {main:'🍽',snack:'🥗',dessert:'🍰',drink:'☕',alcohol:'🍺',other:'📦'};
-      container.innerHTML = d.dishes.map(dish =>
-        '<button class="d-btn" style="text-align:left;padding:12px 16px" onclick="pickDish(' + dish.id + ')">' +
-        (catIcons[dish.category]||'📦') + ' ' + esc(dish.name) + '</button>'
-      ).join('');
-    } else {
-      container.innerHTML = '';
-      showChoiceScreen2();
-    }
-  } catch(e) {
-    q('dishButtons').innerHTML = '';
-    showChoiceScreen2();
-  }
-}
-async function pickDish(dishId) {
-  q('categoryBox').style.display = 'none';
-  q('categoryBox').classList.remove('show');
-  if (!receiptPending) { showReasonPick(); return; }
-  try {
-    const d = await api('/api/checkin/' + receiptPending.checkinId + '/choice', 'POST', { dish_id: dishId });
-    if (d.ok) {
-      const detail = q('receiptDetail');
-      if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za wybór!';
-    }
-    TG?.HapticFeedback?.notificationOccurred('success');
-  } catch(e) { /* ignore */ }
-  showReasonPick();
-}
-function showChoiceScreen2() {
-  q('choiceScreen1').style.display = 'none';
-  q('choiceScreen2').style.display = 'block';
-  q('choiceScreen3').style.display = 'none';
-  q('choiceSub').textContent = 'Wybierz kategorię · +1 pkt';
-}
-function showChoiceScreen3() {
-  q('choiceScreen2').style.display = 'none';
-  q('choiceScreen3').style.display = 'block';
-  q('choiceSub').textContent = 'Wpisz nazwę · +2 pkt';
-  q('customError').style.display = 'none';
-}
-async function pickAggCategory(cat) {
-  q('categoryBox').style.display = 'none';
-  q('categoryBox').classList.remove('show');
-  if (!receiptPending) { showReasonPick(); return; }
-  try {
-    const d = await api('/api/checkin/' + receiptPending.checkinId + '/choice', 'POST', { agg_category: cat });
-    if (d.ok) {
-      const detail = q('receiptDetail');
-      if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za kategorię!';
-    }
-    TG?.HapticFeedback?.notificationOccurred('success');
-  } catch(e) { /* ignore */ }
-  showReasonPick();
-}
-async function submitCustomDish() {
-  const cat = q('customCatSelect').value;
-  const text = q('customDishInput').value.trim();
-  const errEl = q('customError');
-  if (!cat) { errEl.textContent = 'Wybierz kategorię!'; errEl.style.display = 'block'; return; }
-  if (!text || text.length < 3) { errEl.textContent = 'Minimum 3 znaki'; errEl.style.display = 'block'; return; }
-  if (text.split(/\s+/).length > 2) { errEl.textContent = 'Maksimum 2 słowa'; errEl.style.display = 'block'; return; }
-  errEl.style.display = 'none';
-  q('categoryBox').style.display = 'none';
-  q('categoryBox').classList.remove('show');
-  if (!receiptPending) { showReasonPick(); return; }
-  try {
-    const d = await api('/api/checkin/' + receiptPending.checkinId + '/choice', 'POST', { agg_category: cat, custom_text: text });
-    if (d.ok) {
-      const detail = q('receiptDetail');
-      if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za wybór!';
-      if (d.mini_bonus) detail.textContent += '\n🧠 +1 pkt mini-bonus za dane!';
-    } else if (d.error) {
-      // soft fail — no penalty
-    }
-    TG?.HapticFeedback?.notificationOccurred('success');
-  } catch(e) { /* ignore */ }
-  showReasonPick();
-}
-function skipChoice() {
-  q('categoryBox').style.display = 'none';
-  q('categoryBox').classList.remove('show');
-  showReasonPick();
-}
-async function pickCategory(cat) {
-  // Legacy backward compat — redirect to new flow
-  if (cat === 'skip') { skipChoice(); return; }
-  pickAggCategory(cat);
-}
-
-function showReasonPick() {
-  q('reasonBox').style.display = 'block';
-  q('reasonBox').classList.add('show');
-}
-
-async function pickReason(reason) {
-  q('reasonBox').style.display = 'none';
-  q('reasonBox').classList.remove('show');
-  if (reason === 'skip' || !receiptPending) {
-    q('receiptResult').classList.add('show');
-    return;
-  }
-  try {
-    const d = await api('/api/receipt/reason', 'POST', {
-      venue_id: receiptPending.venueId,
-      reason: reason
-    });
-    if (d.bonus_points) {
-      const detail = q('receiptDetail');
-      detail.textContent += '\n⚡ +' + d.bonus_points + ' pkt za opinię!';
-    }
-    TG?.HapticFeedback?.notificationOccurred('success');
-  } catch(e) { /* ignore */ }
-  q('receiptResult').classList.add('show');
-}
-function showAlready(day){
-  const b=q('crBox');
-  q('crIcon').textContent='✅';
-  q('crTitle').textContent='Dziś już byłeś!';
-  q('crSub').textContent='Wizyta zaliczona na dziś ('+day+')';
-  q('crStats').style.display='none';
-  b.className='cr-box already show';
-}
-function showOtp(otp,name,expiresAt){
-  q('otpCode').textContent=otp;
-  q('otpVenue').textContent='🏪 '+name;
-  q('otpBox').classList.add('show');
-  if(S.otpTimer)clearInterval(S.otpTimer);
-  const exp=expiresAt?new Date(expiresAt):new Date(Date.now()+10*60*1000);
-  const el=q('otpTimer');
-  function tick(){
-    const ms=exp-Date.now();
-    if(ms<=0){el.textContent='0:00';el.classList.add('timer-expired');clearInterval(S.otpTimer);return}
-    const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000);
-    el.textContent=m+':'+String(s).padStart(2,'0');
-  }
-  tick(); S.otpTimer=setInterval(tick,1000);
-}
-function hideBanners(){q('ciErr').classList.remove('show');q('ciOk').classList.remove('show')}
-function showErr(id,msg){const e=q(id);e.textContent=msg;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),5000)}
-
-async function loadInvites(){
-  S.invLoaded=true;
-  const $l=q('invLoading'),$c=q('invContent'),$u=q('invUnauth');
-  if(!TG_USER){$l.style.display='none';$u.style.display='block';return}
-  try{
-    const d=await api('/api/invite/stats');
-    q('invCount').textContent=d.invites_available??0;
-    q('invTotal').textContent=d.invited_total??0;
-    q('invActive').textContent=d.invited_active??0;
-    q('invGenerated').textContent=d.codes_generated??0;
-    if(d.invited_total>0){
-      const pct=Math.round((d.invited_active/d.invited_total)*100);
-      q('invPct').textContent=pct+'%';
-      q('invBar').style.width=pct+'%';
-      q('invProgressTxt').textContent=`${d.invited_active} z ${d.invited_total} zaproszonych Fox jest aktywnych`;
-      q('invProgressCard').style.display='block';
-    }
-    if(d.recent_codes&&d.recent_codes.length>0){
-      q('invRecentList').innerHTML=d.recent_codes.map(c=>{
-        const used=c.uses>=c.max_uses;
-        const dt=new Date(c.created_at).toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit'});
-        return`<div class="inv-recent-row">
-          <div><div class="inv-recent-code">${esc(c.code)}</div><div class="inv-recent-date">${dt}</div></div>
-          <span class="inv-recent-used ${used?'yes':'no'}">${used?'✅ Użyty':'⏳ Oczekuje'}</span>
-        </div>`;
-      }).join('');
-      q('invRecentCard').style.display='block';
-    }
-    if(d.invites_available<=0){
-      const btn=q('invGenBtn');
-      btn.disabled=true;
-      btn.textContent='❌ Brak zaproszeń (+1 za każde 5 wizyt)';
-    }
-    $l.style.display='none'; $c.style.display='block';
-  }catch(e){
-    $l.style.display='none';
-    if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
-    else{$c.style.display='block'; showErr('invErr','Błąd ładowania: '+e.message)}
-  }
-}
-
-async function genInvite(){
-  if(!TG_USER)return;
-  const btn=q('invGenBtn');
-  btn.disabled=true; btn.textContent='Generowanie…';
-  q('invErr').classList.remove('show');
-  try{
-    const d=await api('/api/invite/create','POST');
-    S.lastCode=d.code;
-    q('invCodeTxt').textContent=d.code;
-    q('invCodeBox').classList.add('show');
-    q('invCount').textContent=d.invites_left??0;
-    q('invGenerated').textContent=Number(q('invGenerated').textContent)+1;
-    S.invLoaded=false;
-    const now=new Date().toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit'});
-    const newRow=`<div class="inv-recent-row">
-      <div><div class="inv-recent-code">${esc(d.code)}</div><div class="inv-recent-date">${now}</div></div>
-      <span class="inv-recent-used no">⏳ Oczekuje</span>
-    </div>`;
-    const list=q('invRecentList');
-    list.insertAdjacentHTML('afterbegin',newRow);
-    q('invRecentCard').style.display='block';
-    TG?.HapticFeedback?.notificationOccurred('success');
-    if(d.invites_left<=0){btn.disabled=true;btn.textContent='❌ Brak zaproszeń';}
-    else{btn.disabled=false;btn.textContent='🎟️ Generuj kolejny kod';}
-  }catch(e){
-    const noInv=e.message.includes('Brak')||e.message.includes('no_invites');
-    showErr('invErr', noInv ? '❌ Brak zaproszeń. Odwiedzaj lokale — +1 zaproszenie za każde 5 wizyt!' : '❌ Błąd: '+e.message);
-    btn.disabled=false; btn.textContent='🎟️ Generuj kod zaproszenia';
-  }
-}
-
-function copyCode(){
-  const code=S.lastCode||q('invCodeTxt').textContent;
-  const btn=q('invCopyBtn');
-  const text=`Dołącz do The FoxPot Club! 🦊\n\nTwój kod: ${code}\n\nWpisz w bocie: /start ${code}\n👉 @thefoxpot_club_bot`;
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(text).then(()=>{
-      btn.textContent='✅ Skopiowano!'; btn.classList.add('copied');
-      setTimeout(()=>{btn.textContent='📋 Kopiuj kod'; btn.classList.remove('copied')},2000);
-    }).catch(()=>fallbackCopy(code,btn));
-  }else fallbackCopy(code,btn);
-  TG?.HapticFeedback?.notificationOccurred('success');
-}
-function fallbackCopy(code,btn){
-  const ta=document.createElement('textarea');
-  ta.value=code; document.body.appendChild(ta); ta.select();
-  try{document.execCommand('copy');btn.textContent='✅ Skopiowano!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='📋 Kopiuj kod';btn.classList.remove('copied')},2000)}catch{}
-  document.body.removeChild(ta);
-}
-function shareCode(){
-  const code=S.lastCode||q('invCodeTxt').textContent;
-  const text=`Dołącz do The FoxPot Club! 🦊\n\nPrywatny klub dla smakoszy Warszawy.\nTwój kod dostępu: ${code}\n\nWpisz w bocie: /start ${code}\n👉 @thefoxpot_club_bot`;
-  if(TG){TG.openTelegramLink(`https://t.me/share/url?url=https://t.me/thefoxpot_club_bot&text=${encodeURIComponent(text)}`)}
-  else if(navigator.share){navigator.share({title:'The FoxPot Club',text}).catch(()=>{})}
-  else{copyCode()}
-  TG?.HapticFeedback?.notificationOccurred('success');
-}
-
-const EMOJIS=['🦊','💎','⭐','🎁','👑','🔥','🎟️','❄️','🏆','🎰'];
-function rnd(){return EMOJIS[Math.floor(Math.random()*EMOJIS.length)]}
-function setReels(arr){arr.forEach((e,i)=>{const el=q('s'+i);if(el)el.textContent=e})}
-
-async function doSpin(){
-  const btn=q('spinBtn');
-  if(btn.disabled)return;
-  btn.disabled=true;
-  q('spinResult').classList.remove('show');
-  q('spinStats').style.display='none';
-  const reels=document.querySelectorAll('.reel');
-  reels.forEach(r=>r.classList.add('spinning'));
-  let frame=0;
-  const anim=setInterval(()=>{
-    setReels([rnd(),rnd(),rnd(),rnd(),rnd()]);
-    frame++;
-    if(frame>10){const idx=frame-10;if(idx>=1&&idx<=5) reels[idx-1]?.classList.remove('spinning');}
-  },110);
-  try{
-    const d=await api('/api/spin','POST');
-    setTimeout(()=>{
-      clearInterval(anim);
-      reels.forEach(r=>r.classList.remove('spinning'));
-      const res=q('spinResult');
-      if(d.already_spun){
-        setReels(['⏰','⏰','⏰','⏰','⏰']);
-        res.className='spin-result used show';
-        q('resEmoji').textContent='⏰';
-        q('resLabel').textContent='Już kręciłeś dziś!';
-        q('resSub').textContent='Nagroda: '+(d.prize?.label||'');
-        btn.textContent='⏰ Już odebrano';
-        S.spinDone=true; return;
-      }
-      const p=d.prize;
-      setReels([p.emoji,p.emoji,p.emoji,p.emoji,p.emoji]);
-      reels.forEach(r=>r.classList.add('winner'));
-      setTimeout(()=>reels.forEach(r=>r.classList.remove('winner')),1200);
-      res.className='spin-result win show';
-      q('resEmoji').textContent=p.emoji;
-      q('resLabel').textContent=p.label+'!';
-      q('resSub').textContent='Następny spin jutro!';
-      if(d.stats){
-        q('ssRating').textContent=d.stats.rating;
-        q('ssInvites').textContent=d.stats.invites;
-        q('ssFreeze').textContent=d.stats.freeze;
-        q('spinStats').style.display='flex';
-      }
-      TG?.HapticFeedback?.notificationOccurred('success');
-      btn.textContent='✅ Odebrano!';
-      S.spinDone=true;
-      S.profileLoaded=false;
-      if(S.cur==='profile') loadProfile();
-    },1900);
-  }catch(e){
-    clearInterval(anim);
-    reels.forEach(r=>r.classList.remove('spinning'));
-    setReels(['⚠️','⚠️','⚠️','⚠️','⚠️']);
-    btn.disabled=false; btn.textContent='Spróbuj ponownie';
-    TG?.HapticFeedback?.notificationOccurred('error');
-  }
-}
-function markSpinDone(prizeLabel){
-  const btn=q('spinBtn');
-  btn.disabled=true;
-  btn.textContent='✅ Kręcono: '+(prizeLabel||'nagroda');
-}
-
-const ACH_CATS=[
-  {label:'🗺️ Odkrywca',   keys:['explorer_1','explorer_10','explorer_30','explorer_100']},
-  {label:'🤝 Społeczność',keys:['social_1','social_10','social_50','social_100']},
-  {label:'🔥 Streak',     keys:['streak_7','streak_30','streak_90','streak_365']},
-  {label:'🏪 Wizyty',     keys:['visits_1','visits_10','visits_50','visits_100']},
-  {label:'🎰 Spin',       keys:['spin_10','spin_30']},
-  {label:'⭐ Specjalne',  keys:['pioneer','night_fox','morning_fox','vip_diamond']},
-];
-const ACH={
-  explorer_1:{e:'🐾',l:'Pierwszy krok',b:5},explorer_10:{e:'🗺️',l:'Turysta',b:10},
-  explorer_30:{e:'✈️',l:'Podróżnik',b:30},explorer_100:{e:'🌍',l:'Legenda miejsc',b:100},
-  social_1:{e:'🤝',l:'Przyjaciel',b:5},social_10:{e:'📣',l:'Rekruter',b:50},
-  social_50:{e:'⭐',l:'Ambasador',b:200},social_100:{e:'👑',l:'Legenda',b:500},
-  streak_7:{e:'🔥',l:'7 dni z rzędu',b:10},streak_30:{e:'💪',l:'30 dni',b:50},
-  streak_90:{e:'🏅',l:'90 dni',b:150},streak_365:{e:'🏆',l:'365 dni!',b:500},
-  visits_1:{e:'🎉',l:'Pierwsza wizyta',b:5},visits_10:{e:'🥈',l:'10 wizyt',b:10},
-  visits_50:{e:'🥇',l:'50 wizyt',b:50},visits_100:{e:'💫',l:'100 wizyt',b:100},
-  pioneer:{e:'🚀',l:'Pionier',b:20},night_fox:{e:'🌙',l:'Nocny Fox',b:10},
-  morning_fox:{e:'🌅',l:'Poranny Fox',b:10},vip_diamond:{e:'💎',l:'VIP Diamond',b:200},
-  spin_10:{e:'🎰',l:'10 spinów',b:15},spin_30:{e:'🎰',l:'30 spinów',b:50},
-};
-
-async function loadAchievements(){
-  S.achLoaded=true;
-  const $l=q('achLoading'),$c=q('achContent'),$s=q('achSummary');
-  if(!TG_USER){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Otwórz przez Telegram</div></div>';return}
-  try{
-    const d=await api('/api/achievements');
-    const have=new Set(d.achievements||[]);
-    const total=Object.keys(ACH).length;
-    $s.textContent=`Odblokowano: ${have.size} / ${total}`;
-    $l.style.display='none';
-    $c.innerHTML=ACH_CATS.map(cat=>{
-      const cnt=cat.keys.filter(k=>have.has(k)).length;
-      const items=cat.keys.map(k=>{
-        const m=ACH[k];if(!m)return'';
-        const done=have.has(k);
-        return`<div class="ach-item${done?' done':''}">
-          ${done?'<div class="ach-check">✓</div>':''}
-          <span class="ach-emoji">${m.e}</span>
-          <div class="ach-label">${esc(m.l)}</div>
-          ${done?`<div class="ach-bonus">+${m.b} pkt ✅</div>`:`<div class="ach-lock">+${m.b} pkt 🔒</div>`}
-        </div>`;
-      }).join('');
-      return`<div class="ach-cat">
-        <div class="ach-cat-title">${esc(cat.label)}<span class="ach-cnt">${cnt}/${cat.keys.length}</span></div>
-        <div class="ach-grid">${items}</div>
-      </div>`;
-    }).join('');
-  }catch(e){
-    q('achLoading').style.display='none';
-    q('achContent').innerHTML=`<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
-  }
-}
-
-async function loadTop(){
-  S.topLoaded=true;
-  const $l=q('topLoading'),$c=q('topContent');
-  try{
-    const d=await api('/api/top');
-    $l.style.display='none';
-    const medals=['🥇','🥈','🥉'];
-    const myId=TG_USER?String(TG_USER.id):null;
-    const rows=(d.top||[]).map((f,i)=>{
-      const me=myId&&String(f.user_id)===myId;
-      const p=i+1;
-      const cls=[`leader-row`,p<=3?`p${p}`:'',me?'me':''].filter(Boolean).join(' ');
-      const nick=f.username?'@'+f.username:'Fox #'+String(f.user_id).slice(-4);
-      const fnd=f.founder_number?`<span style="font-size:10px;color:var(--gold);font-weight:700">👑 #${f.founder_number}</span>`:'';
-      return`<div class="${cls}">
-        <div class="leader-pos">${medals[i]||p}</div>
-        <div class="leader-av" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));border:none"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="30" height="30" style="display:block;margin:0 auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
-        <div class="leader-info"><div class="leader-name">${esc(nick)}${me?' ← Ty':''}</div><div class="leader-sub">${fnd}</div></div>
-        <div class="leader-pts">${f.rating} pkt</div>
-      </div>`;
-    }).join('');
-    let myCard='';
-    if(d.my_position&&d.my_position>10){
-      myCard=`<div class="my-pos-card"><span>Twoja pozycja</span><span class="my-pos-right">#${d.my_position} · ${d.my_rating||0} pkt</span></div>`;
-    }
-    $c.innerHTML=rows+myCard;
-  }catch(e){
-    $l.style.display='none';
-    $c.innerHTML=`<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
-  }
-}
-
-function q(id){return document.getElementById(id)}
-function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-
-
-/* ═══ MAP — OpenStreetMap iframe ═══ */
-const S_map = { loaded: false, venues: [], filter: 'all', sort: 'default', mapsKey: '' };
-
-function filterVenueMap(type, btn) {
-  S_map.filter = type;
-  document.querySelectorAll('.map-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderMapList();
-}
-
-let gMap = null;
-let gMarkers = [];
-
-function initGMap(venues) {
-  const container = q('mapContainer');
-  if (!window.google?.maps) {
-    container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">⏳ Ładowanie mapy…</div>';
-    setTimeout(() => initGMap(venues), 500);
-    return;
-  }
-  const withCoords = venues.filter(v => v.lat && v.lng);
-  const center = withCoords.length
-    ? { lat: withCoords.reduce((s,v)=>s+parseFloat(v.lat),0)/withCoords.length, lng: withCoords.reduce((s,v)=>s+parseFloat(v.lng),0)/withCoords.length }
-    : { lat: 52.2297, lng: 21.0122 };
-  if (!gMap) {
-    gMap = new google.maps.Map(container, {
-      center, zoom: 12,
-      disableDefaultUI: true, zoomControl: true,
-      styles: [
-        {elementType:'geometry',stylers:[{color:'#0a0b14'}]},
-        {elementType:'labels.text.stroke',stylers:[{color:'#0a0b14'}]},
-        {elementType:'labels.text.fill',stylers:[{color:'#6a6a7a'}]},
-        {featureType:'road',elementType:'geometry',stylers:[{color:'#1a1b2e'}]},
-        {featureType:'water',elementType:'geometry',stylers:[{color:'#0d1020'}]},
-        {featureType:'poi',stylers:[{visibility:'off'}]},
-        {featureType:'transit',stylers:[{visibility:'off'}]}
-      ]
-    });
+    console.log("✅ Demo venues seeded with coordinates");
   } else {
-    gMap.setCenter(center);
+    // Update existing venues with coords if missing
+    await pool.query(`UPDATE fp1_venues SET lat=52.2319, lng=21.0222 WHERE name='Test Kebab #1' AND lat IS NULL`);
+    await pool.query(`UPDATE fp1_venues SET lat=52.2350, lng=21.0200 WHERE name='Test Pizza #2' AND lat IS NULL`);
+    await pool.query(`UPDATE fp1_venues SET lat=52.2180, lng=21.0050 WHERE name='Test Bar #3'   AND lat IS NULL`);
   }
-  updateMapMarkers(withCoords);
+
+  console.log("✅ Migrations OK (V25)");
 }
 
-function updateMapMarkers(venues) {
-  gMarkers.forEach(m => m.setMap(null));
-  gMarkers = [];
-  venues.forEach(v => {
-    const xy = `${v.my_visits||0}/${v.total_visits||0}`;
-    const markerColor = v.is_top_alltime ? '#8B5CF6' : v.is_top_year ? '#8B5CF6' : v.is_top_month ? '#3B82F6' : v.is_top_week ? '#22C55E' : '#FF8A00';
-    const markerBorder = v.is_top_alltime ? '#FF8A00' : 'none';
-    const textColor = (v.is_top_alltime || v.is_top_year || v.is_top_week || v.is_top_month) ? '#FFFFFF' : '#000000';
-    // Measure text width for pill shape
-    const charW = 7.5, pad = 20;
-    const w = Math.round(xy.length * charW + pad);
-    const h = 24;
-    const r = h / 2;
-    const marker = new google.maps.Marker({
-      map: gMap,
-      position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
-      icon: {
-        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect rx="${r}" width="${w}" height="${h}" fill="${markerColor}"${markerBorder!=='none'?` stroke="${markerBorder}" stroke-width="3"`:''}/><text x="${w/2}" y="16.5" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="12" fill="${textColor}">${xy}</text></svg>`),
-        scaledSize: new google.maps.Size(w, h),
-        anchor: new google.maps.Point(w/2, h/2)
-      },
-      title: v.name
-    });
-    marker.addListener('click', () => openVenueDetail(v.id));
-    gMarkers.push(marker);
-  });
+/* ═══════════════════════════════════════════════════════════════
+   DAILY SPIN
+═══════════════════════════════════════════════════════════════ */
+const SPIN_PRIZES = [
+  { type: "rating", value: 2,  label: "+2 punkty",       emoji: "🎁", weight: 60 },
+  { type: "rating", value: 5,  label: "+5 punktów",      emoji: "⭐", weight: 20 },
+  { type: "invite", value: 1,  label: "+1 zaproszenie",  emoji: "🎟️", weight: 10 },
+  { type: "rating", value: 15, label: "+15 punktów",     emoji: "💎", weight: 7  },
+  { type: "freeze", value: 1,  label: "+1 Freeze streak",emoji: "❄️", weight: 3  },
+];
+
+const SPIN_EMOJIS = ["🦊", "💎", "⭐", "🎁", "👑", "🔥", "🎟️", "❄️", "🏆", "🎰"];
+
+function pickPrize() {
+  const total = SPIN_PRIZES.reduce((s, p) => s + p.weight, 0);
+  let rand = crypto.randomInt(0, total);
+  for (const prize of SPIN_PRIZES) {
+    rand -= prize.weight;
+    if (rand < 0) return prize;
+  }
+  return SPIN_PRIZES[0];
 }
 
-  function sortVenueMap(type, btn) {
-  S_map.sort = type;
-  document.querySelectorAll('.map-filter:last-of-type .map-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderMapList();
+function randomSpinRow() {
+  const row = [];
+  for (let i = 0; i < 5; i++) {
+    row.push(SPIN_EMOJIS[crypto.randomInt(0, SPIN_EMOJIS.length)]);
+  }
+  return row.join(" ");
 }
-function topPriority(v) {
-  if (v.is_top_alltime) return 4;
-  if (v.is_top_year) return 3;
-  if (v.is_top_month) return 2;
-  if (v.is_top_week) return 1;
+
+async function hasSpunToday(userId) {
+  // DEMO MODE: безлімітний спін для демонстрації (прибрати перед launch)
+  return null;
+  // const today = warsawDayKey();
+  // const r = await pool.query(
+  //   `SELECT * FROM fp1_daily_spins WHERE user_id=$1 AND spin_date=$2 LIMIT 1`,
+  //   [String(userId), today]
+  // );
+  // return r.rows[0] || null;
+}
+
+async function recordSpin(userId, prize) {
+  const today = warsawDayKey();
+  await pool.query(
+    `INSERT INTO fp1_daily_spins(user_id, spin_date, prize_type, prize_value, prize_label)
+     VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+    [String(userId), today, prize.type, prize.value, prize.label]
+  );
+}
+
+async function applyPrize(userId, prize) {
+  if (prize.type === "rating") {
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+$1 WHERE user_id=$2`, [prize.value, String(userId)]);
+  } else if (prize.type === "invite") {
+    await pool.query(`UPDATE fp1_foxes SET invites=invites+$1 WHERE user_id=$2`, [prize.value, String(userId)]);
+  } else if (prize.type === "freeze") {
+    await pool.query(`UPDATE fp1_foxes SET streak_freeze_available=streak_freeze_available+$1 WHERE user_id=$2`, [prize.value, String(userId)]);
+  }
+}
+
+async function doSpin(ctx) {
+  const userId = String(ctx.from.id);
+  const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+  if (fox.rowCount === 0)
+    return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+
+  const alreadySpun = await hasSpunToday(userId);
+  if (alreadySpun) {
+    const now      = new Date();
+    const tomorrow = new Date(`${warsawDayKey(new Date(now.getTime() + 86400000))}T00:00:00+01:00`);
+    const diffMs   = tomorrow - now;
+    const hours    = Math.floor(diffMs / 3600000);
+    const mins     = Math.floor((diffMs % 3600000) / 60000);
+    return ctx.reply(
+      `🎰 Już kręciłeś dziś!\n\nNagroda: ${alreadySpun.prize_label}\n\nNastępny spin za: ${hours}h ${mins}min`
+    );
+  }
+
+  const prize = pickPrize();
+  const msg = await ctx.reply(`🎰 Kręcimy...\n\n[ ${randomSpinRow()} ]`);
+  const msgId = msg.message_id;
+  const chatId = ctx.chat.id;
+
+  await sleep(700);
+  try { await ctx.telegram.editMessageText(chatId, msgId, null, `🎰 Kręcimy...\n\n[ ${randomSpinRow()} ]`); } catch {}
+  await sleep(700);
+  try { await ctx.telegram.editMessageText(chatId, msgId, null, `🎰 Kręcimy...\n\n[ ${randomSpinRow()} ]`); } catch {}
+  await sleep(800);
+  try { await ctx.telegram.editMessageText(chatId, msgId, null, `🎰 Kręcimy...\n\n[ ${randomSpinRow()} ]`); } catch {}
+  await sleep(900);
+
+  await recordSpin(userId, prize);
+  await applyPrize(userId, prize);
+
+  const updated = await pool.query(`SELECT rating, invites, streak_freeze_available FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+  const f = updated.rows[0];
+
+  const finalRow = `${prize.emoji} ${prize.emoji} ${prize.emoji}`;
+  let finalMsg = `🎰 WYNIK!\n\n[ ${finalRow} ]\n\n`;
+  finalMsg += `${prize.emoji} ${prize.label}!\n\n`;
+  finalMsg += `📊 Twoje statystyki:\n`;
+  finalMsg += `⭐ Punkty: ${f.rating}\n`;
+  finalMsg += `🎟️ Zaproszenia: ${f.invites}\n`;
+  finalMsg += `❄️ Freeze: ${f.streak_freeze_available}\n\n`;
+  finalMsg += `Następny spin jutro!`;
+
+  try {
+    await ctx.telegram.editMessageText(chatId, msgId, null, finalMsg);
+  } catch {
+    await ctx.reply(finalMsg);
+  }
+
+  await checkAchievements(userId);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STREAK
+═══════════════════════════════════════════════════════════════ */
+async function updateStreak(userId) {
+  const today = warsawDayKey();
+  const fox = await pool.query(
+    `SELECT streak_current, streak_last_date, streak_freeze_available, streak_best
+     FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]
+  );
+  if (fox.rowCount === 0) return null;
+  const f    = fox.rows[0];
+  const last = f.streak_last_date ? String(f.streak_last_date).slice(0, 10) : null;
+  if (last === today) return null;
+
+  const yesterday = warsawDayKey(new Date(Date.now() - 86400000));
+  let newStreak   = f.streak_current || 0;
+  let newFreeze   = f.streak_freeze_available || 0;
+  let bonusRating = 0;
+  let bonusFreeze = 0;
+
+  if (last === yesterday)      newStreak += 1;
+  else if (last) {
+    if (newFreeze > 0) { newStreak += 1; newFreeze -= 1; }
+    else newStreak = 1;
+  } else newStreak = 1;
+
+  if (newStreak < 7)                                bonusRating = 1;
+  if (newStreak % 7 === 0 && newStreak % 30 !== 0) bonusRating = 5;
+  if (newStreak === 30)  { bonusRating = 15; bonusFreeze = 1; }
+  if (newStreak === 90)  bonusRating = 50;
+  if (newStreak === 365) bonusRating = 200;
+
+  const newBest = Math.max(newStreak, f.streak_best || 0);
+  await pool.query(
+    `UPDATE fp1_foxes SET streak_current=$1, streak_last_date=$2,
+     streak_freeze_available=$3, streak_best=$4, rating=rating+$5 WHERE user_id=$6`,
+    [newStreak, today, newFreeze + bonusFreeze, newBest, bonusRating, String(userId)]
+  );
+  return { newStreak, bonusRating, bonusFreeze };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   OSIĄGNIĘCIA
+═══════════════════════════════════════════════════════════════ */
+const ACHIEVEMENTS = {
+  explorer_1:   { label: "Pierwszy krok",    emoji: "🐾", rating: 5,   check: (s) => s.venues >= 1   },
+  explorer_10:  { label: "Turysta",          emoji: "🗺️", rating: 10,  check: (s) => s.venues >= 10  },
+  explorer_30:  { label: "Podróżnik",        emoji: "✈️", rating: 30,  check: (s) => s.venues >= 30  },
+  explorer_100: { label: "Legenda miejsc",   emoji: "🌍", rating: 100, check: (s) => s.venues >= 100 },
+  social_1:     { label: "Przyjaciel",       emoji: "🤝", rating: 5,   check: (s) => s.invites_sent >= 1   },
+  social_10:    { label: "Rekruter",         emoji: "📣", rating: 50,  check: (s) => s.invites_sent >= 10  },
+  social_50:    { label: "Ambasador",        emoji: "⭐", rating: 200, check: (s) => s.invites_sent >= 50  },
+  social_100:   { label: "Legenda",          emoji: "👑", rating: 500, check: (s) => s.invites_sent >= 100 },
+  streak_7:     { label: "7 dni z rzędu",    emoji: "🔥", rating: 10,  check: (s) => s.streak_best >= 7   },
+  streak_30:    { label: "30 dni z rzędu",   emoji: "💪", rating: 50,  check: (s) => s.streak_best >= 30  },
+  streak_90:    { label: "90 dni z rzędu",   emoji: "🏅", rating: 150, check: (s) => s.streak_best >= 90  },
+  streak_365:   { label: "365 dni!",         emoji: "🏆", rating: 500, check: (s) => s.streak_best >= 365 },
+  visits_1:     { label: "Pierwsza wizyta",  emoji: "🎉", rating: 5,   check: (s) => s.total_visits >= 1   },
+  visits_10:    { label: "10 wizyt",         emoji: "🥈", rating: 10,  check: (s) => s.total_visits >= 10  },
+  visits_50:    { label: "50 wizyt",         emoji: "🥇", rating: 50,  check: (s) => s.total_visits >= 50  },
+  visits_100:   { label: "100 wizyt",        emoji: "💫", rating: 100, check: (s) => s.total_visits >= 100 },
+  pioneer:      { label: "Pionier",          emoji: "🚀", rating: 20,  check: (s) => s.is_pioneer  },
+  night_fox:    { label: "Nocny Fox",        emoji: "🌙", rating: 10,  check: (s) => s.is_night    },
+  morning_fox:  { label: "Poranny Fox",      emoji: "🌅", rating: 10,  check: (s) => s.is_morning  },
+  vip_diamond:  { label: "VIP Diamond",      emoji: "💎", rating: 200, check: (s) => s.total_visits >= 301 },
+  spin_10:      { label: "10 spinów",        emoji: "🎰", rating: 15,  check: (s) => s.total_spins >= 10  },
+  spin_30:      { label: "30 spinów",        emoji: "🎰", rating: 50,  check: (s) => s.total_spins >= 30  },
+  // Data & Insight achievements
+  data_10:      { label: "Insight Fox",      emoji: "🧠", rating: 10,  check: (s) => s.data_contributions >= 10  },
+  data_25:      { label: "Local Analyst",    emoji: "🧠", rating: 25,  check: (s) => s.data_contributions >= 25  },
+  data_50:      { label: "Data Alpha",       emoji: "🧠", rating: 50,  check: (s) => s.data_contributions >= 50  },
+  data_150:     { label: "Master of Insight",emoji: "🧠", rating: 150, check: (s) => s.data_contributions >= 150 },
+};
+
+async function checkAchievements(userId, extraStats = {}) {
+  const uid = String(userId);
+  const fox = await pool.query(`SELECT streak_best, data_contributions FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [uid]);
+  if (fox.rowCount === 0) return [];
+
+  const totalVisits  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
+  const uniqueVenues = await pool.query(`SELECT COUNT(DISTINCT venue_id)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
+  const invitesSent  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [uid]);
+  const totalSpins   = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_daily_spins WHERE user_id=$1`, [uid]);
+
+  const stats = {
+    total_visits: totalVisits.rows[0].c,
+    venues:       uniqueVenues.rows[0].c,
+    invites_sent: invitesSent.rows[0].c,
+    streak_best:  fox.rows[0].streak_best || 0,
+    total_spins:  totalSpins.rows[0].c,
+    data_contributions: fox.rows[0].data_contributions || 0,
+    is_pioneer:   extraStats.is_pioneer || false,
+    is_night:     extraStats.is_night   || false,
+    is_morning:   extraStats.is_morning || false,
+  };
+
+  const existing = await pool.query(`SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [uid]);
+  const have = new Set(existing.rows.map(r => r.achievement_code));
+
+  const newOnes = [];
+  let totalBonus = 0;
+
+  for (const [code, ach] of Object.entries(ACHIEVEMENTS)) {
+    if (have.has(code)) continue;
+    if (!ach.check(stats)) continue;
+    try {
+      await pool.query(`INSERT INTO fp1_achievements(user_id, achievement_code) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [uid, code]);
+      totalBonus += ach.rating;
+      newOnes.push({ code, ...ach });
+    } catch (e) { console.error("ACH_INSERT_ERR", e?.message); }
+  }
+
+  if (totalBonus > 0)
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+$1 WHERE user_id=$2`, [totalBonus, uid]);
+
+  return newOnes;
+}
+
+function formatAchievements(newOnes) {
+  if (!newOnes || newOnes.length === 0) return "";
+  const lines = newOnes.map(a => `${a.emoji} ${a.label} +${a.rating} pkt`);
+  return `\n\n🏆 Nowe osiągnięcia!\n${lines.join("\n")}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FOUNDER FOX
+═══════════════════════════════════════════════════════════════ */
+const FOUNDER_LIMIT = 1000;
+
+async function assignFounderNumber(userId) {
+  if (isAdmin(userId)) return null;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const check = await client.query(`SELECT founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
+    if (check.rows[0]?.founder_number) { await client.query("ROLLBACK"); return check.rows[0].founder_number; }
+    const nextNum = await client.query(`
+      SELECT n AS num FROM generate_series(1,$1) AS n
+      WHERE n NOT IN (SELECT founder_number FROM fp1_foxes WHERE founder_number IS NOT NULL)
+      ORDER BY n ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+    `, [FOUNDER_LIMIT]);
+    if (nextNum.rowCount === 0) { await client.query("ROLLBACK"); return null; }
+    const num = nextNum.rows[0].num;
+    await client.query(`UPDATE fp1_foxes SET founder_number=$1, founder_registered_at=NOW() WHERE user_id=$2`, [num, String(userId)]);
+    await client.query("COMMIT");
+    return num;
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch {}
+    console.error("FOUNDER_ERR", e?.message || e);
+    return null;
+  } finally { client.release(); }
+}
+
+function founderBadge(num) { return num ? `👑 FOUNDER FOX #${num}` : ""; }
+
+async function founderSpotsLeft() {
+  const r = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE founder_number IS NOT NULL`);
+  return Math.max(0, FOUNDER_LIMIT - r.rows[0].c);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SESSION
+═══════════════════════════════════════════════════════════════ */
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const COOKIE_NAME    = "fp1_panel_session";
+
+function signSession(obj) {
+  const payload = Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const sig = crypto.createHmac("sha256", COOKIE_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifySession(token) {
+  if (!token) return null;
+  const dot = String(token).lastIndexOf(".");
+  if (dot === -1) return null;
+  const payload = token.slice(0, dot);
+  const sig     = token.slice(dot + 1);
+  const expSig  = crypto.createHmac("sha256", COOKIE_SECRET).update(payload).digest("base64url");
+  try {
+    const sb = Buffer.from(sig), eb = Buffer.from(expSig);
+    if (sb.length !== eb.length) return null;
+    if (!crypto.timingSafeEqual(sb, eb)) return null;
+  } catch { return null; }
+  const obj = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  if (!obj?.venue_id || !obj?.exp) return null;
+  if (Date.now() > obj.exp) return null;
+  return obj;
+}
+
+function getCookie(req) {
+  const raw = req.headers.cookie || "";
+  for (const p of raw.split(";")) {
+    const t = p.trim();
+    if (t.startsWith(COOKIE_NAME + "=")) return t.slice(COOKIE_NAME.length + 1);
+  }
+  return null;
+}
+function setCookie(res, value) {
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+}
+function clearCookie(res) {
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+function requirePanelAuth(req, res, next) {
+  const sess = verifySession(getCookie(req));
+  if (!sess) return res.redirect("/panel");
+  req.panel = sess; next();
+}
+function requireAdminAuth(req, res, next) {
+  const sess = verifySession(getCookie(req));
+  if (!sess || sess.role !== "admin") return res.redirect("/admin/login");
+  req.admin = sess; next();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RATE LIMIT
+═══════════════════════════════════════════════════════════════ */
+const loginFail = new Map();
+function getIp(req) { return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.ip || "unknown"; }
+function loginRate(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; return x.until && Date.now() < x.until ? { blocked:true } : { blocked:false }; }
+function loginBad(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; x.fails += 1; if (x.fails >= 10) { x.until = Date.now() + 15*60*1000; x.fails = 0; } loginFail.set(ip, x); }
+function loginOk(ip) { loginFail.delete(ip); }
+
+/* ═══════════════════════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════════════════════ */
+function pageShell(title, body, extraCss = "") {
+  return `<!doctype html><html><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${escapeHtml(title)}</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui;background:#0f1220;color:#fff}
+.wrap{max-width:960px;margin:0 auto;padding:16px}
+.card{background:#14182b;border:1px solid #2a2f49;border-radius:14px;padding:16px;margin:12px 0}
+h1{font-size:18px;margin:0 0 10px}h2{font-size:15px;margin:0 0 8px;opacity:.85}
+label{display:block;font-size:12px;opacity:.8;margin:10px 0 5px}
+input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #2a2f49;background:#0b0e19;color:#fff;font-size:14px}
+input:focus,select:focus{outline:none;border-color:#6e56ff}
+button{padding:10px 16px;border-radius:10px;border:none;background:#6e56ff;color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+button:hover{background:#5a44e0}button.danger{background:#8b1a1a}button.outline{background:transparent;border:1px solid #2a2f49;color:#ccc}
+.muted{opacity:.6;font-size:12px}.topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+a{color:#c6baff;text-decoration:none}a:hover{text-decoration:underline}
+.err{background:#2a0f16;border:1px solid #6b1a2b;border-radius:12px;padding:10px;margin:10px 0;font-size:14px}
+.ok{background:#102a1a;border:1px solid #1f6b3a;border-radius:12px;padding:10px;margin:10px 0;font-size:14px}
+.warn{background:#2a200a;border:1px solid #6b4a0a;border-radius:12px;padding:10px;margin:10px 0;font-size:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-ok{background:#1a4a2a;color:#6fffaa}.badge-warn{background:#3a2a0a;color:#ffcc44}.badge-err{background:#3a0a0a;color:#ff7777}
+@media(max-width:600px){.grid2{grid-template-columns:1fr}}${extraCss}
+</style></head><body><div class="wrap">${body}</div></body></html>`;
+}
+
+function flash(req) {
+  const ok   = req.query.ok   ? `<div class="ok">${escapeHtml(req.query.ok)}</div>`   : "";
+  const err  = req.query.err  ? `<div class="err">${escapeHtml(req.query.err)}</div>` : "";
+  const warn = req.query.warn ? `<div class="warn">${escapeHtml(req.query.warn)}</div>` : "";
+  return ok + err + warn;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CORE DB
+═══════════════════════════════════════════════════════════════ */
+async function getVenue(venueId) {
+  const r = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
+  return r.rows[0] || null;
+}
+
+async function upsertFox(ctx) {
+  const tgId = String(ctx.from.id);
+  const username = ctx.from.username || null;
+  await pool.query(
+    `INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,1,3,'Warsaw')
+     ON CONFLICT(user_id) DO UPDATE SET username=COALESCE(EXCLUDED.username,fp1_foxes.username)`,
+    [tgId, username]
+  );
+  const r = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [tgId]);
+  return r.rows[0];
+}
+
+async function hasCountedToday(venueId, userId) {
+  const day = warsawDayKey();
+  const r = await pool.query(
+    `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND user_id=$3 LIMIT 1`,
+    [venueId, day, String(userId)]
+  );
+  return r.rowCount > 0;
+}
+
+async function countXY(venueId, userId) {
+  const x = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND user_id=$2`, [venueId, String(userId)]);
+  const y = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+  return { X: x.rows[0].c, Y: y.rows[0].c };
+}
+
+async function createCheckin(venueId, userId) {
+  const otp = otp6(), now = new Date(), warDay = warsawDayKey(now);
+  const expires = new Date(now.getTime() + 10 * 60 * 1000);
+  const r = await pool.query(
+    `INSERT INTO fp1_checkins(venue_id,user_id,otp,expires_at,war_day) VALUES($1,$2,$3,$4,$5) RETURNING *`,
+    [venueId, String(userId), otp, expires.toISOString(), warDay]
+  );
+  return r.rows[0];
+}
+
+async function listPending(venueId) {
+  const now = await dbNow();
+  const r = await pool.query(
+    `SELECT otp,expires_at FROM fp1_checkins WHERE venue_id=$1 AND confirmed_at IS NULL AND expires_at>$2 ORDER BY created_at DESC LIMIT 20`,
+    [venueId, now]
+  );
+  return r.rows;
+}
+
+async function awardInvitesFrom5Visits(userId) {
+  const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [String(userId)]);
+  const fox = await pool.query(`SELECT invites_from_5visits AS earned FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
+  const total = tot.rows[0].c, earned = fox.rows[0]?.earned || 0, shouldEarn = Math.floor(total / 5);
+  if (shouldEarn > earned) {
+    const delta = shouldEarn - earned;
+    await pool.query(`UPDATE fp1_foxes SET invites=invites+$1, invites_from_5visits=$2 WHERE user_id=$3`, [delta, shouldEarn, String(userId)]);
+    return delta;
+  }
   return 0;
 }
-function renderMapList() {
-  const list = q('mapList');
-  const search = (q('mapSearch')?.value || '').toLowerCase().trim();
-  const venues = S_map.venues.filter(v => {
-    if (S_map.filter === 'trial')   return v.is_trial;
-    if (S_map.filter === 'partner') return !v.is_trial;
-    return true;
-  }).filter(v => !search || v.name.toLowerCase().includes(search) || (v.address||'').toLowerCase().includes(search));
-  // Always: TOP venues first (year > month > week), then by sort
-  if (S_map.sort === 'most') venues.sort((a,b) => topPriority(b) - topPriority(a) || (b.total_visits||0) - (a.total_visits||0));
-  else if (S_map.sort === 'my') venues.sort((a,b) => topPriority(b) - topPriority(a) || (b.my_visits||0) - (a.my_visits||0));
-  else venues.sort((a,b) => topPriority(b) - topPriority(a));
-  initGMap(venues);
-  if (!venues.length) {
-    list.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">'+(search?'Nie znaleziono: «'+esc(search)+'»':'Brak lokali w tej kategorii')+'</div></div>';
-    return;
+
+async function confirmOtp(venueId, otp) {
+  const now = await dbNow();
+  const pending = await pool.query(
+    `SELECT * FROM fp1_checkins WHERE venue_id=$1 AND otp=$2 AND confirmed_at IS NULL AND expires_at>$3 ORDER BY created_at DESC LIMIT 1`,
+    [venueId, String(otp), now]
+  );
+  if (pending.rowCount === 0) return { ok: false, code: "NOT_FOUND" };
+
+  const row = pending.rows[0];
+  const userId = String(row.user_id);
+  const day = row.war_day || warsawDayKey();
+
+  const debounce = await pool.query(
+    `SELECT 1 FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2 AND confirmed_at IS NOT NULL AND confirmed_at > NOW() - INTERVAL '15 minutes' LIMIT 1`,
+    [userId, venueId]
+  );
+  if (debounce.rowCount > 0) {
+    await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW() WHERE id=$1`, [row.id]);
+    return { ok:true, userId, day, countedAdded:false, debounce:true, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
   }
-  list.innerHTML = venues.map(v => {
-    const badge = v.is_trial
-      ? '<span class="venue-map-badge badge-trial">Trial</span>'
-      : '<span class="venue-map-badge badge-partner">Partner</span>';
-    const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
-   const topStyle = v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.08)' : v.is_top_year ? 'border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.08)' : v.is_top_month ? 'border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)' : v.is_top_week ? 'border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)' : '';
-    return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
-      <div class="venue-map-icon">🏪</div>
-      <div class="venue-map-info" style="flex:1">
-        <div class="venue-map-name">${esc(v.name)}</div>
-        <div class="venue-map-addr">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-        ${xy}
-        ${badge}
-      </div>
-    </div>`;
-  }).join('');
+
+  // V26: ТІЛЬКИ підтверджуємо check-in. БЕЗ бонусів — вони тепер в POST /api/receipt
+  await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
+  const already = await hasCountedToday(venueId, userId);
+  return { ok:true, userId, day, checkin_id:row.id, countedAdded:false, debounce:false,
+    receipt_pending:!already, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
 }
 
- async function makeReserve(venueId) {
+/* ═══════════════════════════════════════════════════════════════
+   VENUE STATUS
+═══════════════════════════════════════════════════════════════ */
+async function reserveCountThisMonth(venueId) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_venue_status WHERE venue_id=$1 AND type='reserve'
+     AND date_trunc('month',starts_at AT TIME ZONE 'Europe/Warsaw')=date_trunc('month',NOW() AT TIME ZONE 'Europe/Warsaw') AND ends_at>NOW()`,
+    [venueId]
+  );
+  return r.rows[0].c;
+}
+
+async function limitedCountThisWeek(venueId) {
+  const { mon, sun } = warsawWeekBounds();
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_venue_status WHERE venue_id=$1 AND type='limited'
+     AND (starts_at AT TIME ZONE 'Europe/Warsaw')::date BETWEEN $2::date AND $3::date`,
+    [venueId, mon, sun]
+  );
+  return r.rows[0].c;
+}
+
+async function currentVenueStatus(venueId) {
+  const r = await pool.query(
+    `SELECT * FROM fp1_venue_status WHERE venue_id=$1 AND starts_at<=NOW() AND ends_at>NOW() ORDER BY created_at DESC LIMIT 1`,
+    [venueId]
+  );
+  return r.rows[0] || null;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STAMPS
+═══════════════════════════════════════════════════════════════ */
+async function stampBalance(venueId, userId) {
+  const r = await pool.query(`SELECT COALESCE(SUM(delta),0)::int AS balance FROM fp1_stamps WHERE venue_id=$1 AND user_id=$2`, [venueId, String(userId)]);
+  return r.rows[0].balance;
+}
+
+async function stampHistory(venueId, userId, limit = 10) {
+  const r = await pool.query(`SELECT emoji,delta,note,created_at FROM fp1_stamps WHERE venue_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT $3`, [venueId, String(userId), limit]);
+  return r.rows;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INVITES
+═══════════════════════════════════════════════════════════════ */
+async function redeemInviteCode(userId, codeRaw) {
+  const code = String(codeRaw || "").trim().toUpperCase();
+  if (!code) return { ok:false, reason:"NO_CODE" };
+  const inv = await pool.query(`SELECT * FROM fp1_invites WHERE code=$1 LIMIT 1`, [code]);
+  if (inv.rowCount === 0) return { ok:false, reason:"NOT_FOUND" };
+  const invite = inv.rows[0];
+  const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`, [invite.id, String(userId)]);
+  if (used.rowCount > 0) return { ok:false, reason:"ALREADY_USED" };
+  if (Number(invite.uses) >= Number(invite.max_uses)) return { ok:false, reason:"EXHAUSTED" };
+  await pool.query(`INSERT INTO fp1_invite_uses(invite_id,used_by_user_id) VALUES($1,$2)`, [invite.id, String(userId)]);
+  await pool.query(`UPDATE fp1_invites SET uses=uses+1 WHERE id=$1`, [invite.id]);
+  await pool.query(
+    `UPDATE fp1_foxes SET invited_by_user_id=COALESCE(invited_by_user_id,$1), invite_code_used=COALESCE(invite_code_used,$2), invite_used_at=COALESCE(invite_used_at,NOW()) WHERE user_id=$3`,
+    [invite.created_by_user_id ? String(invite.created_by_user_id) : null, code, String(userId)]
+  );
+  if (invite.created_by_user_id)
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [String(invite.created_by_user_id)]);
+  return { ok:true };
+}
+
+async function createInviteCode(tgUserId) {
+  const userId = String(tgUserId);
+  const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+  if (fox.rowCount === 0) return { ok:false, reason:"NO_FOX" };
+  if (Number(fox.rows[0].invites) <= 0) return { ok:false, reason:"NO_INVITES" };
+  let code = null;
+  for (let i = 0; i < 20; i++) {
+    const c = genInviteCode(10);
+    const ex = await pool.query(`SELECT 1 FROM fp1_invites WHERE code=$1 LIMIT 1`, [c]);
+    if (ex.rowCount === 0) { code = c; break; }
+  }
+  if (!code) return { ok:false, reason:"CODE_GEN_FAIL" };
+  const client = await pool.connect();
   try {
-    const d = await api('/api/reserve', 'POST', { venue_id: venueId });
-    TG?.HapticFeedback?.notificationOccurred('success');
-    // Update venue data and reopen modal
-    const v = S_map.venues.find(x => x.id === venueId);
-    if (v) { v.my_reservation = d.expires_at; if (d.remaining !== undefined) v.trial_remaining = d.remaining; }
-    openVenueDetail(venueId);
-  } catch(e) {
-    TG?.HapticFeedback?.notificationOccurred('error');
-    alert(e.message || 'Błąd rezerwacji');
-  }
+    await client.query("BEGIN");
+    const dec = await client.query(`UPDATE fp1_foxes SET invites=invites-1 WHERE user_id=$1 AND invites>0 RETURNING invites`, [userId]);
+    if (dec.rowCount === 0) { await client.query("ROLLBACK"); return { ok:false, reason:"NO_INVITES" }; }
+    await client.query(`INSERT INTO fp1_invites(code,max_uses,uses,created_by_user_id) VALUES($1,1,0,$2)`, [code, Number(userId)]);
+    await client.query("COMMIT");
+    return { ok:true, code, invites_left:dec.rows[0].invites };
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw e;
+  } finally { client.release(); }
 }
-async function cancelReserve(venueId) {
+
+/* ═══════════════════════════════════════════════════════════════
+   GROWTH
+═══════════════════════════════════════════════════════════════ */
+async function countNewFoxThisMonth(venueId) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE referred_by_venue=$1 AND date_trunc('month',created_at AT TIME ZONE 'Europe/Warsaw')=date_trunc('month',NOW() AT TIME ZONE 'Europe/Warsaw')`,
+    [venueId]
+  );
+  return r.rows[0].c;
+}
+
+async function countNewFoxTotal(venueId) {
+  const r = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE referred_by_venue=$1`, [venueId]);
+  return r.rows[0].c;
+}
+
+async function getGrowthLeaderboard(limit = 10) {
+  const r = await pool.query(
+    `SELECT v.id,v.name,v.city,COUNT(f.id)::int AS new_fox FROM fp1_venues v
+     LEFT JOIN fp1_foxes f ON f.referred_by_venue=v.id AND date_trunc('month',f.created_at AT TIME ZONE 'Europe/Warsaw')=date_trunc('month',NOW() AT TIME ZONE 'Europe/Warsaw')
+     WHERE v.approved=TRUE GROUP BY v.id,v.name,v.city ORDER BY new_fox DESC,v.name ASC LIMIT $1`,
+    [limit]
+  );
+  return r.rows;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   V20: АВТОРИЗАЦІЯ TELEGRAM WEBAPP
+═══════════════════════════════════════════════════════════════ */
+function verifyTelegramInitData(initData) {
+  if (!initData || !BOT_TOKEN) return null;
   try {
-    await api('/api/reserve', 'DELETE', { venue_id: venueId });
-    TG?.HapticFeedback?.notificationOccurred('success');
-    const v = S_map.venues.find(x => x.id === venueId);
-    if (v) { v.my_reservation = null; if (v.trial_remaining !== null) v.trial_remaining++; }
-    openVenueDetail(venueId);
-  } catch(e) {
-    alert(e.message || 'Błąd');
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return null;
+    params.delete("hash");
+
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+
+    const secretKey = crypto.createHmac("sha256", "WebAppData").update(BOT_TOKEN).digest();
+    const expectedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+    if (expectedHash !== hash) return null;
+
+    const userStr = params.get("user");
+    if (!userStr) return null;
+    return JSON.parse(userStr);
+  } catch (e) {
+    console.error("TG_AUTH_ERR", e?.message);
+    return null;
   }
 }
- function openVenueDetail(id) {
-  const v = S_map.venues.find(x => x.id === id);
-  if (!v) return;
-  const mapsUrl = v.lat && v.lng
-    ? `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.name+' '+v.city)}`;
 
-  // Type + cuisine
-  const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
-  const typeLabel = typeMap[v.venue_type] || '';
-  const cuisineLabel = v.cuisine ? v.cuisine : '';
-  const typeLine = (typeLabel || cuisineLabel) ? `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${typeLabel}${typeLabel && cuisineLabel ? ' · ' : ''}${esc(cuisineLabel)}</div>` : '';
-
-  // Status badge
-  let badge = '';
-  if (v.is_trial) {
-    badge = `<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">⚠️ Tryb ograniczony</span>`;
-  } else {
-    badge = `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">🦊 Partner</span>`;
-  }
-
-  // TOP badge (only highest priority: alltime > year > month > week)
-  let topBadges = '';
-  if (v.is_top_alltime) topBadges = `<span style="display:inline-block;background:#8B5CF6;border:3px solid #FF8A00;border-radius:20px;padding:3px 10px;font-size:11px;color:#FFFFFF;font-weight:700;margin-left:4px">⭐ Legenda FoxPot</span>`;
-  else if (v.is_top_year) topBadges = `<span style="display:inline-block;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#8B5CF6;font-weight:700;margin-left:4px">🏆 Top roku</span>`;
-  else if (v.is_top_month) topBadges = `<span style="display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#3B82F6;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
-  else if (v.is_top_week) topBadges = `<span style="display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#22C55E;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
-
-  // Vegan/Gluten-free badges
-  const tagsList = (v.tags || '').split(',').map(t => t.trim()).filter(Boolean);
-  let dietBadges = '';
-  if (tagsList.includes('vegan')) dietBadges += `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.25);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700;margin-left:4px">🌱 Vegan</span>`;
-  if (tagsList.includes('gluten-free')) dietBadges += `<span style="display:inline-block;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);border-radius:20px;padding:3px 10px;font-size:11px;color:#F59E0B;font-weight:700;margin-left:4px">🌾 Gluten-free</span>`;
-
-  // Trial remaining
-  const trialInfo = v.is_trial && v.trial_remaining !== null
-    ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--fox);font-weight:600">📊 Pozostało: ${v.trial_remaining} wizyt w tym miesiącu</div>`
-    : '';
-
-  // Recommendations
-  const rec = v.recommended ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--fox);margin-bottom:4px">🍽 Polecane przez lokal</div>
-    <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.recommended)}</div>
-  </div>` : '';
-
-  // Fox top category
-  const catMap = {'main':'🍽 Danie główne','snack':'🥪 Przekąska','dessert':'🍰 Deser','coffee':'☕ Kawa','drink':'🥤 Napój','alcohol':'🍺 Alkohol','other':'🛒 Inne'};
-  const foxCat = (v.top_dish_name || v.top_category) ? `<div style="background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px">🦊 Najczęściej wybierane</div>
-    <div style="font-size:13px;color:var(--muted)">${v.top_dish_name ? esc(v.top_dish_name) : (catMap[v.top_category] || esc(v.top_category))}</div>
-  </div>` : '';
-
-  // Fox top reason ("Why go here")
-  const reasonMap = {'fast':'⚡ Szybka obsługa','tasty':'🔥 Smaczne jedzenie','cheap':'💸 Tanio','chill':'🧘 Spokojnie','social':'👥 Dobre na spotkania'};
-  const foxReason = v.top_reason ? `<div style="background:rgba(124,92,252,.08);border:1px solid rgba(124,92,252,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--accent2);margin-bottom:4px">⚡ Dlaczego tu?</div>
-    <div style="font-size:13px;color:var(--muted)">${reasonMap[v.top_reason] || esc(v.top_reason)}</div>
-    <div style="font-size:10px;color:var(--muted2);margin-top:4px">Najczęściej wskazywane przez użytkowników</div>
-  </div>` : '';
-
-  // Description
-  const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
-
-  q('venueModalContent').innerHTML = `
-    <div style="text-align:center;margin-bottom:16px">
-      <div style="font-size:48px;margin-bottom:8px">🏪</div>
-      <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
-      ${typeLine}
-      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
-      <div>${badge}${topBadges}${dietBadges}</div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
-      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:var(--fox);font-family:var(--mono)">${v.my_visits||0}</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:600">Twoje wizyty</div>
-      </div>
-      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:var(--accent2);font-family:var(--mono)">${v.total_visits||0}</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:600">Wszystkie</div>
-      </div>
-      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--mono)">${v.discount_percent||10}%</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
-      </div>
-    </div>
-    ${trialInfo}${desc}${rec}${foxCat}${foxReason}
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
-      ${v.is_trial ? (v.my_reservation
-        ? `<button disabled style="width:100%;padding:14px;background:var(--card-bg);border:1px solid rgba(46,204,113,.4);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:700;font-family:var(--font)">✅ Zarezerwowano do końca dnia</button>
-           <button onclick="cancelReserve(${v.id})" style="width:100%;padding:10px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)">Anuluj rezerwację</button>`
-        : `<button onclick="makeReserve(${v.id})" style="width:100%;padding:14px;background:var(--card-bg);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">📅 Zarezerwuj zniżkę (do końca dnia)</button>
-           <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:-4px">Niewykorzystana rezerwacja: slot wraca do puli, a rating −5</div>`)
-      : ''}
-      <a href="${mapsUrl}" target="_blank" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
-      <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
-    </div>
-  `;
-  q('venueModal').classList.add('open');
-  TG?.HapticFeedback?.selectionChanged();
+function requireWebAppAuth(req, res, next) {
+  const initData = req.headers["x-telegram-init-data"] || "";
+  const user = verifyTelegramInitData(initData);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  req.tgUser = user;
+  next();
 }
-async function loadMap() {
-  if (S_map.loaded) return;
-  S_map.loaded = true;
-  q('mapLoading').style.display = 'flex';
+
+/* ═══════════════════════════════════════════════════════════════
+   ROUTES — HEALTH & STATIC
+═══════════════════════════════════════════════════════════════ */
+app.get("/",        (_req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/partners",(_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
+app.get("/rules",   (_req, res) => res.sendFile(path.join(__dirname, "rules.html")));
+app.get("/privacy", (_req, res) => res.sendFile(path.join(__dirname, "privacy.html")));
+app.get("/rules.html",   (_req, res) => res.sendFile(path.join(__dirname, "rules.html")));
+app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "privacy.html")));
+app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
+
+app.get("/health", async (_req, res) => {
   try {
-    const data = await fetch(BASE+'/api/venues', {headers:{'X-Telegram-Init-Data': INIT_DATA||''}}).then(r=>r.json());
-    if (data.error) throw new Error(data.error);
-    S_map.venues = data.venues || [];
-    if (data.maps_key && !window.google?.maps) {
-      const sc = document.createElement('script');
-      sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + data.maps_key;
-      document.head.appendChild(sc);
+    const now = await dbNow(), spots = await founderSpotsLeft();
+    res.json({ ok:true, db:true, tz:"Europe/Warsaw", day_warsaw:warsawDayKey(), now, founder_spots_left:spots });
+  } catch (e) { res.status(500).json({ ok:false, db:false, error:String(e?.message||e) }); }
+});
+
+app.get("/webapp", (_req, res) => {
+  res.sendFile(path.join(__dirname, "webapp.html"));
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   V20: API ROUTES
+═══════════════════════════════════════════════════════════════ */
+
+// GET /api/profile
+app.get("/api/profile", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+
+    const f = fox.rows[0];
+    const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+    const spunToday   = await hasSpunToday(userId);
+    const savedStats = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COUNT(*)::int AS receipt_count FROM fp1_receipts WHERE user_id=$1`, [userId]);
+
+    res.json({
+      user_id:                  f.user_id,
+      username:                 f.username,
+      rating:                   f.rating,
+      invites:                  f.invites,
+      city:                     f.city,
+      district:                 f.district,
+      founder_number:           f.founder_number,
+      streak_current:           f.streak_current || 0,
+      streak_best:              f.streak_best    || 0,
+      streak_freeze_available:  f.streak_freeze_available || 0,
+      total_visits:             totalVisits.rows[0].c,
+      spun_today:               !!spunToday,
+      spin_prize:               spunToday?.prize_label || null,
+      total_saved:              parseFloat(savedStats.rows[0].total_saved),
+      receipt_count:            savedStats.rows[0].receipt_count,
+    });
+  } catch (e) {
+    console.error("API_PROFILE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+
+// GET /api/maps-key — повертає Google Maps ключ тільки авторизованим юзерам
+app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
+  const key = process.env.GOOGLE_MAPS_KEY || "";
+  if (!key) return res.status(503).json({ error: "Maps key not configured" });
+  res.json({ key });
+});
+
+// GET /api/venues
+app.get("/api/venues", async (req, res) => {
+  try {
+    let userId = null;
+    try {
+      const init = req.headers["x-telegram-init-data"];
+      if (init) {
+        const parsed = Object.fromEntries(new URLSearchParams(init));
+        if (parsed.user) userId = String(JSON.parse(parsed.user).id);
+      }
+    } catch(_){}
+    const r = await pool.query(
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+    );
+    let myVisits = {};
+    let totalVisits = {};
+    if (userId) {
+      const mv = await pool.query(
+        `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE user_id=$1 GROUP BY venue_id`, [userId]
+      );
+      mv.rows.forEach(r => myVisits[r.venue_id] = r.cnt);
     }
-    renderMapList();
-  } catch(e) {
-    q('mapContainer').innerHTML = '';
-    q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
-  } finally {
-    q('mapLoading').style.display = 'none';
+    const tv = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits GROUP BY venue_id`
+    );
+    tv.rows.forEach(r => totalVisits[r.venue_id] = r.cnt);
+
+    // Trial: remaining slots this month
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const trialUsed = {};
+    const tu = await pool.query(
+      `SELECT venue_id, COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [monthStart.toISOString()]
+    );
+    tu.rows.forEach(r => trialUsed[r.venue_id] = r.cnt);
+
+    // Weekly visits (for TOP week)
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+    const wv = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [weekAgo.toISOString()]
+    );
+    const weeklyVisits = {};
+    wv.rows.forEach(r => weeklyVisits[r.venue_id] = r.cnt);
+
+    // Monthly visits (for TOP month)
+    const mv2 = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [monthStart.toISOString()]
+    );
+    const monthlyVisits = {};
+    mv2.rows.forEach(r => monthlyVisits[r.venue_id] = r.cnt);
+
+    // Top category per venue
+    const tc = await pool.query(
+      `SELECT venue_id, category, COUNT(*)::int AS cnt FROM fp1_receipts WHERE category IS NOT NULL GROUP BY venue_id, category`
+    );
+    const topCategory = {};
+    tc.rows.forEach(r => {
+      if (!topCategory[r.venue_id] || r.cnt > topCategory[r.venue_id].cnt) topCategory[r.venue_id] = { cat: r.category, cnt: r.cnt };
+    });
+
+    // Top reason per venue
+    const tr = await pool.query(
+      `SELECT venue_id, reason, COUNT(*)::int AS cnt FROM fp1_receipts WHERE reason IS NOT NULL GROUP BY venue_id, reason`
+    );
+    const topReason = {};
+    tr.rows.forEach(r => {
+      if (!topReason[r.venue_id] || r.cnt > topReason[r.venue_id].cnt) topReason[r.venue_id] = { reason: r.reason, cnt: r.cnt };
+    });
+
+    // Top dish name per venue (from new choice system)
+    const tdq = await pool.query(
+      `SELECT r.venue_id, d.name, COUNT(*)::int AS cnt
+       FROM fp1_receipts r JOIN fp1_venue_dishes d ON d.id = r.dish_id
+       WHERE r.dish_id IS NOT NULL GROUP BY r.venue_id, d.name`
+    );
+    const topDish = {};
+    tdq.rows.forEach(r => {
+      if (!topDish[r.venue_id] || r.cnt > topDish[r.venue_id].cnt) topDish[r.venue_id] = { name: r.name, cnt: r.cnt };
+    });
+    // Flatten to just name
+    Object.keys(topDish).forEach(k => topDish[k] = topDish[k].name);
+
+    // TOP all-time > year > month > week (1 badge per venue, tiebreak: first to reach count)
+    // Week starts Sunday 00:00 Warsaw, Month starts 1st 00:00 Warsaw, Year starts Jan 1
+    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const dayOfWeek = warsawNow.getDay(); // 0=Sunday
+    const weekStart = new Date(warsawNow);
+    weekStart.setDate(weekStart.getDate() - dayOfWeek);
+    weekStart.setHours(0,0,0,0);
+
+    // Recount weekly from Sunday
+    const wv2 = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [weekStart.toISOString()]
+    );
+    const weeklyData = {};
+    wv2.rows.forEach(r => weeklyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    // Recount monthly from 1st
+    const monthStart2 = new Date(warsawNow);
+    monthStart2.setDate(1); monthStart2.setHours(0,0,0,0);
+    const mv3 = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [monthStart2.toISOString()]
+    );
+    const monthlyData = {};
+    mv3.rows.forEach(r => monthlyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    // Recount yearly from Jan 1
+    const yearStart = new Date(warsawNow);
+    yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
+    const yv = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [yearStart.toISOString()]
+    );
+    const yearlyData = {};
+    yv.rows.forEach(r => yearlyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    // All-time with first visit tiebreak
+    const allData = {};
+    const av = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits GROUP BY venue_id`
+    );
+    av.rows.forEach(r => allData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
+    function findTop(data, excludeIds) {
+      let topId = null, topCnt = 0, topFirst = null;
+      Object.entries(data).forEach(([vid, d]) => {
+        if (d.cnt < 1 || excludeIds.includes(Number(vid))) return;
+        if (d.cnt > topCnt || (d.cnt === topCnt && (!topFirst || new Date(d.first) < new Date(topFirst)))) {
+          topId = Number(vid); topCnt = d.cnt; topFirst = d.first;
+        }
+      });
+      return topId;
+    }
+
+    // Priority: alltime > year > month > week (each excludes higher-priority winners)
+    // AllTime activates only after at least 1 full calendar year has passed
+    // (i.e., there must be counted visits in a previous calendar year)
+    const prevYearEnd = new Date(warsawNow); prevYearEnd.setMonth(0, 1); prevYearEnd.setHours(0,0,0,0);
+    const hasPrevYear = await pool.query(
+      `SELECT 1 FROM fp1_counted_visits WHERE created_at < $1 LIMIT 1`,
+      [prevYearEnd.toISOString()]
+    );
+    const topAllTimeId = hasPrevYear.rowCount > 0 ? findTop(allData, []) : null;
+    const topYearId = findTop(yearlyData, [topAllTimeId].filter(Boolean));
+    const topMonthId = findTop(monthlyData, [topAllTimeId, topYearId].filter(Boolean));
+    const topWeekId = findTop(weeklyData, [topAllTimeId, topYearId, topMonthId].filter(Boolean));
+
+    // Get user's active reservations
+    let myReservations = {};
+    if (userId) {
+      const mr = await pool.query(
+        `SELECT venue_id, expires_at FROM fp1_reservations WHERE user_id=$1 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
+        [userId]
+      );
+      mr.rows.forEach(r => myReservations[r.venue_id] = r.expires_at);
+    }
+    // Count active reservations per trial venue (reduce remaining)
+    const activeRes = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_reservations WHERE used=FALSE AND expired=FALSE AND expires_at>NOW() GROUP BY venue_id`
+    );
+    const activeResByVenue = {};
+    activeRes.rows.forEach(r => activeResByVenue[r.venue_id] = r.cnt);
+
+    const venues = r.rows.map(v => {
+      const tv_cnt = totalVisits[v.id] || 0;
+      const usedSlots = (trialUsed[v.id] || 0) + (activeResByVenue[v.id] || 0);
+      const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - usedSlots) : null;
+      return {
+        ...v,
+        discount_percent: parseFloat(v.discount_percent) || 10,
+        my_visits: myVisits[v.id] || 0,
+        total_visits: tv_cnt,
+        weekly_visits: weeklyVisits[v.id] || 0,
+        monthly_visits: monthlyVisits[v.id] || 0,
+        trial_remaining,
+        my_reservation: myReservations[v.id] || null,
+        top_category: topCategory[v.id]?.cat || null,
+        top_reason: topReason[v.id]?.reason || null,
+        top_dish_name: topDish[v.id] || null,
+    is_top_week: v.id === topWeekId,
+        is_top_month: v.id === topMonthId,
+        is_top_year: v.id === topYearId,
+        is_top_alltime: v.id === topAllTimeId
+      };
+    });
+    res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/checkin
+app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId  = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+
+    const v = await getVenue(venueId);
+    if (!v)           return res.status(404).json({ error: "Lokal nie istnieje" });
+    if (!v.approved)  return res.status(400).json({ error: "Lokal nieaktywny" });
+
+    // Trial Partner: max monthly_visit_limit unique visitors/month
+    if (v.is_trial) {
+      const monthStart = new Date();
+      monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+      const mCount = await pool.query(
+        `SELECT COUNT(DISTINCT user_id)::int AS c FROM fp1_counted_visits
+         WHERE venue_id=$1 AND created_at >= $2`,
+        [venueId, monthStart.toISOString()]
+      );
+      const limit = v.monthly_visit_limit || 20;
+      if (mCount.rows[0].c >= limit) {
+        return res.status(403).json({
+          error: `Ten lokal osiągnął miesięczny limit (${limit} gości). Skontaktuj się z FoxPot.`,
+          trial_limit_reached: true
+        });
+      }
+    }
+
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+     if (!(await hasConsent(userId))) {
+      return res.status(403).json({ error: "consent_required", consent_version: CONSENT_VERSION });
+    }
+
+    const alreadyToday = await hasCountedToday(venueId, userId);
+    // Don't block! Fox can visit unlimited times per day for discount
+    // alreadyToday is passed to webapp so it knows bonuses won't apply
+
+    const debounce = await pool.query(
+      `SELECT 1 FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2
+       AND created_at > NOW() - INTERVAL '15 minutes'
+       AND confirmed_at IS NULL LIMIT 1`,
+      [userId, venueId]
+    );
+    if (debounce.rowCount > 0) {
+      const existing = await pool.query(
+        `SELECT otp, expires_at FROM fp1_checkins
+         WHERE user_id=$1 AND venue_id=$2 AND confirmed_at IS NULL AND expires_at > NOW()
+         ORDER BY created_at DESC LIMIT 1`,
+        [userId, venueId]
+      );
+      if (existing.rowCount > 0) {
+        return res.json({
+          already_today: alreadyToday,
+          otp: existing.rows[0].otp,
+          expires_at: existing.rows[0].expires_at,
+          venue_name: v.name,
+          discount_percent: parseFloat(v.discount_percent) || 10,
+        });
+      }
+    }
+
+    const checkin = await createCheckin(venueId, userId);
+    res.json({
+      already_today: alreadyToday,
+      otp:        checkin.otp,
+      expires_at: checkin.expires_at,
+      venue_name: v.name,
+      discount_percent: parseFloat(v.discount_percent) || 10,
+    });
+  } catch (e) {
+    console.error("API_CHECKIN_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/spin
+app.post("/api/spin", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+
+    const alreadySpun = await hasSpunToday(userId);
+    if (alreadySpun) {
+      const now      = new Date();
+      const tomorrow = new Date(`${warsawDayKey(new Date(now.getTime() + 86400000))}T00:00:00+01:00`);
+      const diffMs   = tomorrow - now;
+      const hours    = Math.floor(diffMs / 3600000);
+      const mins     = Math.floor((diffMs % 3600000) / 60000);
+      return res.json({
+        already_spun:  true,
+        next_spin_in:  `${hours}h ${mins}min`,
+        prize: {
+          type:  alreadySpun.prize_type,
+          value: alreadySpun.prize_value,
+          label: alreadySpun.prize_label,
+          emoji: SPIN_PRIZES.find(p => p.label === alreadySpun.prize_label)?.emoji || "🎁",
+        },
+      });
+    }
+
+    const prize = pickPrize();
+    await recordSpin(userId, prize);
+    await applyPrize(userId, prize);
+    await checkAchievements(userId);
+
+    const updated = await pool.query(
+      `SELECT rating, invites, streak_freeze_available FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]
+    );
+    const f = updated.rows[0];
+
+    res.json({
+      already_spun: false,
+      prize: {
+        type:  prize.type,
+        value: prize.value,
+        label: prize.label,
+        emoji: prize.emoji,
+      },
+      stats: {
+        rating:  f.rating,
+        invites: f.invites,
+        freeze:  f.streak_freeze_available,
+      },
+    });
+  } catch (e) {
+    console.error("API_SPIN_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/achievements
+app.get("/api/achievements", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+
+    const r = await pool.query(
+      `SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]
+    );
+    res.json({ achievements: r.rows.map(row => row.achievement_code) });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/district
+app.post("/api/district", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const district = String(req.body.district || "").trim();
+    const valid = [
+      "Śródmieście","Praga-Południe","Mokotów","Żoliborz","Wola","Ursynów",
+      "Praga-Północ","Targówek","Bielany","Bemowo","Białołęka","Wilanów","Inna dzielnica"
+    ];
+    if (!valid.includes(district)) return res.status(400).json({ error: "Nieprawidłowa dzielnica" });
+    await pool.query("UPDATE fp1_foxes SET district=$1 WHERE user_id=$2", [district, userId]);
+    res.json({ ok: true, district });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/invite/create
+app.post("/api/invite/create", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+    if (Number(fox.rows[0].invites) <= 0) return res.status(400).json({ error: "Brak zaproszeń", no_invites: true });
+
+    const result = await createInviteCode(userId);
+    if (!result.ok) {
+      if (result.reason === "NO_INVITES") return res.status(400).json({ error: "Brak zaproszeń", no_invites: true });
+      return res.status(500).json({ error: result.reason });
+    }
+    res.json({ ok: true, code: result.code, invites_left: result.invites_left });
+  } catch (e) {
+    console.error("API_INVITE_CREATE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/invite/stats
+app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT invites FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+
+    const invited = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]
+    );
+    const active = await pool.query(
+      `SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv
+       WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]
+    );
+    const codesGen = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]
+    );
+    const recent = await pool.query(
+      `SELECT i.code, i.uses, i.max_uses, i.created_at
+       FROM fp1_invites i WHERE i.created_by_user_id=$1
+       ORDER BY i.created_at DESC LIMIT 5`, [userId]
+    );
+
+    res.json({
+      invites_available: fox.rows[0].invites,
+      invited_total:     invited.rows[0].c,
+      invited_active:    active.rows[0].c,
+      codes_generated:   codesGen.rows[0].c,
+      recent_codes:      recent.rows,
+    });
+  } catch (e) {
+    console.error("API_INVITE_STATS_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+// GET /api/checkin/status — polling: чи OTP підтверджений?
+app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.query.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+    const day = warsawDayKey();
+    const r = await pool.query(
+      `SELECT id, confirmed_at FROM fp1_checkins
+       WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId, venueId, day]
+    );
+    if (r.rowCount === 0) return res.json({ status: "no_checkin" });
+    const row = r.rows[0];
+    if (row.confirmed_at) {
+      const dup = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`, [userId, venueId, day]);
+      return res.json({ status: "confirmed", receipt_done: dup.rowCount > 0, checkin_id: row.id });
+    }
+    return res.json({ status: "pending" });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+/* ═══════════════════════════════════════════════════════════════
+   V26: POST /api/receipt — БОНУСИ ТІЛЬКИ ТУТ
+═══════════════════════════════════════════════════════════════ */
+app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id), venueId = Number(req.body.venue_id);
+    const amountPaid = parseFloat(req.body.amount_paid);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+    if (isNaN(amountPaid) || amountPaid < 1 || amountPaid > 5000) return res.status(400).json({ error: "Kwota 1-5000 zł" });
+    const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+    const v = await getVenue(venueId);
+    if (!v) return res.status(404).json({ error: "Lokal nie istnieje" });
+    const discountPct = parseFloat(v.discount_percent) || 10;
+    const day = warsawDayKey();
+
+    // Duplicate check
+    const dup = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`, [userId, venueId, day]);
+    if (dup.rowCount > 0) return res.status(400).json({ error: "Rachunek już wpisany", already_submitted: true });
+
+    // Must have confirmed check-in today
+    const conf = await pool.query(`SELECT id FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2 AND confirmed_at IS NOT NULL AND war_day=$3 ORDER BY confirmed_at DESC LIMIT 1`, [userId, venueId, day]);
+    if (conf.rowCount === 0) return res.status(400).json({ error: "Najpierw zrób check-in", no_checkin: true });
+
+    const amountOriginal = amountPaid / (1 - discountPct / 100);
+    const discountSaved = amountOriginal - amountPaid;
+
+    await pool.query(`INSERT INTO fp1_receipts(user_id,venue_id,checkin_id,amount_paid,amount_original,discount_percent,discount_saved,bonuses_awarded,war_day) VALUES($1,$2,$3,$4,$5,$6,$7,FALSE,$8)`,
+      [userId, venueId, conf.rows[0].id, amountPaid.toFixed(2), amountOriginal.toFixed(2), discountPct, discountSaved.toFixed(2), day]);
+
+    // ═══ БОНУСИ (перенесені з confirmOtp) ═══
+    const already = await hasCountedToday(venueId, userId);
+    let countedAdded = false, inviteAutoAdded = 0, isFirstEver = false, newAch = [];
+    if (!already) {
+      const hasDK = COUNTED_DAY_COL === "day_key", hasWD = await hasColumn("fp1_counted_visits", "war_day");
+      const cols = ["venue_id","user_id"], vals = [venueId, userId];
+      if (hasDK) { cols.push("day_key"); vals.push(day); } if (hasWD) { cols.push("war_day"); vals.push(day); }
+      await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
+      await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+      countedAdded = true;
+      // Mark reservation as used (if any)
+      await pool.query(
+        `UPDATE fp1_reservations SET used=TRUE WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
+        [userId, venueId]
+      );
+
+      const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+      isFirstEver = tv.rows[0].c === 1;
+      if (isFirstEver) {
+        await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
+        const inv = await pool.query(`SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+        if (inv.rows[0]?.invited_by_user_id) {
+          await pool.query(`UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`, [String(inv.rows[0].invited_by_user_id)]);
+          if (bot) { try { await bot.telegram.sendMessage(Number(inv.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 pkt dla Ciebie! 🦊`); } catch {} }
+        }
+      }
+      inviteAutoAdded = await awardInvitesFrom5Visits(userId);
+      await updateStreak(userId);
+      const vvc = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+      const hour = warsawHour();
+      newAch = await checkAchievements(userId, { is_pioneer:vvc.rows[0].c===1, is_night:hour>=23, is_morning:hour<8 });
+    }
+
+    await pool.query(`UPDATE fp1_receipts SET bonuses_awarded=TRUE WHERE user_id=$1 AND venue_id=$2 AND war_day=$3`, [userId, venueId, day]);
+    const ts = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total FROM fp1_receipts WHERE user_id=$1`, [userId]);
+    const uf = await pool.query(`SELECT rating,invites,streak_current FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    const f = uf.rows[0];
+
+    // TG notification
+    if (bot && countedAdded) {
+      try {
+        let msg = `✅ Rachunek zapisany!\n🏪 ${v.name}\n💰 Zapłacono: ${amountPaid.toFixed(0)} zł\n💸 Zaoszczędzono: ${parseFloat(discountSaved).toFixed(0)} zł\n📊 Łącznie: ${parseFloat(ts.rows[0].total).toFixed(0)} zł`;
+        if (isFirstEver) msg += `\n🎉 Pierwsza wizyta! +10 pkt`;
+        if (inviteAutoAdded > 0) msg += `\n🎁 +${inviteAutoAdded} zaproszenie`;
+        msg += formatAchievements(newAch);
+        await bot.telegram.sendMessage(Number(userId), msg);
+      } catch (e) { console.error("RECEIPT_TG_ERR", e?.message); }
+    }
+
+    res.json({ ok:true,
+      receipt:{ amount_paid:parseFloat(amountPaid.toFixed(2)), amount_original:parseFloat(amountOriginal.toFixed(2)), discount_percent:discountPct, discount_saved:parseFloat(discountSaved.toFixed(2)), total_saved:parseFloat(ts.rows[0].total) },
+      bonuses:{ counted:countedAdded, first_ever:isFirstEver, invites_added:inviteAutoAdded, achievements:newAch.map(a=>({code:a.code,emoji:a.emoji,label:a.label,rating:a.rating})) },
+      stats:{ rating:f?.rating||0, invites:f?.invites||0, streak:f?.streak_current||0 },
+    });
+  } catch (e) { console.error("API_RECEIPT_ERR", e); res.status(500).json({ error: String(e?.message||e) }); }
+});
+
+// GET /api/receipt/stats
+app.get("/api/receipt/stats", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const t = await pool.query(`SELECT COUNT(*)::int AS receipt_count, COALESCE(SUM(amount_paid),0)::numeric AS total_paid, COALESCE(SUM(amount_original),0)::numeric AS total_original, COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COALESCE(AVG(amount_paid),0)::numeric AS avg_check FROM fp1_receipts WHERE user_id=$1`, [userId]);
+    const bv = await pool.query(`SELECT v.name,v.discount_percent,COUNT(r.id)::int AS visits,COALESCE(SUM(r.discount_saved),0)::numeric AS saved,COALESCE(SUM(r.amount_paid),0)::numeric AS spent FROM fp1_receipts r JOIN fp1_venues v ON v.id=r.venue_id WHERE r.user_id=$1 GROUP BY v.id,v.name,v.discount_percent ORDER BY saved DESC LIMIT 10`, [userId]);
+    const r = t.rows[0];
+    res.json({ receipt_count:r.receipt_count, total_paid:parseFloat(r.total_paid), total_original:parseFloat(r.total_original), total_saved:parseFloat(r.total_saved), avg_check:parseFloat(parseFloat(r.avg_check).toFixed(2)), by_venue:bv.rows.map(x=>({name:x.name,discount_percent:parseFloat(x.discount_percent),visits:x.visits,saved:parseFloat(x.saved),spent:parseFloat(x.spent)})) });
+  } catch (e) { res.status(500).json({ error: String(e?.message||e) }); }
+});
+/* ═══════════════════════════════════════════════════════════════
+   V26: POST /api/receipt/category — категорія замовлення
+═══════════════════════════════════════════════════════════════ */
+// POST /api/consent — Fox приймає regulamin + privacy
+app.post("/api/consent", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    await saveConsent(userId);
+    res.json({ ok: true, consent_version: CONSENT_VERSION });
+  } catch (e) {
+    console.error("CONSENT_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+// POST /api/reserve — Fox резервує місце в trial локалі (24h, min rating +1)
+app.post("/api/reserve", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
+
+    const v = await getVenue(venueId);
+    if (!v || !v.is_trial) return res.status(400).json({ error: "Rezerwacja tylko dla lokali Trial" });
+
+    // Check min rating +1
+    const fox = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
+    if ((fox.rows[0].rating || 0) < 1) return res.status(403).json({ error: "Minimalny rating: 1 punkt" });
+
+    // Check no active reservation for this user at this venue
+    const existing = await pool.query(
+      `SELECT 1 FROM fp1_reservations WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW() LIMIT 1`,
+      [userId, venueId]
+    );
+    if (existing.rowCount > 0) return res.status(400).json({ error: "Masz już aktywną rezerwację" });
+
+    // Check trial remaining (include active reservations as used)
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const mCount = await pool.query(
+      `SELECT COUNT(DISTINCT user_id)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND created_at >= $2`,
+      [venueId, monthStart.toISOString()]
+    );
+    const activeReservations = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_reservations WHERE venue_id=$1 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
+      [venueId]
+    );
+    const limit = v.monthly_visit_limit || 20;
+    const totalUsed = mCount.rows[0].c + activeReservations.rows[0].c;
+    if (totalUsed >= limit) {
+      return res.status(403).json({ error: "Brak wolnych miejsc w tym miesiącu", trial_limit_reached: true });
+    }
+
+    // Create reservation — expires end of today Warsaw time
+    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const expiresAt = new Date(warsawNow);
+    expiresAt.setHours(23, 59, 59, 999);
+
+    await pool.query(
+      `INSERT INTO fp1_reservations(user_id, venue_id, expires_at) VALUES($1,$2,$3)`,
+      [userId, venueId, expiresAt.toISOString()]
+    );
+    res.json({ ok: true, expires_at: expiresAt.toISOString(), remaining: limit - totalUsed - 1 });
+  } catch (e) {
+    console.error("API_RESERVE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// DELETE /api/reserve — Fox скасовує резервацію
+app.delete("/api/reserve", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    const del = await pool.query(
+      `DELETE FROM fp1_reservations WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW() RETURNING id`,
+      [userId, venueId]
+    );
+    res.json({ ok: true, deleted: del.rowCount });
+  } catch (e) {
+    console.error("API_RESERVE_DEL_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /api/reservations — поточні резервації Fox
+app.get("/api/reservations", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const r = await pool.query(
+      `SELECT r.venue_id, r.expires_at, v.name FROM fp1_reservations r JOIN fp1_venues v ON v.id=r.venue_id
+       WHERE r.user_id=$1 AND r.used=FALSE AND r.expired=FALSE AND r.expires_at>NOW() ORDER BY r.expires_at ASC`,
+      [userId]
+    );
+    res.json({ reservations: r.rows });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/receipt/reason — "Dlaczego tu?" survey
+app.post("/api/receipt/reason", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    const reason = String(req.body.reason || "").trim();
+    const VALID = ["fast","tasty","cheap","chill","social"];
+    if (!venueId || !VALID.includes(reason))
+      return res.status(400).json({ error: "Nieprawidłowy powód" });
+    const day = warsawDayKey();
+    const receipt = await pool.query(
+      `SELECT id FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`,
+      [userId, venueId, day]
+    );
+    if (receipt.rowCount === 0)
+      return res.status(400).json({ error: "Najpierw wpisz rachunek" });
+    await pool.query(
+      `UPDATE fp1_receipts SET reason=$1 WHERE id=$2`,
+      [reason, receipt.rows[0].id]
+    );
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+    res.json({ ok: true, bonus_points: 1 });
+  } catch (e) {
+    console.error("API_RECEIPT_REASON_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+app.post("/api/receipt/category", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.body.venue_id);
+    const category = String(req.body.category || "").trim();
+    const VALID = ["main","snack","dessert","coffee","drink","alcohol","other"];
+    if (!venueId || !VALID.includes(category))
+      return res.status(400).json({ error: "Nieprawidłowa kategoria" });
+    const day = warsawDayKey();
+    const receipt = await pool.query(
+      `SELECT id FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND war_day=$3 LIMIT 1`,
+      [userId, venueId, day]
+    );
+    if (receipt.rowCount === 0)
+      return res.status(400).json({ error: "Najpierw wpisz rachunek" });
+    await pool.query(
+      `UPDATE fp1_receipts SET category=$1 WHERE id=$2`,
+      [category, receipt.rows[0].id]
+    );
+    // Bonus: +1 punkt za kategorię
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+    res.json({ ok: true, bonus_points: 1 });
+  } catch (e) {
+    console.error("API_RECEIPT_CATEGORY_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+/* ═══════════════════════════════════════════════════════════════
+   V24: VENUE QR SYSTEM
+═══════════════════════════════════════════════════════════════ */
+
+// Helper: штрафна логіка
+async function applyViolation(client, user_id, obligation_id, new_violation_count) {
+  let penaltyPoints = 0;
+  let bannedUntil   = null;
+
+  // Warsaw midnight = наступний ранок
+  const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+  const warsawMidnight = new Date(warsawNow);
+  warsawMidnight.setHours(24, 0, 0, 0);
+
+  if (new_violation_count === 1) {
+    penaltyPoints = -10;
+    bannedUntil   = warsawMidnight;
+  } else if (new_violation_count === 2) {
+    penaltyPoints = -20;
+    bannedUntil   = warsawMidnight;
+  } else {
+    penaltyPoints = -50;
+    bannedUntil   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 днів
+  }
+
+  // Штраф до рейтингу
+  await client.query(
+    `UPDATE fp1_foxes SET rating = GREATEST(0, rating + $1) WHERE user_id = $2`,
+    [penaltyPoints, String(user_id)]
+  );
+
+  // Оновити obligation
+  await client.query(
+    `UPDATE fp1_venue_obligations
+     SET fulfilled = TRUE, fulfilled_at = NOW(),
+         violation_count = $2, banned_until = $3,
+         last_violation_at = NOW()
+     WHERE id = $1`,
+    [obligation_id, new_violation_count, bannedUntil]
+  );
+
+  // Повідомити Fox в Telegram
+  if (bot) {
+    try {
+      const msg = new_violation_count >= 3
+        ? `⛔ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБан: 7 днів\n\nЛічильник скинеться після відбуття бану.`
+        : `⚠️ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБлок до ранку (Warsaw time)`;
+      await bot.telegram.sendMessage(Number(user_id), msg);
+    } catch {}
   }
 }
-loadProfile();
-if(!TG) console.warn('[FoxPot] Nie w Telegram WebApp');
-</script>
-</body>
-</html>
+
+// POST /api/venue/scan — Fox сканує QR або вводить код локалу
+app.post("/api/venue/scan", requireWebAppAuth, async (req, res) => {
+  const user_id    = String(req.tgUser.id);
+  const venue_id   = String(req.body.venue_id   || "").trim();
+  const venue_name = String(req.body.venue_name || venue_id).trim();
+
+  if (!venue_id) return res.status(400).json({ ok: false, error: "missing_venue_id" });
+
+  const client = await pool.connect();
+  try {
+    // 1. Перевірити бан
+    const banCheck = await client.query(
+      `SELECT banned_until FROM fp1_venue_obligations
+       WHERE user_id = $1 AND banned_until > NOW()
+       ORDER BY banned_until DESC LIMIT 1`,
+      [user_id]
+    );
+    if (banCheck.rows.length > 0) {
+      return res.json({
+        ok: false,
+        error: "banned",
+        banned_until: banCheck.rows[0].banned_until,
+      });
+    }
+
+    // 2. Перевірити активне незавершене зобов'язання
+    const existing = await client.query(
+      `SELECT id, venue_name FROM fp1_venue_obligations
+       WHERE user_id = $1 AND fulfilled = FALSE AND expires_at > NOW()`,
+      [user_id]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({
+        ok: false,
+        error: "obligation_pending",
+        pending_venue: existing.rows[0].venue_name,
+      });
+    }
+
+    // 3. Отримати violation_count (з урахуванням скидання після 7-денного бану)
+    const vcRow = await client.query(
+      `SELECT violation_count, banned_until FROM fp1_venue_obligations
+       WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [user_id]
+    );
+    let violation_count = 0;
+    if (vcRow.rows.length > 0) {
+      const last = vcRow.rows[0];
+      const was7DayBan   = last.violation_count >= 3;
+      const banExpired   = last.banned_until && new Date(last.banned_until) < new Date();
+      violation_count = (was7DayBan && banExpired) ? 0 : last.violation_count;
+    }
+
+    // 4. +1 rating, +5 invites
+    await client.query(
+      `UPDATE fp1_foxes SET rating = rating + 1, invites = invites + 5 WHERE user_id = $1`,
+      [user_id]
+    );
+
+    // 5. Зберегти referred_by_venue (як текст venue_id)
+    await client.query(
+      `UPDATE fp1_foxes SET referred_by_venue = $2 WHERE user_id = $1`,
+      [user_id, venue_id]
+    );
+
+    // 6. Створити obligation (24 години)
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await client.query(
+      `INSERT INTO fp1_venue_obligations
+       (user_id, venue_id, venue_name, expires_at, violation_count)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [user_id, venue_id, venue_name, expiresAt, violation_count]
+    );
+
+    res.json({
+      ok:         true,
+      message:    `+1 рейтинг, +5 інвайтів! Зроби check-in у ${venue_name} протягом 24 годин.`,
+      expires_at: expiresAt,
+    });
+  } catch (e) {
+    console.error("API_VENUE_SCAN_ERR", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/venue/checkin — Fox робить check-in (виконує obligation)
+app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
+  const user_id  = String(req.tgUser.id);
+  const venue_id = String(req.body.venue_id || "").trim();
+
+  if (!venue_id) return res.status(400).json({ ok: false, error: "missing_venue_id" });
+
+  const client = await pool.connect();
+  try {
+    // Знайти активне зобов'язання
+    const obligation = await client.query(
+      `SELECT * FROM fp1_venue_obligations
+       WHERE user_id = $1 AND fulfilled = FALSE AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id]
+    );
+
+    if (obligation.rows.length === 0) {
+      return res.json({ ok: false, error: "no_obligation" });
+    }
+
+    const ob = obligation.rows[0];
+
+    if (String(ob.venue_id) === venue_id) {
+      // ✅ Правильний заклад
+      await client.query(
+        `UPDATE fp1_venue_obligations
+         SET fulfilled = TRUE, fulfilled_at = NOW()
+         WHERE id = $1`,
+        [ob.id]
+      );
+      res.json({ ok: true, message: "Check-in підтверджено! 🦊" });
+    } else {
+      // ❌ Неправильний заклад — штраф
+      const new_count = ob.violation_count + 1;
+      await applyViolation(client, user_id, ob.id, new_count);
+      res.json({
+        ok:      false,
+        error:   "wrong_venue",
+        message: `Штраф! Ти зробив check-in в іншому закладі. Порушення #${new_count}.`,
+      });
+    }
+  } catch (e) {
+    console.error("API_VENUE_CHECKIN_ERR", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  } finally {
+    client.release();
+  }
+});
+
+// CRON: кожні 15 хвилин — штрафувати за прострочені obligations
+setInterval(async () => {
+  const client = await pool.connect();
+  try {
+    const expired = await client.query(
+      `SELECT * FROM fp1_venue_obligations
+       WHERE fulfilled = FALSE
+         AND expires_at < NOW()
+         AND (banned_until IS NULL OR banned_until < NOW())
+       ORDER BY expires_at ASC
+       LIMIT 100`
+    );
+    for (const ob of expired.rows) {
+      const new_count = ob.violation_count + 1;
+      await applyViolation(client, ob.user_id, ob.id, new_count);
+      console.log(`[VenueCron] Штраф user=${ob.user_id} violation=${new_count}`);
+    }
+  } catch (e) {
+    console.error("[VenueCron] ERR", e?.message || e);
+  } finally {
+    client.release();
+  }
+}, 15 * 60 * 1000);
+
+// CRON: TOP reset — щонеділі 00:00 (TOP тижня), 1-го числа 00:00 (TOP місяця)
+// Перевіряє кожні 5 хв, шле адміну повідомлення про переможців
+let lastTopWeekReset = null;
+let lastTopMonthReset = null;
+let lastTopYearReset = null;
+
+setInterval(async () => {
+  try {
+    if (!bot || !ADMIN_TG_ID) return;
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const dayOfWeek = now.getDay(); // 0=Sunday
+    const dayOfMonth = now.getDate();
+    const hour = now.getHours();
+    const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+
+    // Sunday 00:xx — TOP тижня reset
+    if (dayOfWeek === 0 && hour === 0 && lastTopWeekReset !== todayKey) {
+      lastTopWeekReset = todayKey;
+      // Get last week's winner (previous Sunday to Saturday)
+      const weekEnd = new Date(now);
+      weekEnd.setHours(0, 0, 0, 0);
+      const weekStart = new Date(weekEnd);
+      weekStart.setDate(weekStart.getDate() - 7);
+      const topWeek = await pool.query(
+        `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
+         JOIN fp1_venues v ON v.id = cv.venue_id
+         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
+        [weekStart.toISOString(), weekEnd.toISOString()]
+      );
+      if (topWeek.rowCount > 0) {
+        const w = topWeek.rows[0];
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `🏆 TOP tygodnia: ${w.name} (${w.cnt} wizyt)\n📅 ${weekStart.toLocaleDateString("pl-PL")} — ${weekEnd.toLocaleDateString("pl-PL")}`
+        );
+        console.log(`[TopCron] Week winner: ${w.name} (${w.cnt})`);
+      } else {
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID), `🏆 TOP tygodnia: brak wizyt w tym tygodniu`);
+      }
+    }
+
+    // 1st of month 00:xx — TOP місяця reset
+    if (dayOfMonth === 1 && hour === 0 && lastTopMonthReset !== todayKey) {
+      lastTopMonthReset = todayKey;
+      // Get last month's winner
+      const monthEnd = new Date(now);
+      monthEnd.setHours(0, 0, 0, 0);
+      const monthStart = new Date(monthEnd);
+      monthStart.setMonth(monthStart.getMonth() - 1);
+      monthStart.setDate(1);
+      const topMonth = await pool.query(
+        `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
+         JOIN fp1_venues v ON v.id = cv.venue_id
+         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
+        [monthStart.toISOString(), monthEnd.toISOString()]
+      );
+      if (topMonth.rowCount > 0) {
+        const m = topMonth.rows[0];
+        const monthName = monthStart.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `👑 TOP miesiąca (${monthName}): ${m.name} (${m.cnt} wizyt)`
+        );
+        console.log(`[TopCron] Month winner: ${m.name} (${m.cnt})`);
+      } else {
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID), `👑 TOP miesiąca: brak wizyt w tym miesiącu`);
+      }
+    }
+
+    // Jan 1 00:xx — TOP року reset
+    if (dayOfMonth === 1 && now.getMonth() === 0 && hour === 0 && lastTopYearReset !== todayKey) {
+      lastTopYearReset = todayKey;
+      const yearEnd = new Date(now); yearEnd.setHours(0,0,0,0);
+      const yearStartCron = new Date(yearEnd); yearStartCron.setFullYear(yearStartCron.getFullYear() - 1); yearStartCron.setMonth(0, 1);
+      const topYear = await pool.query(
+        `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
+         JOIN fp1_venues v ON v.id = cv.venue_id
+         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
+        [yearStartCron.toISOString(), yearEnd.toISOString()]
+      );
+      if (topYear.rowCount > 0) {
+        const y = topYear.rows[0];
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `🏆🔥 TOP ROKU ${yearStartCron.getFullYear()}: ${y.name} (${y.cnt} wizyt)!\nTo jest legenda FoxPot Club!`
+        );
+        console.log(`[TopCron] Year winner: ${y.name} (${y.cnt})`);
+      }
+    }
+  } catch (e) {
+    console.error("[TopCron] ERR", e?.message || e);
+  }
+}, 5 * 60 * 1000); // кожні 5 хвилин
+
+// CRON: Reservation expiry — штраф -5 за невикористану резервацію
+setInterval(async () => {
+  try {
+    const expired = await pool.query(
+      `SELECT id, user_id, venue_id FROM fp1_reservations
+       WHERE used=FALSE AND expired=FALSE AND penalty_applied=FALSE AND expires_at < NOW()
+       LIMIT 50`
+    );
+    for (const r of expired.rows) {
+      await pool.query(`UPDATE fp1_reservations SET expired=TRUE, penalty_applied=TRUE WHERE id=$1`, [r.id]);
+      await pool.query(`UPDATE fp1_foxes SET rating=GREATEST(0, rating-5) WHERE user_id=$1`, [String(r.user_id)]);
+      console.log(`[ReserveCron] Penalty -5 user=${r.user_id} venue=${r.venue_id}`);
+      if (bot) {
+        try {
+          const v = await pool.query(`SELECT name FROM fp1_venues WHERE id=$1`, [r.venue_id]);
+          await bot.telegram.sendMessage(Number(r.user_id),
+            `⚠️ Rezerwacja wygasła!\n🏪 ${v.rows[0]?.name || 'Lokal'}\n📉 -5 pkt rating\n\nNastępnym razem odwiedź lokal w dniu rezerwacji.`
+          );
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.error("[ReserveCron] ERR", e?.message || e);
+  }
+}, 10 * 60 * 1000); // кожні 10 хвилин
+
+/* ═══════════════════════════════════════════════════════════════
+   GET /api/top
+═══════════════════════════════════════════════════════════════ */
+app.get("/api/top", async (req, res) => {
+  try {
+    const initData = req.headers["x-telegram-init-data"] || "";
+    const tgUser   = verifyTelegramInitData(initData);
+    const myId     = tgUser ? String(tgUser.id) : null;
+
+    const top = await pool.query(
+      `SELECT user_id, username, rating, founder_number
+       FROM fp1_foxes ORDER BY rating DESC LIMIT 10`
+    );
+
+    let myPosition = null, myRating = null;
+    if (myId) {
+      const myRow = await pool.query(
+        `SELECT rating,
+         (SELECT COUNT(*)::int FROM fp1_foxes WHERE rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)) + 1 AS pos
+         FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [myId]
+      );
+      if (myRow.rowCount > 0) {
+        myPosition = myRow.rows[0].pos;
+        myRating   = myRow.rows[0].rating;
+      }
+    }
+
+    res.json({
+      top:         top.rows,
+      my_position: myPosition,
+      my_rating:   myRating,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   ROUTES — PANEL
+═══════════════════════════════════════════════════════════════ */
+app.get("/panel", (req, res) => {
+  if (verifySession(getCookie(req))) return res.redirect("/panel/dashboard");
+  const msg = req.query.msg ? `<div class="err">${escapeHtml(req.query.msg)}</div>` : "";
+  res.send(pageShell("Panel lokalu", `
+    <div class="card" style="max-width:400px;margin:60px auto">
+      <h1>🦊 Panel lokalu</h1>${msg}
+      <form method="POST" action="/panel/login">
+        <label>ID lokalu</label>
+        <input name="venue_id" type="number" min="1" required placeholder="np. 1" autocomplete="off"/>
+        <label>PIN (6 cyfr)</label>
+        <input name="pin" type="password" maxlength="6" required placeholder="••••••"/>
+        <button type="submit" style="width:100%;margin-top:12px">Zaloguj →</button>
+      </form>
+    </div>`));
+});
+
+app.post("/panel/login", async (req, res) => {
+  const ip = getIp(req);
+  if (loginRate(ip).blocked) return res.redirect(`/panel?msg=${encodeURIComponent("Za dużo prób. Spróbuj za 15 minut.")}`);
+  const venueId = String(req.body.venue_id || "").trim();
+  const pin     = String(req.body.pin || "").trim();
+  if (!venueId || !pin) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Brak danych.")}`); }
+  const v = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
+  if (v.rowCount === 0 || !v.rows[0].pin_salt) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Nie znaleziono lokalu.")}`); }
+  const venue = v.rows[0];
+  if (pinHash(pin, venue.pin_salt) !== venue.pin_hash) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Błędny PIN.")}`); }
+  loginOk(ip);
+  setCookie(res, signSession({ venue_id:String(venue.id), exp:Date.now()+SESSION_TTL_MS }));
+  res.redirect("/panel/dashboard");
+});
+
+app.get("/panel/logout", (req, res) => { clearCookie(res); res.redirect("/panel"); });
+
+app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const venue   = await getVenue(venueId);
+  const pending = await listPending(venueId);
+  const status  = await currentVenueStatus(venueId);
+  const newFoxMonth = await countNewFoxThisMonth(venueId);
+  const newFoxTotal = await countNewFoxTotal(venueId);
+  const growth  = await getGrowthLeaderboard(50);
+  const myPos   = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
+
+  let statusHtml = `<span class="badge badge-ok">● Aktywny</span>`;
+  if (status) {
+    const till = new Date(status.ends_at).toLocaleString("pl-PL", { timeZone:"Europe/Warsaw" });
+    statusHtml = status.type === "reserve"
+      ? `<span class="badge badge-err">📍 Rezerwacja do ${till}</span>`
+      : `<span class="badge badge-warn">⚠️ Ograniczone (${escapeHtml(status.reason)}) do ${till}</span>`;
+  }
+
+  const pendingHtml = pending.length === 0
+    ? `<div class="muted">Brak aktywnych check-inów</div>`
+    : pending.map(p => {
+        const min = Math.max(0, Math.ceil((new Date(p.expires_at) - Date.now()) / 60000));
+        return `<div style="margin:6px 0">OTP: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>`;
+      }).join("");
+
+  const xy = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+
+  res.send(pageShell(`Panel — ${venue?.name || venueId}`, `
+    <div class="card">
+      <div class="topbar"><h1>🦊 ${escapeHtml(venue?.name||venueId)} ${statusHtml}</h1><a href="/panel/logout">Wyloguj</a></div>
+      ${flash(req)}
+      <div style="margin-top:10px;opacity:.7;font-size:13px">Kod lokalu: <b>${escapeHtml(venue.ref_code||'brak')}</b> | Łącznie wizyt: <b>${xy.rows[0].c}</b></div>
+    </div>
+    <div class="card">
+      <h2>📊 Nowi Fox przez twój kod</h2>
+      <div style="font-size:24px;font-weight:700;margin:10px 0">W tym miesiącu: ${newFoxMonth} Fox</div>
+      <div class="muted">Łącznie przyciągniętych: ${newFoxTotal} Fox</div>
+      ${myPos > 0 ? `<div class="muted" style="margin-top:8px">Jesteś na ${myPos} miejscu w rankingu! 🏆</div>` : ""}
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Potwierdź OTP</h2>
+        <form method="POST" action="/panel/confirm">
+          <input name="otp" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" required autocomplete="off" autofocus style="font-size:28px;letter-spacing:10px;text-align:center"/>
+          <button type="submit" style="width:100%;margin-top:10px">Potwierdź ✓</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Oczekujące check-iny</h2>
+        ${pendingHtml}
+        <form method="GET" action="/panel/dashboard" style="margin-top:10px">
+          <button type="submit" class="outline" style="width:100%">↻ Odśwież</button>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Statusy lokalu</h2>
+      <div class="grid2">
+        <div>
+          <b>📍 Rezerwacja</b> <span class="muted">(maks. 2×/mies., min. 24h wcześniej)</span>
+          <form method="POST" action="/panel/reserve" style="margin-top:8px">
+            <label>Początek</label><input type="datetime-local" name="starts_at" required/>
+            <label>Czas trwania</label>
+            <select name="hours"><option value="1">1 godz.</option><option value="2">2 godz.</option><option value="4">4 godz.</option><option value="8">8 godz.</option><option value="24" selected>24 godz.</option></select>
+            <button type="submit" style="margin-top:10px;width:100%">Ustaw rezerwację</button>
+          </form>
+        </div>
+        <div>
+          <b>⚠️ Dziś ograniczone</b> <span class="muted">(maks. 2×/tydz., do 3h)</span>
+          <form method="POST" action="/panel/limited" style="margin-top:8px">
+            <label>Powód</label>
+            <select name="reason"><option>FULL</option><option>PRIVATE EVENT</option><option>KITCHEN LIMIT</option></select>
+            <label>Czas trwania</label>
+            <select name="hours"><option value="1">1 godz.</option><option value="2">2 godz.</option><option value="3" selected>3 godz.</option></select>
+            <button type="submit" style="margin-top:10px;width:100%">Ustaw status</button>
+          </form>
+          ${status ? `<form method="POST" action="/panel/status/cancel" style="margin-top:8px"><button type="submit" class="danger" style="width:100%">Anuluj aktywny status</button></form>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🍽 Top 3 dania (promowane)</h2>
+      <p class="muted" style="margin-bottom:12px">Te dania zobaczą Foxy po check-inie. Wybierz swoje najlepsze!</p>
+      <div id="dishesForm">
+        <div id="dish1Row" class="grid2" style="margin-bottom:8px"><div><label>#1 Nazwa</label><input id="dish1name" maxlength="40" placeholder="np. Burger wołowy"/></div><div><label>Kategoria</label><select id="dish1cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish2Row" class="grid2" style="margin-bottom:8px"><div><label>#2 Nazwa</label><input id="dish2name" maxlength="40" placeholder="np. Latte"/></div><div><label>Kategoria</label><select id="dish2cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish3Row" class="grid2" style="margin-bottom:8px"><div><label>#3 Nazwa</label><input id="dish3name" maxlength="40" placeholder="np. Tiramisu"/></div><div><label>Kategoria</label><select id="dish3cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <button type="button" onclick="saveDishes()" style="width:100%;margin-top:6px">💾 Zapisz dania</button>
+        <div id="dishesMsg" style="margin-top:8px"></div>
+      </div>
+      <script>
+        async function loadDishes(){
+          try{
+            const r=await fetch('/panel/venue/dishes',{credentials:'same-origin'});
+            const d=await r.json();
+            if(d.dishes) d.dishes.forEach(dish=>{
+              const n=document.getElementById('dish'+dish.sort_order+'name');
+              const c=document.getElementById('dish'+dish.sort_order+'cat');
+              if(n) n.value=dish.name||'';
+              if(c) c.value=dish.category||'main';
+            });
+          }catch(e){console.error(e)}
+        }
+        async function saveDishes(){
+          const dishes=[];
+          for(let i=1;i<=3;i++){
+            const n=document.getElementById('dish'+i+'name').value.trim();
+            const c=document.getElementById('dish'+i+'cat').value;
+            if(n) dishes.push({sort_order:i,name:n,category:c,is_active:true});
+          }
+          if(dishes.length===0){document.getElementById('dishesMsg').innerHTML='<div class="err">Podaj co najmniej 1 danie</div>';return;}
+          try{
+            const r=await fetch('/panel/venue/dishes',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({dishes})});
+            const d=await r.json();
+            document.getElementById('dishesMsg').innerHTML=d.ok?'<div class="ok">✅ Zapisano!</div>':'<div class="err">'+d.error+'</div>';
+          }catch(e){document.getElementById('dishesMsg').innerHTML='<div class="err">Błąd: '+e.message+'</div>';}
+        }
+        loadDishes();
+      </script>
+    </div>
+    <div class="card">
+      <h2>Emoji-stemple</h2>
+      <form method="POST" action="/panel/stamps">
+        <div class="grid2">
+          <div><label>Telegram ID gościa</label><input name="user_id" type="number" required placeholder="np. 123456789"/></div>
+          <div><label>Emoji</label>
+            <select name="emoji"><option>⭐</option><option>🦊</option><option>🔥</option><option>🎁</option><option>💎</option><option>🏆</option><option>👑</option><option>❤️</option><option>🍕</option><option>🍔</option><option>🌭</option><option>🍟</option><option>🍣</option><option>🍱</option><option>🍜</option><option>🍝</option><option>🥩</option><option>🍗</option><option>🥗</option><option>🥪</option><option>🌮</option><option>🌯</option><option>🥐</option><option>🍰</option><option>🎂</option><option>🧁</option><option>🍩</option><option>🍪</option><option>🍦</option><option>🍫</option><option>🍺</option><option>🍻</option><option>🍷</option><option>🍸</option><option>☕</option><option>🧋</option><option>🥤</option><option>🍹</option></select>
+          </div>
+          <div><label>Akcja</label><select name="delta"><option value="1">+1 (dodaj)</option><option value="-1">-1 (użyj)</option></select></div>
+          <div><label>Notatka (opcjonalnie)</label><input name="note" placeholder="np. darmowy deser"/></div>
+        </div>
+        <button type="submit" style="margin-top:10px">Zastosuj stempel</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>📊 Co wybierają Foxy</h2>
+      <div id="foxChoiceStats"><span class="muted">Ładowanie...</span></div>
+      <script>
+        (async function(){
+          try{
+            const r=await fetch('/panel/venue/choice-stats',{credentials:'same-origin'});
+            const d=await r.json();
+            const el=document.getElementById('foxChoiceStats');
+            if(!d.stats||d.stats.length===0){el.innerHTML='<span class="muted">Brak danych jeszcze</span>';return;}
+            const catNames={main:'🍽 Główne',snack:'🥗 Przystawka',dessert:'🍰 Deser',drink:'☕ Napój',alcohol:'🍺 Alkohol',other:'📦 Inne'};
+            const total=d.stats.reduce((s,x)=>s+x.cnt,0);
+            el.innerHTML=d.stats.map(s=>{
+              const pct=total>0?Math.round(s.cnt/total*100):0;
+              return '<div style="display:flex;align-items:center;gap:8px;margin:6px 0">'+
+                '<div style="flex:1;font-size:13px">'+(catNames[s.agg_category]||s.agg_category)+'</div>'+
+                '<div style="width:120px;height:8px;background:#1a1e2e;border-radius:4px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:#6e56ff;border-radius:4px"></div></div>'+
+                '<div style="font-size:12px;color:#fff;font-weight:700;width:40px;text-align:right">'+pct+'%</div></div>';
+            }).join('')+'<div class="muted" style="margin-top:8px">Łącznie odpowiedzi: '+total+'</div>';
+            if(d.top_dishes&&d.top_dishes.length>0){
+              el.innerHTML+='<div style="margin-top:12px;font-size:13px;font-weight:700">🏆 Najczęściej wybierane dania:</div>'+
+                d.top_dishes.map((td,i)=>'<div style="font-size:13px;margin:4px 0">'+(i+1)+'. '+td.name+' <span class="muted">('+td.cnt+'×)</span></div>').join('');
+            }
+          }catch(e){document.getElementById('foxChoiceStats').innerHTML='<span class="muted">Błąd</span>';}
+        })();
+      </script>
+    </div>
+    <div class="card">
+      <h2>⚙️ Ustawienia lokalu</h2>
+      <form method="POST" action="/panel/settings">
+        <div class="grid2">
+          <div><label>Typ lokalu</label>
+            <select name="venue_type">
+              <option value="">— nie wybrano —</option>
+              <option value="fastfood" ${venue.venue_type==='fastfood'?'selected':''}>🍔 Fast food</option>
+              <option value="restauracja" ${venue.venue_type==='restauracja'?'selected':''}>🍝 Restauracja</option>
+              <option value="kawiarnia" ${venue.venue_type==='kawiarnia'?'selected':''}>☕ Kawiarnia</option>
+              <option value="bar" ${venue.venue_type==='bar'?'selected':''}>🍺 Bar</option>
+              <option value="streetfood" ${venue.venue_type==='streetfood'?'selected':''}>🥡 Street food</option>
+              <option value="inne" ${venue.venue_type==='inne'?'selected':''}>➕ Inne</option>
+            </select>
+          </div>
+          <div><label>Kuchnia (np. włoska, azjatycka)</label><input name="cuisine" value="${escapeHtml(venue.cuisine||'')}" maxlength="60"/></div>
+        </div>
+        <label>Opis lokalu (widoczny dla Fox)</label>
+        <textarea name="description" rows="2" maxlength="300">${escapeHtml(venue.description||'')}</textarea>
+        <label>Polecane dania / napoje (tekst wolny)</label>
+        <textarea name="recommended" rows="2" maxlength="300">${escapeHtml(venue.recommended||'')}</textarea>
+        <label>Godziny otwarcia (np. Pn-Pt: 10-22, Sob: 11-23)</label>
+        <textarea name="opening_hours" rows="2" maxlength="300">${escapeHtml(venue.opening_hours||'')}</textarea>
+        <label>Status chwilowy (np. "Dziś zamknięte od 18:00" — puste = brak)</label>
+        <input name="status_temporary" value="${escapeHtml(venue.status_temporary||'')}" maxlength="120"/>
+        <div class="grid2" style="margin-top:8px">
+          <div><label>Tags (vegan, gluten-free)</label><input name="tags" value="${escapeHtml(venue.tags||'')}" maxlength="100"/></div>
+          <div><label>Google Place ID (do zdjęć)</label><input name="google_place_id" value="${escapeHtml(venue.google_place_id||'')}" maxlength="100" placeholder="ChIJ..."/></div>
+        </div>
+        <button type="submit" style="margin-top:12px;width:100%">💾 Zapisz ustawienia</button>
+      </form>
+    </div>`));
+});
+
+// ── PANEL: GET venue dishes (Top 3) ──
+app.get("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  try {
+    const r = await pool.query(
+      `SELECT id, name, category, sort_order, is_active FROM fp1_venue_dishes WHERE venue_id=$1 ORDER BY sort_order ASC`,
+      [venueId]
+    );
+    res.json({ dishes: r.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── PANEL: PUT venue dishes (upsert Top 3) ──
+app.put("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const AGG_WHITELIST = ["main","snack","dessert","drink","alcohol","other"];
+  try {
+    const dishes = req.body.dishes;
+    if (!Array.isArray(dishes) || dishes.length > 3) return res.status(400).json({ error: "Podaj do 3 dań" });
+    for (const d of dishes) {
+      const name = String(d.name || "").trim();
+      const cat = String(d.category || "").trim();
+      const order = parseInt(d.sort_order);
+      const active = d.is_active !== false;
+      if (name.length < 2 || name.length > 40) return res.status(400).json({ error: `Nazwa "${name}" — 2-40 znaków` });
+      if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: `Nieznana kategoria: ${cat}` });
+      if (![1,2,3].includes(order)) return res.status(400).json({ error: `sort_order musi być 1, 2 lub 3` });
+      await pool.query(
+        `INSERT INTO fp1_venue_dishes(venue_id, name, category, sort_order, is_active, updated_at)
+         VALUES($1,$2,$3,$4,$5,NOW())
+         ON CONFLICT(venue_id, sort_order) DO UPDATE SET name=$2, category=$3, is_active=$5, updated_at=NOW()`,
+        [venueId, name, cat, order, active]
+      );
+    }
+    const r = await pool.query(`SELECT id, name, category, sort_order, is_active FROM fp1_venue_dishes WHERE venue_id=$1 ORDER BY sort_order`, [venueId]);
+    res.json({ ok: true, dishes: r.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── MINI APP: GET venue dishes for Fox ──
+app.get("/api/venues/:venue_id/dishes", async (req, res) => {
+  try {
+    const venueId = parseInt(req.params.venue_id);
+    const r = await pool.query(
+      `SELECT id, name, category, sort_order FROM fp1_venue_dishes WHERE venue_id=$1 AND is_active=TRUE ORDER BY sort_order ASC LIMIT 3`,
+      [venueId]
+    );
+    res.json({ dishes: r.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── MINI APP: POST choice after check-in ──
+app.post("/api/checkin/:checkin_id/choice", requireWebAppAuth, async (req, res) => {
+  const AGG_WHITELIST = ["main","snack","dessert","drink","alcohol","other"];
+  try {
+    const userId = req.tgUser.id;
+    const checkinId = parseInt(req.params.checkin_id);
+    const { dish_id, agg_category, custom_text } = req.body;
+    const rr = await pool.query(
+      `SELECT id, venue_id, choice_source, bonus_awarded_base, bonus_awarded_mini
+       FROM fp1_receipts WHERE checkin_id=$1 AND user_id=$2 AND amount_paid > 0
+       ORDER BY id DESC LIMIT 1`, [checkinId, userId]);
+    if (rr.rowCount === 0) return res.status(404).json({ error: "receipt_not_found" });
+    const receipt = rr.rows[0];
+    if (receipt.choice_source) return res.status(400).json({ error: "choice_already_made" });
+    let source, aggCat, dishIdVal = null, customVal = null;
+    if (dish_id) {
+      const dr = await pool.query(`SELECT id, category FROM fp1_venue_dishes WHERE id=$1 AND venue_id=$2 AND is_active=TRUE LIMIT 1`, [dish_id, receipt.venue_id]);
+      if (dr.rowCount === 0) return res.status(400).json({ error: "dish_not_found" });
+      source = "top3"; aggCat = dr.rows[0].category; dishIdVal = dr.rows[0].id;
+    } else if (custom_text) {
+      const cat = String(agg_category || "").trim();
+      if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: "agg_category_required" });
+      const text = String(custom_text || "").trim();
+      const valid = validateCustomText(text);
+      if (!valid.ok) return res.json({ ok: false, error: valid.error, base_bonus: false, mini_bonus: false });
+      const dupV = await pool.query(`SELECT 1 FROM fp1_receipts WHERE user_id=$1 AND venue_id=$2 AND custom_text=$3 LIMIT 1`, [userId, receipt.venue_id, text]);
+      if (dupV.rowCount > 0) return res.json({ ok: false, error: "already_submitted_for_venue", base_bonus: false, mini_bonus: false });
+      const dup7 = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_receipts WHERE user_id=$1 AND custom_text=$2 AND created_at > NOW()-INTERVAL '7 days'`, [userId, text]);
+      if (dup7.rows[0].c >= 3) return res.json({ ok: false, error: "too_many_same_text", base_bonus: false, mini_bonus: false });
+      source = "custom"; aggCat = cat; customVal = text;
+    } else if (agg_category) {
+      const cat = String(agg_category || "").trim();
+      if (!AGG_WHITELIST.includes(cat)) return res.status(400).json({ error: "invalid_category" });
+      source = "category"; aggCat = cat;
+    } else { return res.status(400).json({ error: "no_choice" }); }
+    // ATOMIC: save choice only if choice_source IS NULL
+    const upd = await pool.query(
+      `UPDATE fp1_receipts SET choice_source=$1, agg_category=$2, dish_id=$3, custom_text=$4
+       WHERE id=$5 AND choice_source IS NULL RETURNING id`,
+      [source, aggCat, dishIdVal, customVal, receipt.id]);
+    if (upd.rowCount === 0) return res.status(400).json({ error: "choice_already_made" });
+    let baseBonus = false, miniBonus = false;
+    // ATOMIC: base bonus
+    const bUpd = await pool.query(
+      `UPDATE fp1_receipts SET bonus_awarded_base=TRUE WHERE id=$1 AND (bonus_awarded_base IS NULL OR bonus_awarded_base=FALSE) RETURNING id`, [receipt.id]);
+    if (bUpd.rowCount > 0) { await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]); baseBonus = true; }
+    // ATOMIC: mini bonus (custom only)
+    if (source === "custom" && customVal) {
+      const mUpd = await pool.query(
+        `UPDATE fp1_receipts SET bonus_awarded_mini=TRUE WHERE id=$1 AND (bonus_awarded_mini IS NULL OR bonus_awarded_mini=FALSE) RETURNING id`, [receipt.id]);
+      if (mUpd.rowCount > 0) { await pool.query(`UPDATE fp1_foxes SET rating=rating+1, data_contributions=data_contributions+1 WHERE user_id=$1`, [userId]); miniBonus = true; await checkAchievements(userId); }
+    }
+    res.json({ ok: true, base_bonus: baseBonus, mini_bonus: miniBonus });
+  } catch (e) { console.error("choice error:", e); res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── Antispam validator for custom text ──
+// Antispam: pure text validation
+function validateCustomText(text) {
+  if (!text || typeof text !== "string") return { ok: false, error: "empty" };
+  const t = text.trim();
+  if (t.length < 3 || t.length > 30) return { ok: false, error: "length_3_30" };
+  const words = t.split(/\s+/);
+  if (words.length > 2) return { ok: false, error: "max_2_words" };
+  if (!/^[\p{L}]+(\s[\p{L}]+)?$/u.test(t)) return { ok: false, error: "letters_only" };
+  if (/^\d+$/.test(t)) return { ok: false, error: "no_digits_only" };
+  if (/https?:|www\.|\.[a-z]{2,}/i.test(t)) return { ok: false, error: "no_urls" };
+  return { ok: true };
+}
+
+// ── PANEL: Fox choice stats (what Foxes pick) ──
+app.get("/panel/venue/choice-stats", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  try {
+    const stats = await pool.query(
+      `SELECT agg_category, COUNT(*)::int AS cnt FROM fp1_receipts
+       WHERE venue_id=$1 AND agg_category IS NOT NULL GROUP BY agg_category ORDER BY cnt DESC`,
+      [venueId]
+    );
+    const topDishes = await pool.query(
+      `SELECT d.name, COUNT(*)::int AS cnt FROM fp1_receipts r
+       JOIN fp1_venue_dishes d ON d.id = r.dish_id
+       WHERE r.venue_id=$1 AND r.dish_id IS NOT NULL
+       GROUP BY d.name ORDER BY cnt DESC LIMIT 5`,
+      [venueId]
+    );
+    res.json({ stats: stats.rows, top_dishes: topDishes.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── PANEL: Save venue settings ──
+app.post("/panel/settings", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const b = req.body;
+  try {
+    await pool.query(
+      `UPDATE fp1_venues SET venue_type=$1, cuisine=$2, description=$3, recommended=$4,
+       opening_hours=$5, status_temporary=$6, tags=$7, google_place_id=$8 WHERE id=$9`,
+      [
+        String(b.venue_type||"").trim().slice(0,30),
+        String(b.cuisine||"").trim().slice(0,60),
+        String(b.description||"").trim().slice(0,300),
+        String(b.recommended||"").trim().slice(0,300),
+        String(b.opening_hours||"").trim().slice(0,300),
+        String(b.status_temporary||"").trim().slice(0,120),
+        String(b.tags||"").trim().slice(0,100),
+        String(b.google_place_id||"").trim().slice(0,100),
+        venueId
+      ]
+    );
+    res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Ustawienia zapisane ✅")}`);
+  } catch (e) {
+    res.redirect(`/panel/dashboard?err=${encodeURIComponent("Błąd: "+String(e?.message||e).slice(0,120))}`);
+  }
+});
+
+app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const otp = String(req.body.otp || "").trim();
+  if (!/^\d{6}$/.test(otp)) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP musi mieć 6 cyfr.")}`);
+  try {
+    const r = await confirmOtp(venueId, otp);
+    if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP nie znaleziono lub wygasł.")}`);
+    const venue = await getVenue(venueId);
+    const xy    = await countXY(venueId, r.userId);
+    if (bot) {
+      try {
+        let msg;
+        if (r.debounce) msg = `⚠️ Wizyta już potwierdzona w ciągu 15 min\n🏪 ${venue.name}\n📊 X/Y: ${xy.X}/${xy.Y}`;
+        else if (!r.countedAdded) msg = `DZIŚ JUŻ BYŁEŚ ✅\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
+        else {
+          msg = `✅ Check-in potwierdzony!\n🏪 ${venue.name}\n\n💰 Wpisz kwotę rachunku w aplikacji FoxPot, aby otrzymać punkty i bonusy!`;
+          if (r.isFirstEver) msg += `\n🎉 Pierwsza wizyta! +10 punktów`;
+          if (r.inviteAutoAdded > 0) msg += `\n🎁 +${r.inviteAutoAdded} zaproszenie za 5 wizyt!`;
+          msg += formatAchievements(r.newAch);
+        }
+        await bot.telegram.sendMessage(Number(r.userId), msg);
+      } catch (e) { console.error("TG_SEND_ERR", e?.message); }
+    }
+    const label = r.debounce ? "Debounce ⚠️" : r.countedAdded ? `Potwierdzone ✅ X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅`;
+    res.redirect(`/panel/dashboard?ok=${encodeURIComponent(label)}`);
+  } catch (e) {
+    console.error("CONFIRM_ERR", e);
+    res.redirect(`/panel/dashboard?err=${encodeURIComponent("Błąd: "+String(e?.message||e).slice(0,120))}`);
+  }
+});
+
+app.post("/panel/reserve", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const startsRaw = String(req.body.starts_at || "").trim();
+  const hours = Math.min(24, Math.max(1, Number(req.body.hours) || 24));
+  if (!startsRaw) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Podaj datę i godzinę.")}`);
+  const startsAt = new Date(startsRaw);
+  if (isNaN(startsAt.getTime())) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowa data.")}`);
+  if (startsAt.getTime() - Date.now() < 24 * 3600 * 1000) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Rezerwacja minimum 24h wcześniej.")}`);
+  const cnt = await reserveCountThisMonth(venueId);
+  if (cnt >= 2) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Maksimum 2 rezerwacje miesięcznie.")}`);
+  const endsAt = new Date(startsAt.getTime() + hours * 3600 * 1000);
+  await pool.query(`INSERT INTO fp1_venue_status(venue_id,type,starts_at,ends_at) VALUES($1,'reserve',$2,$3)`, [venueId, startsAt.toISOString(), endsAt.toISOString()]);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Rezerwacja ustawiona (${hours} godz.)`)}`);
+});
+
+app.post("/panel/limited", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const reason = ["FULL","PRIVATE EVENT","KITCHEN LIMIT"].includes(req.body.reason) ? req.body.reason : "FULL";
+  const hours  = Math.min(3, Math.max(1, Number(req.body.hours) || 3));
+  const cnt = await limitedCountThisWeek(venueId);
+  if (cnt >= 2) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Maksimum 2× tygodniowo.")}`);
+  const now = new Date(), endsAt = new Date(now.getTime() + hours * 3600 * 1000);
+  await pool.query(`INSERT INTO fp1_venue_status(venue_id,type,reason,starts_at,ends_at) VALUES($1,'limited',$2,$3,$4)`, [venueId, reason, now.toISOString(), endsAt.toISOString()]);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Status "${reason}" na ${hours} godz.`)}`);
+});
+
+app.post("/panel/status/cancel", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  await pool.query(`UPDATE fp1_venue_status SET ends_at=NOW() WHERE venue_id=$1 AND starts_at<=NOW() AND ends_at>NOW()`, [venueId]);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Status anulowany.")}`);
+});
+
+app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const userId  = String(req.body.user_id || "").trim();
+  const emoji   = ["⭐","🦊","🔥","🎁","💎","🏆","👑","❤️","🍕","🍔","🌭","🍟","🍣","🍱","🍜","🍝","🥩","🍗","🥗","🥪","🌮","🌯","🥐","🍰","🎂","🧁","🍩","🍪","🍦","🍫","🍺","🍻","🍷","🍸","☕","🧋","🥤","🍹"].includes(req.body.emoji) ? req.body.emoji : "⭐";
+  const delta   = Number(req.body.delta) === -1 ? -1 : 1;
+  const note    = String(req.body.note || "").trim().slice(0, 100);
+  if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy Telegram ID.")}`);
+  if (delta === -1) { const bal = await stampBalance(venueId, userId); if (bal <= 0) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Gość nie ma stempli.")}`); }
+  await pool.query(`INSERT INTO fp1_stamps(venue_id,user_id,emoji,delta,note) VALUES($1,$2,$3,$4,$5)`, [venueId, userId, emoji, delta, note||null]);
+  const newBal = await stampBalance(venueId, userId);
+  if (bot) {
+    try {
+      const venue = await getVenue(venueId);
+      const action = delta > 0 ? `+${delta} ${emoji}` : `${delta} ${emoji} (użyto)`;
+      await bot.telegram.sendMessage(Number(userId), `${emoji} Stempel w ${venue?.name||venueId}\n${action}\nTwoje saldo: ${newBal}${note ? `\nNotatka: ${note}` : ""}`);
+    } catch (e) { console.error("STAMP_TG_ERR", e?.message); }
+  }
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Stempel ${delta > 0 ? "dodany" : "użyty"} ✅ (saldo: ${newBal})`)}`);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   ROUTES — ADMIN
+═══════════════════════════════════════════════════════════════ */
+app.get("/admin/login", (req, res) => {
+  const msg = req.query.msg ? `<div class="err">${escapeHtml(req.query.msg)}</div>` : "";
+  res.send(pageShell("Admin", `
+    <div class="card" style="max-width:360px;margin:60px auto">
+      <h1>🛡️ Panel Admina</h1>${msg}
+      <form method="POST" action="/admin/login">
+        <label>Hasło admina</label>
+        <input name="secret" type="password" required placeholder="••••••••"/>
+        <button type="submit" style="width:100%;margin-top:12px">Zaloguj →</button>
+      </form>
+    </div>`));
+});
+
+app.post("/admin/login", (req, res) => {
+  const secret = String(req.body.secret || "").trim();
+  if (secret !== ADMIN_SECRET) { loginBad(getIp(req)); return res.redirect(`/admin/login?msg=${encodeURIComponent("Błędne hasło.")}`); }
+  loginOk(getIp(req));
+  setCookie(res, signSession({ role:"admin", venue_id:"0", exp:Date.now()+SESSION_TTL_MS }));
+  res.redirect("/admin");
+});
+
+app.get("/admin/logout", (req, res) => { clearCookie(res); res.redirect("/admin/login"); });
+
+app.get("/admin", requireAdminAuth, async (req, res) => {
+  const pending = await pool.query(`SELECT * FROM fp1_venues WHERE approved=FALSE ORDER BY created_at ASC`);
+  const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
+  const foxes   = await pool.query(`SELECT user_id,username,rating,invites,city,district,founder_number,streak_current,streak_best,created_at FROM fp1_foxes ORDER BY rating DESC LIMIT 50`);
+  const growth  = await getGrowthLeaderboard(10);
+  const spotsLeft = await founderSpotsLeft();
+  const districtStats = await pool.query(`SELECT district,COUNT(*)::int AS cnt FROM fp1_foxes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC`);
+  const achStats = await pool.query(`SELECT achievement_code,COUNT(*)::int AS cnt FROM fp1_achievements GROUP BY achievement_code ORDER BY cnt DESC LIMIT 10`);
+  const spinStats = await pool.query(`SELECT prize_type,prize_label,COUNT(*)::int AS cnt FROM fp1_daily_spins GROUP BY prize_type,prize_label ORDER BY cnt DESC`);
+
+  const pendingHtml = pending.rows.length === 0 ? `<div class="muted">Brak wniosków</div>`
+    : pending.rows.map(v => `
+      <div style="padding:10px 0;border-bottom:1px solid #2a2f49">
+        <b>${escapeHtml(v.name)}</b> — ${escapeHtml(v.city)}
+        ${v.address ? `<br><span class="muted">${escapeHtml(v.address)}</span>` : ""}
+        ${v.fox_nick ? `<br><span class="muted">Fox: @${escapeHtml(v.fox_nick)}</span>` : ""}
+        <br>
+        <form method="POST" action="/admin/venues/${v.id}/approve" style="display:inline"><button type="submit" style="margin-top:6px;margin-right:6px">✅ Zatwierdź</button></form>
+        <form method="POST" action="/admin/venues/${v.id}/reject" style="display:inline"><button type="submit" class="danger">❌ Odrzuć</button></form>
+      </div>`).join("");
+
+  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td></tr>`).join("");
+  const foxesHtml  = foxes.rows.map(f => `<tr><td>${f.user_id}</td><td>${escapeHtml(f.username||"—")}</td><td>${f.rating}</td><td>${f.invites}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td>${f.streak_current||0} 🔥 (rek: ${f.streak_best||0})</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td></tr>`).join("");
+  const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
+  const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
+  const achHtml  = achStats.rows.map(a => { const ach = ACHIEVEMENTS[a.achievement_code]; return `<tr><td>${ach?ach.emoji:"?"} ${escapeHtml(a.achievement_code)}</td><td><b>${a.cnt}</b></td></tr>`; }).join("");
+  const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
+
+  res.send(pageShell("Admin — FoxPot", `
+    <div class="card">
+      <div class="topbar"><h1>🛡️ Panel Admina</h1><a href="/admin/logout">Wyloguj</a></div>
+      ${flash(req)}
+      <div class="muted" style="margin-top:8px">👑 Founder: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
+    </div>
+    <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
+    <div class="card">
+      <h2>🚀 Ranking wzrostu</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="opacity:.6"><th>#</th><th>Nazwa</th><th>Miasto</th><th>Nowych Fox</th></tr>${growthHtml}
+      </table>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>📍 Gęstość według dzielnic</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="opacity:.6"><th>Dzielnica</th><th>Fox</th></tr>
+          ${districtHtml||'<tr><td colspan="2" class="muted">Brak danych</td></tr>'}
+        </table>
+      </div>
+      <div class="card">
+        <h2>🏆 Top osiągnięcia</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="opacity:.6"><th>Osiągnięcie</th><th>Fox</th></tr>
+          ${achHtml||'<tr><td colspan="2" class="muted">Brak danych</td></tr>'}
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🎰 Statystyki Daily Spin</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="opacity:.6"><th>Nagroda</th><th>Ilość</th></tr>
+        ${spinHtml||'<tr><td colspan="2" class="muted">Brak spinów</td></tr>'}
+      </table>
+    </div>
+    <div class="card">
+      <h2>Aktywne lokale</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="opacity:.6"><th>ID</th><th>Nazwa</th><th>Miasto</th><th>Wizyty</th><th>Status</th></tr>${venuesHtml}
+      </table>
+    </div>
+    <div class="card">
+      <h2>Fox (top 50)</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Punkty</th><th>Zapr.</th><th>Miasto</th><th>Dzielnica</th><th>Streak</th><th>Founder</th></tr>${foxesHtml}
+      </table>
+    </div>`, `table th,table td{padding:6px 8px;text-align:left;border-bottom:1px solid #1a1f35}`));
+});
+
+app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.params.id);
+  await pool.query(`UPDATE fp1_venues SET approved=TRUE WHERE id=$1`, [venueId]);
+  const v = await getVenue(venueId);
+  if (v?.fox_nick) {
+    const foxRow = await pool.query(`SELECT user_id,city FROM fp1_foxes WHERE username=$1 LIMIT 1`, [v.fox_nick.replace(/^@/,"")]);
+    if (foxRow.rowCount > 0) {
+      const fox = foxRow.rows[0];
+      const sameCity = (fox.city||"Warsaw").toLowerCase() === (v.city||"Warsaw").toLowerCase();
+      const invBonus = sameCity ? 5 : 10, ratBonus = sameCity ? 1 : 2;
+      await pool.query(`UPDATE fp1_foxes SET invites=invites+$1,rating=rating+$2 WHERE user_id=$3`, [invBonus, ratBonus, fox.user_id]);
+      if (bot) { try { await bot.telegram.sendMessage(Number(fox.user_id), `🎉 Lokal "${v.name}" został zatwierdzony!\n+${invBonus} zaproszeń, +${ratBonus} punktów`); } catch {} }
+    }
+  }
+  res.redirect(`/admin?ok=${encodeURIComponent("Zatwierdzono: "+(v?.name||venueId))}`);
+});
+
+app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.params.id);
+  const v = await getVenue(venueId);
+  await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
+  res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   TELEGRAM BOT
+═══════════════════════════════════════════════════════════════ */
+let bot = null;
+
+if (BOT_TOKEN) {
+  bot = new Telegraf(BOT_TOKEN);
+
+  bot.start(async (ctx) => {
+    try {
+      const text = String(ctx.message?.text || "").trim();
+      const parts = text.split(/\s+/);
+      const codeOrInv = parts[1] || "";
+      const userId = String(ctx.from.id);
+      const username = ctx.from.username || null;
+
+      const exists = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (exists.rowCount > 0) {
+        const f = exists.rows[0];
+        const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+        const badge = founderBadge(f.founder_number);
+        const spotsLeft = await founderSpotsLeft();
+        const alreadySpun = await hasSpunToday(userId);
+
+        let msg = `🦊 Twój profil\n\n`;
+        if (badge) msg += `${badge}\n\n`;
+        msg += `Punkty: ${f.rating}\n`;
+        msg += `Zaproszenia: ${f.invites}\n`;
+        msg += `Miasto: ${f.city}\n`;
+        msg += `Dzielnica: ${f.district || "nie podano"}\n`;
+        msg += `Wizyty: ${tot.rows[0].c}\n`;
+        msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
+        msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
+        if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
+
+        await updateStreak(userId);
+
+        const webAppUrl = `${PUBLIC_URL}/webapp`;
+        return ctx.reply(msg, Markup.inlineKeyboard([
+          [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+        ]));
+      }
+
+      if (!codeOrInv) {
+        const spotsLeft = await founderSpotsLeft();
+        let msg = `🦊 THE FOXPOT CLUB\n\nAby się zarejestrować, potrzebujesz zaproszenia od Fox lub kodu lokalu.\n\nNapisz: /start <KOD>`;
+        if (spotsLeft > 0) msg += `\n\n👑 Pierwsze 1000 Fox otrzymuje status FOUNDER!\nPozostało miejsc: ${spotsLeft}`;
+        return ctx.reply(msg);
+      }
+
+      const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 AND approved=TRUE LIMIT 1`, [codeOrInv.toUpperCase()]);
+      if (venue.rowCount > 0) {
+        const v = venue.rows[0];
+        await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city,referred_by_venue) VALUES($1,$2,1,5,'Warsaw',$3)`, [userId, username, v.id]);
+        await pool.query(`INSERT INTO fp1_counted_visits(venue_id,user_id,war_day) VALUES($1,$2,$3)`, [v.id, userId, warsawDayKey()]);
+        const founderNum = await assignFounderNumber(userId);
+        let msg = `✅ Zarejestrowano przez ${v.name}!\n\n+5 zaproszeń\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).\n`;
+        if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
+        else msg += `\n(Miejsca Founder już zajęte)\n`;
+        msg += `\n/checkin ${v.id} — pierwsza wizyta!\n🎰 /spin — kręć codziennie!`;
+
+        const webAppUrl = `${PUBLIC_URL}/webapp`;
+        await ctx.reply(msg, Markup.inlineKeyboard([
+          [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+        ]));
+        await sendDistrictKeyboard(ctx, "register");
+        return;
+      }
+
+      const result = await redeemInviteCode(userId, codeOrInv);
+      if (!result.ok) return ctx.reply("❌ Nieprawidłowy kod. Potrzebujesz zaproszenia od Fox lub kodu lokalu.");
+
+      await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,3,3,'Warsaw') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
+      const founderNum = await assignFounderNumber(userId);
+     let msg = `✅ Zarejestrowano!\n\n+2 punkty, +3 zaproszenia\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).\n`;
+      if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
+      else msg += `\n(Miejsca Founder już zajęte)\n`;
+      msg += `\n🎰 /spin — kręć codziennie!`;
+
+      const webAppUrl = `${PUBLIC_URL}/webapp`;
+      await ctx.reply(msg, Markup.inlineKeyboard([
+        [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+      ]));
+      await sendDistrictKeyboard(ctx, "register");
+    } catch (e) { console.error("START_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.command("spin", async (ctx) => {
+    try { await doSpin(ctx); }
+    catch (e) { console.error("SPIN_ERR", e); await ctx.reply("Błąd spinu. Spróbuj ponownie."); }
+  });
+
+  bot.command("streak", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT streak_current,streak_best,streak_freeze_available,streak_last_date FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      const f = fox.rows[0];
+      const cur = f.streak_current || 0, best = f.streak_best || 0, freeze = f.streak_freeze_available || 0;
+      const last = f.streak_last_date ? String(f.streak_last_date).slice(0, 10) : "nigdy";
+      let msg = `🔥 Twój Streak\n\nAktualny: ${cur} ${cur > 0 ? "🔥".repeat(Math.min(cur, 5)) : ""}\nRekord: ${best} dni\n❄️ Freeze: ${freeze} (chroni przed resetem)\nOstatni dzień: ${last}\n\n`;
+      if (cur < 7)        msg += `Do bonusu +5 pkt: ${7 - cur} dni`;
+      else if (cur < 30)  msg += `Do bonusu +15 pkt: ${30 - cur} dni`;
+      else if (cur < 90)  msg += `Do bonusu +50 pkt: ${90 - cur} dni`;
+      else if (cur < 365) msg += `Do bonusu +200 pkt: ${365 - cur} dni`;
+      else                msg += `🏆 Osiągnąłeś maksymalny streak!`;
+      await ctx.reply(msg);
+    } catch (e) { console.error("STREAK_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.command("settings", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT district,city FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      const f = fox.rows[0];
+      await ctx.reply(`⚙️ Ustawienia\n\n📍 Dzielnica: ${f.district||"nie podano"}\n🏙️ Miasto: ${f.city||"Warsaw"}`,
+        Markup.inlineKeyboard([[Markup.button.callback("📍 Zmień dzielnicę", "change_district")]]));
+    } catch (e) { console.error("SETTINGS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.command("panel", async (ctx) => {
+    await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`);
+  });
+
+  bot.command("venues", async (ctx) => {
+    const r = await pool.query(`SELECT id,name,city FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 50`);
+    if (r.rows.length === 0) return ctx.reply("Brak aktywnych lokali.");
+    const lines = r.rows.map(v => `• ID ${v.id}: ${v.name} (${v.city})`);
+    await ctx.reply(`🏪 Lokale partnerskie:\n${lines.join("\n")}\n\n/checkin <ID>`);
+  });
+
+  bot.command("invite", async (ctx) => {
+    try {
+      await upsertFox(ctx);
+      const r = await createInviteCode(String(ctx.from.id));
+      if (!r.ok) return ctx.reply(r.reason === "NO_INVITES" ? "❌ Brak zaproszeń. +1 za każde 5 potwierdzonych wizyt." : `❌ Błąd: ${r.reason}`);
+      await ctx.reply(`✅ Kod zaproszenia (1 użycie):\n${r.code}\n\nNowy Fox wpisuje:\n/start ${r.code}\n\nPozostałe zaproszenia: ${r.invites_left}`);
+    } catch (e) { console.error("INVITE_ERR", e); await ctx.reply("❌ Błąd tworzenia zaproszenia."); }
+  });
+
+  bot.command("checkin", async (ctx) => {
+    try {
+      const parts = String(ctx.message?.text || "").trim().split(/\s+/);
+      const venueId = parts[1];
+      if (!venueId) return ctx.reply("Użycie: /checkin <venue_id>");
+      const v = await getVenue(venueId);
+      if (!v) return ctx.reply("Nie znaleziono lokalu.");
+      if (!v.approved) return ctx.reply("Lokal oczekuje na zatwierdzenie.");
+      await upsertFox(ctx);
+      const userId = String(ctx.from.id);
+       if (!(await hasConsent(userId))) {
+        return ctx.reply(
+          `🦊 Zanim zrobisz check-in, zaakceptuj regulamin:\n\n` +
+          `📋 Regulamin: ${PUBLIC_URL}/rules\n` +
+          `🔒 Polityka Prywatności: ${PUBLIC_URL}/privacy\n\n` +
+          `Otwórz aplikację i zaakceptuj warunki.`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback("✅ Akceptuję Regulamin i Politykę Prywatności", "accept_consent")]
+          ])
+        );
+      }
+      const status = await currentVenueStatus(venueId);
+      let statusWarn = "";
+      if (status?.type === "limited") statusWarn = `\n⚠️ Status "${status.reason}" do ${new Date(status.ends_at).toLocaleTimeString("pl-PL",{timeZone:"Europe/Warsaw"})}`;
+      const already = await hasCountedToday(venueId, userId);
+      let repeatNote = '';
+      if (already) {
+        repeatNote = '\nℹ️ Wizyta już zaliczona dziś. Zniżka nadal obowiązuje!';
+      }
+      const c = await createCheckin(venueId, userId);
+      await ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${v.name}${statusWarn}${repeatNote}\n🔐 OTP: ${c.otp}\n\nPokaż personelowi.\nPanel: ${PUBLIC_URL}/panel`);
+    } catch (e) { console.error("CHECKIN_ERR", e); await ctx.reply("Błąd check-inu."); }
+  });
+
+  bot.command("stamps", async (ctx) => {
+    try {
+      const parts = String(ctx.message?.text || "").trim().split(/\s+/);
+      const venueId = parts[1];
+      if (!venueId) return ctx.reply("Użycie: /stamps <venue_id>");
+      const v = await getVenue(venueId);
+      if (!v) return ctx.reply("Nie znaleziono lokalu.");
+      const userId = String(ctx.from.id);
+      const balance = await stampBalance(venueId, userId);
+      const hist = await stampHistory(venueId, userId, 5);
+      const histTxt = hist.map(h => `${h.delta>0?"+":""}${h.delta} ${h.emoji}${h.note?" — "+h.note:""}`).join("\n");
+      await ctx.reply(`${v.name} — Stemple\nSaldo: ${balance}\n\nOstatnie:\n${histTxt||"Brak historii"}`);
+    } catch (e) { console.error("STAMPS_ERR", e); await ctx.reply("Błąd stempli."); }
+  });
+
+  bot.command("addvenue", async (ctx) => {
+    await upsertFox(ctx);
+    await ctx.reply(`Aby dodać lokal, wyślij dane w formacie:\n\n/newvenue Nazwa | Miasto | Adres | PIN (6 cyfr)\n\nPrzykład:\n/newvenue Pizza Roma | Warsaw | ul. Nowy Świat 5 | 654321\n\nLokal będzie aktywny po zatwierdzeniu przez admina.`);
+  });
+
+  bot.command("newvenue", async (ctx) => {
+    try {
+      await upsertFox(ctx);
+      const text = String(ctx.message?.text || "").replace("/newvenue","").trim();
+      const parts = text.split("|").map(s => s.trim());
+      if (parts.length < 4) return ctx.reply("Nieprawidłowy format.\n/newvenue Nazwa | Miasto | Adres | PIN (6 cyfr)");
+      const [name, city, address, pin] = parts;
+      if (!name||!city||!address||!pin) return ctx.reply("Wszystkie pola są wymagane.");
+      if (!/^\d{6}$/.test(pin)) return ctx.reply("PIN musi mieć dokładnie 6 cyfr.");
+      const foxNick = ctx.from.username || String(ctx.from.id);
+      const salt = crypto.randomBytes(16).toString("hex");
+      const hash = pinHash(pin, salt);
+      await pool.query(`INSERT INTO fp1_venues(name,city,address,pin_hash,pin_salt,approved,fox_nick) VALUES($1,$2,$3,$4,$5,FALSE,$6)`, [name, city, address, hash, salt, foxNick]);
+      await ctx.reply(`✅ Wniosek wysłany!\n\n🏪 ${name}\n📍 ${address}, ${city}\n\nAdmin sprawdzi i powiadomi Cię po zatwierdzeniu.`);
+    } catch (e) { console.error("NEWVENUE_ERR", e); await ctx.reply("Błąd rejestracji lokalu."); }
+  });
+
+  bot.command("achievements", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+
+      const existing = await pool.query(`SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]);
+      const have = new Set(existing.rows.map(r => r.achievement_code));
+      const total   = Object.keys(ACHIEVEMENTS).length;
+      const unlocked = have.size;
+
+      let msg = `🏆 Twoje osiągnięcia (${unlocked}/${total})\n\n`;
+      const categories = [
+        { label: "🗺️ Odkrywca",    keys: ["explorer_1","explorer_10","explorer_30","explorer_100"] },
+        { label: "🤝 Społeczność", keys: ["social_1","social_10","social_50","social_100"] },
+        { label: "🔥 Streak",      keys: ["streak_7","streak_30","streak_90","streak_365"] },
+        { label: "🏪 Wizyty",      keys: ["visits_1","visits_10","visits_50","visits_100"] },
+        { label: "🎰 Spin",        keys: ["spin_10","spin_30"] },
+        { label: "⭐ Specjalne",   keys: ["pioneer","night_fox","morning_fox","vip_diamond"] },
+      ];
+      for (const cat of categories) {
+        msg += `${cat.label}\n`;
+        for (const key of cat.keys) {
+          const ach = ACHIEVEMENTS[key];
+          if (!ach) continue;
+          msg += have.has(key) ? `✅ ${ach.emoji} ${ach.label}\n` : `🔒 ${ach.label} (+${ach.rating} pkt)\n`;
+        }
+        msg += "\n";
+      }
+      await ctx.reply(msg);
+    } catch (e) { console.error("ACHIEVEMENTS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.command("top", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const top = await pool.query(`SELECT user_id, username, rating, founder_number FROM fp1_foxes ORDER BY rating DESC LIMIT 10`);
+      const myPos = await pool.query(
+        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)`, [userId]
+      );
+      const myRating = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      const medals = ["🥇","🥈","🥉"];
+      let msg = `🦊 Top Fox\n\n`;
+      for (let i = 0; i < top.rows.length; i++) {
+        const f = top.rows[i];
+        const isMe = String(f.user_id) === userId;
+        const medal = medals[i] || `${i+1}.`;
+        const nick  = f.username ? `@${f.username}` : `Fox#${String(f.user_id).slice(-4)}`;
+        const founder = f.founder_number ? ` 👑#${f.founder_number}` : "";
+        const me = isMe ? " ← Ty!" : "";
+        msg += `${medal} ${nick}${founder} — ${f.rating} pkt${me}\n`;
+      }
+      const pos = (myPos.rows[0]?.pos || 0) + 1;
+      if (pos > 10 && myRating.rowCount > 0) {
+        msg += `\n...\n${pos}. Ty — ${myRating.rows[0].rating} pkt`;
+      }
+      await ctx.reply(msg);
+    } catch (e) { console.error("TOP_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.command("refer", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      const invited  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]);
+      const active   = await pool.query(`SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]);
+      const codesGen = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]);
+      const f = fox.rows[0];
+      const invitedCount = invited.rows[0].c, activeCount = active.rows[0].c;
+      let msg = `🦊 Twoje zaproszenia\n\n`;
+      msg += `👥 Zaproszonych Fox: ${invitedCount}\n`;
+      msg += `✅ Aktywnych (min. 1 wizyta): ${activeCount}\n`;
+      msg += `🎟️ Dostępne zaproszenia: ${f.invites}\n`;
+      msg += `📋 Wygenerowanych kodów: ${codesGen.rows[0].c}\n\n`;
+      if (invitedCount === 0) msg += `Jeszcze nikogo nie zaprosiłeś!\n\nUżyj /invite aby wygenerować kod.`;
+      else if (activeCount === 0) msg += `Zaprosiłeś ${invitedCount} Fox, ale nikt jeszcze nie zrobił check-inu.\nZachęć ich! 💪`;
+      else {
+        const percent = Math.round((activeCount / invitedCount) * 100);
+        msg += `${percent}% twoich Fox jest aktywnych! `;
+        if (percent === 100) msg += `🏆 Idealny wynik!`;
+        else if (percent >= 50) msg += `👍 Dobry wynik!`;
+        else msg += `💪 Zachęć więcej Fox!`;
+      }
+      msg += `\n\n+1 pkt gdy ktoś użyje kodu\n+5 pkt gdy zaproszony zrobi 1. wizytę`;
+      await ctx.reply(msg);
+    } catch (e) { console.error("REFER_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.action("accept_consent", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      await saveConsent(userId);
+      await ctx.answerCbQuery("✅ Zaakceptowano!");
+      await ctx.editMessageText(
+        `✅ Regulamin i Polityka Prywatności zaakceptowane!\n\n` +
+        `Wersja: ${CONSENT_VERSION}\n` +
+        `Możesz teraz korzystać z programu. 🦊`
+      );
+    } catch (e) {
+      console.error("ACCEPT_CONSENT_ERR", e);
+      await ctx.answerCbQuery("❌ Błąd. Spróbuj ponownie.");
+    }
+  });
+   bot.action("change_district", async (ctx) => {
+    try { await ctx.answerCbQuery(); await sendDistrictKeyboard(ctx, "change"); }
+    catch (e) { console.error("CHANGE_DISTRICT_ERR", e); }
+  });
+
+  bot.action(/^district_(.+)$/, async (ctx) => {
+    try {
+      const district = ctx.match[1];
+      if (!WARSAW_DISTRICTS.includes(district)) { await ctx.answerCbQuery("❌ Nieprawidłowa dzielnica"); return; }
+      const userId = String(ctx.from.id);
+      await pool.query(`UPDATE fp1_foxes SET district=$1 WHERE user_id=$2`, [district, userId]);
+      await ctx.answerCbQuery(`✅ Zapisano: ${district}`);
+      try { await ctx.editMessageText(`✅ Dzielnica zapisana!\n\n📍 ${district}\n\nZmień: /settings`); }
+      catch { await ctx.reply(`✅ Dzielnica: ${district}\n\nZmień: /settings`); }
+    } catch (e) { console.error("DISTRICT_ACTION_ERR", e); await ctx.answerCbQuery("❌ Błąd."); }
+  });
+
+  app.use(bot.webhookCallback(`/${WEBHOOK_SECRET}`));
+  app.get(`/${WEBHOOK_SECRET}`, (_req, res) => res.type("text/plain").send("WEBHOOK_OK"));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════════════════ */
+(async () => {
+  try {
+    await migrate();
+    if (bot && PUBLIC_URL) {
+      const hookUrl = `${PUBLIC_URL}/${WEBHOOK_SECRET}`;
+      try {
+        await bot.telegram.deleteWebhook({ drop_pending_updates:true });
+        await bot.telegram.setWebhook(hookUrl);
+        console.log("✅ Webhook:", hookUrl);
+      } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
+    }
+    app.listen(PORT, () => console.log(`✅ Server V26 listening on ${PORT}`));
+  } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
+})();
