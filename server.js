@@ -1237,8 +1237,8 @@ app.get("/api/venues", async (req, res) => {
       if (!topReason[r.venue_id] || r.cnt > topReason[r.venue_id].cnt) topReason[r.venue_id] = { reason: r.reason, cnt: r.cnt };
     });
 
-    // TOP all-time > month > week (1 badge per venue, tiebreak: first to reach count)
-    // Week starts Sunday 00:00 Warsaw, Month starts 1st 00:00 Warsaw
+    // TOP all-time > year > month > week (1 badge per venue, tiebreak: first to reach count)
+    // Week starts Sunday 00:00 Warsaw, Month starts 1st 00:00 Warsaw, Year starts Jan 1
     const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
     const dayOfWeek = warsawNow.getDay(); // 0=Sunday
     const weekStart = new Date(warsawNow);
@@ -1263,6 +1263,16 @@ app.get("/api/venues", async (req, res) => {
     const monthlyData = {};
     mv3.rows.forEach(r => monthlyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
 
+    // Recount yearly from Jan 1
+    const yearStart = new Date(warsawNow);
+    yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
+    const yv = await pool.query(
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      [yearStart.toISOString()]
+    );
+    const yearlyData = {};
+    yv.rows.forEach(r => yearlyData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
+
     // All-time with first visit tiebreak
     const allData = {};
     const av = await pool.query(
@@ -1281,9 +1291,11 @@ app.get("/api/venues", async (req, res) => {
       return topId;
     }
 
-    const topAllId = findTop(allData, []);
-    const topMonthId = findTop(monthlyData, [topAllId].filter(Boolean));
-    const topWeekId = findTop(weeklyData, [topAllId, topMonthId].filter(Boolean));
+    // Priority: all-time > year > month > week (each excludes higher-priority winners)
+    const topAllTimeId = findTop(allData, []);
+    const topYearId = findTop(yearlyData, [topAllTimeId].filter(Boolean));
+    const topMonthId = findTop(monthlyData, [topAllTimeId, topYearId].filter(Boolean));
+    const topWeekId = findTop(weeklyData, [topAllTimeId, topYearId, topMonthId].filter(Boolean));
 
     // Get user's active reservations
     let myReservations = {};
@@ -1318,7 +1330,8 @@ app.get("/api/venues", async (req, res) => {
         top_reason: topReason[v.id]?.reason || null,
     is_top_week: v.id === topWeekId,
         is_top_month: v.id === topMonthId,
-        is_top_year: v.id === topAllId
+        is_top_year: v.id === topYearId,
+        is_top_alltime: v.id === topAllTimeId
       };
     });
     res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
@@ -2060,6 +2073,7 @@ setInterval(async () => {
 // Перевіряє кожні 5 хв, шле адміну повідомлення про переможців
 let lastTopWeekReset = null;
 let lastTopMonthReset = null;
+let lastTopYearReset = null;
 
 setInterval(async () => {
   try {
@@ -2121,6 +2135,27 @@ setInterval(async () => {
         console.log(`[TopCron] Month winner: ${m.name} (${m.cnt})`);
       } else {
         await bot.telegram.sendMessage(Number(ADMIN_TG_ID), `👑 TOP miesiąca: brak wizyt w tym miesiącu`);
+      }
+    }
+
+    // Jan 1 00:xx — TOP року reset
+    if (dayOfMonth === 1 && now.getMonth() === 0 && hour === 0 && lastTopYearReset !== todayKey) {
+      lastTopYearReset = todayKey;
+      const yearEnd = new Date(now); yearEnd.setHours(0,0,0,0);
+      const yearStartCron = new Date(yearEnd); yearStartCron.setFullYear(yearStartCron.getFullYear() - 1); yearStartCron.setMonth(0, 1);
+      const topYear = await pool.query(
+        `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
+         JOIN fp1_venues v ON v.id = cv.venue_id
+         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
+        [yearStartCron.toISOString(), yearEnd.toISOString()]
+      );
+      if (topYear.rowCount > 0) {
+        const y = topYear.rows[0];
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `🏆🔥 TOP ROKU ${yearStartCron.getFullYear()}: ${y.name} (${y.cnt} wizyt)!\nTo jest legenda FoxPot Club!`
+        );
+        console.log(`[TopCron] Year winner: ${y.name} (${y.cnt})`);
       }
     }
   } catch (e) {
