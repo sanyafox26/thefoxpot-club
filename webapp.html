@@ -1268,8 +1268,9 @@ function updateMapMarkers(venues) {
   gMarkers = [];
   venues.forEach(v => {
     const xy = `${v.my_visits||0}/${v.total_visits||0}`;
-    const markerColor = v.is_top_year ? '#8B5CF6' : v.is_top_month ? '#3B82F6' : v.is_top_week ? '#22C55E' : '#FF8A00';
-    const textColor = (v.is_top_week || v.is_top_month || v.is_top_year) ? '#FFFFFF' : '#000000';
+    const markerColor = v.is_top_alltime ? '#8B5CF6' : v.is_top_year ? '#8B5CF6' : v.is_top_month ? '#3B82F6' : v.is_top_week ? '#22C55E' : '#FF8A00';
+    const markerBorder = v.is_top_alltime ? '#FF8A00' : 'none';
+    const textColor = (v.is_top_alltime || v.is_top_year || v.is_top_week || v.is_top_month) ? '#FFFFFF' : '#000000';
     // Measure text width for pill shape
     const charW = 7.5, pad = 20;
     const w = Math.round(xy.length * charW + pad);
@@ -1279,7 +1280,7 @@ function updateMapMarkers(venues) {
       map: gMap,
       position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
       icon: {
-        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect rx="${r}" width="${w}" height="${h}" fill="${markerColor}"/><text x="${w/2}" y="16.5" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="12" fill="${textColor}">${xy}</text></svg>`),
+        url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect rx="${r}" width="${w}" height="${h}" fill="${markerColor}"${markerBorder!=='none'?` stroke="${markerBorder}" stroke-width="2"`:''}/><text x="${w/2}" y="16.5" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="12" fill="${textColor}">${xy}</text></svg>`),
         scaledSize: new google.maps.Size(w, h),
         anchor: new google.maps.Point(w/2, h/2)
       },
@@ -1297,6 +1298,7 @@ function updateMapMarkers(venues) {
   renderMapList();
 }
 function topPriority(v) {
+  if (v.is_top_alltime) return 4;
   if (v.is_top_year) return 3;
   if (v.is_top_month) return 2;
   if (v.is_top_week) return 1;
@@ -1324,7 +1326,7 @@ function renderMapList() {
       ? '<span class="venue-map-badge badge-trial">Trial</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
-   const topStyle = v.is_top_year ? 'border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.08)' : v.is_top_month ? 'border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)' : v.is_top_week ? 'border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)' : '';
+   const topStyle = v.is_top_alltime ? 'border-color:#FF8A00;border-width:2px;background:rgba(139,92,246,.08)' : v.is_top_year ? 'border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.08)' : v.is_top_month ? 'border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)' : v.is_top_week ? 'border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)' : '';
     return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon">🏪</div>
       <div class="venue-map-info" style="flex:1">
@@ -1384,9 +1386,10 @@ async function cancelReserve(venueId) {
     badge = `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">🦊 Partner</span>`;
   }
 
-  // TOP badge (only highest priority: year > month > week)
+  // TOP badge (only highest priority: alltime > year > month > week)
   let topBadges = '';
-  if (v.is_top_year) topBadges = `<span style="display:inline-block;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#8B5CF6;font-weight:700;margin-left:4px">🏆 Top wszech czasów</span>`;
+  if (v.is_top_alltime) topBadges = `<span style="display:inline-block;background:#8B5CF6;border:2px solid #FF8A00;border-radius:20px;padding:3px 10px;font-size:11px;color:#FFFFFF;font-weight:700;margin-left:4px">⭐ Legenda FoxPot</span>`;
+  else if (v.is_top_year) topBadges = `<span style="display:inline-block;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#8B5CF6;font-weight:700;margin-left:4px">🏆 Top roku</span>`;
   else if (v.is_top_month) topBadges = `<span style="display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#3B82F6;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
   else if (v.is_top_week) topBadges = `<span style="display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#22C55E;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
 
