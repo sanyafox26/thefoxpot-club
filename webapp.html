@@ -372,6 +372,10 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <div class="info-cell"><div class="info-lbl">Spin dziś</div><div class="info-val" id="pSpinToday">—</div></div>
         </div>
       </div>
+      <div class="card" id="stampsCard" style="display:none">
+        <div class="card-title">🎫 Twoje stemple</div>
+        <div id="stampsList"></div>
+      </div>
     </div>
     <div id="pError" class="err-banner"></div>
     <div id="pUnauth" style="display:none">
@@ -730,6 +734,25 @@ async function loadProfile(){
     q('pFreeze').textContent=d.streak_freeze_available??0;
     q('pSpinToday').textContent=d.spun_today?'✅ '+(d.spin_prize||'kręcono'):'❌ nie kręcono';
     q('pSaved').textContent=(d.total_saved||0).toFixed(0)+' zł';
+    // Render stamps
+    if(d.stamps&&d.stamps.length>0){
+      q('stampsCard').style.display='block';
+      q('stampsList').innerHTML=d.stamps.map(s=>{
+        const goal=10;
+        const pct=Math.min(100,Math.round(s.balance/goal*100));
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <div style="font-size:24px">${esc(s.emoji)}</div>
+            <div style="flex:1"><div style="font-size:13px;font-weight:700">${esc(s.venue_name)}</div></div>
+            <div style="font-size:15px;font-weight:800;color:var(--fox);font-family:var(--mono)">${s.balance} / ${goal}</div>
+          </div>
+          <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${pct>=100?'var(--green)':'var(--fox)'};border-radius:3px;transition:width .3s"></div>
+          </div>
+          ${pct>=100?'<div style="font-size:11px;color:var(--green);margin-top:4px;font-weight:700">&#127881; Gratis gotowy! Pokaż w lokalu</div>':'<div style="font-size:11px;color:var(--muted);margin-top:4px">Jeszcze '+(goal-s.balance)+' do nagrody</div>'}
+        </div>`;
+      }).join('');
+    } else { q('stampsCard').style.display='none'; }
     $l.style.display='none'; $c.style.display='block';
     S.spinDone=!!d.spun_today;
     if(S.spinDone) markSpinDone(d.spin_prize);
