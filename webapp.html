@@ -1564,6 +1564,22 @@ async function cancelReserve(venueId) {
   // Description
   const desc = v.description ? `<div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">${esc(v.description)}</div>` : '';
 
+  // My stamps at this venue
+  const stampsBlock = v.my_stamps ? (() => {
+    const goal=10, bal=v.my_stamps.balance, pct=Math.min(100,Math.round(bal/goal*100));
+    return `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="font-size:20px">${esc(v.my_stamps.emoji)}</div>
+        <div style="flex:1;font-size:12px;font-weight:700;color:var(--fox)">Twoje stemple</div>
+        <div style="font-size:15px;font-weight:800;color:var(--fox);font-family:var(--mono)">${bal} / ${goal}</div>
+      </div>
+      <div style="height:6px;background:rgba(0,0,0,.3);border-radius:3px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${pct>=100?'var(--green)':'var(--fox)'};border-radius:3px"></div>
+      </div>
+      ${pct>=100?'<div style="font-size:11px;color:var(--green);margin-top:4px;font-weight:700">&#127881; Gratis! Pokaż w lokalu</div>':'<div style="font-size:11px;color:var(--muted);margin-top:4px">Jeszcze '+(goal-bal)+' do nagrody</div>'}
+    </div>`;
+  })() : '';
+
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
       ${v.google_place_id ? `<div style="width:100%;height:180px;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px;background:var(--card-bg)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#127978;'"/></div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
@@ -1586,7 +1602,7 @@ async function cancelReserve(venueId) {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>
-    ${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}
+    ${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${stampsBlock}
     <div style="display:flex;flex-direction:column;gap:8px">
       <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
       ${v.is_trial ? (v.my_reservation
