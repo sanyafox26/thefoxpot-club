@@ -369,6 +369,8 @@ async function migrate() {
    await ensureColumn("fp1_venues",         "venue_type",            "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "cuisine",               "TEXT NOT NULL DEFAULT ''");
    await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "opening_hours",         "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "status_temporary",      "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
@@ -1108,6 +1110,105 @@ app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "priva
 app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
 
+// ── PUBLIC VENUE TEASER PAGE ── /venue/:id ──
+app.get("/venue/:id", async (req, res) => {
+  try {
+    const venueId = parseInt(req.params.id);
+    if (!venueId) return res.status(404).send(pageShell("Nie znaleziono", `<div class="card"><h1>🔍 Lokal nie znaleziony</h1><p>Sprawdź link i spróbuj ponownie.</p><a href="/">← Strona główna</a></div>`));
+    const vr = await pool.query(
+      `SELECT id, name, city, address, venue_type, cuisine, tags, description, is_trial, discount_percent, opening_hours, status_temporary FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`,
+      [venueId]
+    );
+    const venue = vr.rows[0];
+    if (!venue) return res.status(404).send(pageShell("Nie znaleziono", `<div class="card"><h1>🔍 Lokal nie znaleziony</h1><p>Sprawdź link i spróbuj ponownie.</p><a href="/">← Strona główna</a></div>`));
+
+    // Count total visits
+    const cvr = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+    const totalVisits = cvr.rows[0]?.cnt || 0;
+
+    // Count unique foxes
+    const ufr = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+    const uniqueFoxes = ufr.rows[0]?.cnt || 0;
+
+    // TOP badge (simplified check)
+    const topLabel = "";
+
+    const discount = parseFloat(venue.discount_percent) || 10;
+    const tags = venue.tags ? venue.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
+    const veganBadge = tags.includes("vegan") ? `<span style="background:#1a3a1a;color:#4ade80;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">🌱 Vegan</span>` : "";
+    const gfBadge = tags.includes("gluten-free") ? `<span style="background:#3a2a0a;color:#fbbf24;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">🌾 Gluten-free</span>` : "";
+    const trialBadge = venue.is_trial ? `<span style="background:#2a1a0a;color:#fb923c;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">🧪 Tryb próbny</span>` : "";
+    const typeLine = [venue.venue_type, venue.cuisine].filter(Boolean).join(" · ");
+
+    const html = pageShell(`${venue.name} — The FoxPot Club`, `
+      <div style="text-align:center;padding:32px 16px 16px">
+        <div style="font-size:48px;margin-bottom:12px">🦊</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4);margin-bottom:4px">The FoxPot Club</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(venue.name)}</h1>
+        ${typeLine ? `<p style="color:rgba(255,255,255,0.5);font-size:13px;margin-bottom:10px">${escapeHtml(typeLine)}</p>` : ""}
+        <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">
+          ${veganBadge}${gfBadge}${trialBadge}
+        </div>
+        <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:4px">📍 ${escapeHtml(venue.address || "")}${venue.city ? ", " + escapeHtml(venue.city) : ""}</p>
+        ${venue.description ? `<p style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:10px;line-height:1.5">${escapeHtml(venue.description)}</p>` : ""}
+      </div>
+
+      ${venue.status_temporary ? `<div class="card" style="border-color:rgba(251,191,36,0.3);background:rgba(251,191,36,0.06);padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">⚠️ Status chwilowy</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">${escapeHtml(venue.status_temporary)}</div>
+      </div>` : ""}
+
+      ${venue.opening_hours ? `<div class="card" style="padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.5);margin-bottom:4px">🕐 Godziny otwarcia</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.6;white-space:pre-line">${escapeHtml(venue.opening_hours)}</div>
+      </div>` : ""}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 0">
+        <div class="card" style="text-align:center;padding:14px 8px">
+          <div style="font-size:24px;font-weight:800;color:#f5a623">${discount}%</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">zniżka Fox</div>
+        </div>
+        <div class="card" style="text-align:center;padding:14px 8px">
+          <div style="font-size:24px;font-weight:800;color:#7c5cfc">${totalVisits}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">wizyt</div>
+        </div>
+        <div class="card" style="text-align:center;padding:14px 8px">
+          <div style="font-size:24px;font-weight:800;color:#2ecc71">${uniqueFoxes}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px">Fox'ów</div>
+        </div>
+      </div>
+
+      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,0.3);background:rgba(245,166,35,0.06)">
+        <div style="font-size:28px;margin-bottom:8px">🔒</div>
+        <h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zniżkę ${discount}% jako Fox</h2>
+        <p style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;line-height:1.5">
+          The FoxPot Club to prywatny klub dla smakoszy.<br/>
+          Dołącz przez Telegram i korzystaj ze zniżek w najlepszych lokalach Warszawy.
+        </p>
+        <a href="https://t.me/TheFoxPotBot/app" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none;box-shadow:0 4px 20px rgba(245,166,35,0.4)">
+          🦊 Dołącz do FoxPot Club
+        </a>
+        <p style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:12px">Potrzebujesz kodu zaproszenia od aktywnego Fox'a</p>
+      </div>
+
+      <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,0.25)">
+        <a href="/" style="color:rgba(255,255,255,0.35)">thefoxpot.club</a> · 
+        <a href="/partners" style="color:rgba(255,255,255,0.35)">Dla restauracji</a> · 
+        <a href="/privacy" style="color:rgba(255,255,255,0.35)">Polityka prywatności</a>
+      </div>
+    `, `
+      body{background:#0a0b14}
+      .card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}
+    `);
+    res.send(html);
+  } catch (e) {
+    console.error("venue teaser error:", e);
+    res.status(500).send(pageShell("Błąd", `<div class="card"><h1>❌ Błąd serwera</h1><p>${escapeHtml(String(e?.message||e))}</p></div>`));
+  }
+});
+
 app.get("/health", async (_req, res) => {
   try {
     const now = await dbNow(), spots = await founderSpotsLeft();
@@ -1178,7 +1279,7 @@ app.get("/api/venues", async (req, res) => {
       }
     } catch(_){}
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -2495,7 +2596,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <form method="POST" action="/admin/venues/${v.id}/reject" style="display:inline"><button type="submit" class="danger">❌ Odrzuć</button></form>
       </div>`).join("");
 
-  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td></tr>`).join("");
+  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td><td><a href="/admin/venues/${v.id}/edit">✏️</a></td></tr>`).join("");
   const foxesHtml  = foxes.rows.map(f => `<tr><td>${f.user_id}</td><td>${escapeHtml(f.username||"—")}</td><td>${f.rating}</td><td>${f.invites}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td>${f.streak_current||0} 🔥 (rek: ${f.streak_best||0})</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td></tr>`).join("");
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
@@ -2574,6 +2675,58 @@ app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
   const v = await getVenue(venueId);
   await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
   res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
+});
+
+// ── ADMIN: Edit venue ──
+app.get("/admin/venues/:id/edit", requireAdminAuth, async (req, res) => {
+  const venueId = parseInt(req.params.id);
+  const v = await getVenue(venueId);
+  if (!v) return res.redirect("/admin?err=Venue+not+found");
+  res.send(pageShell(`Edytuj — ${v.name}`, `
+    <div class="card">
+      <div class="topbar"><h1>✏️ ${escapeHtml(v.name)}</h1><a href="/admin">← Panel</a></div>
+      ${flash(req)}
+      <form method="POST" action="/admin/venues/${v.id}/edit">
+        <label>Nazwa</label><input name="name" value="${escapeHtml(v.name||"")}"/>
+        <label>Miasto</label><input name="city" value="${escapeHtml(v.city||"")}"/>
+        <label>Adres</label><input name="address" value="${escapeHtml(v.address||"")}"/>
+        <label>Typ (fastfood/restauracja/kawiarnia/bar/streetfood/inne)</label><input name="venue_type" value="${escapeHtml(v.venue_type||"")}"/>
+        <label>Kuchnia</label><input name="cuisine" value="${escapeHtml(v.cuisine||"")}"/>
+        <label>Opis</label><textarea name="description" rows="3">${escapeHtml(v.description||"")}</textarea>
+        <label>Polecane przez lokal</label><textarea name="recommended" rows="2">${escapeHtml(v.recommended||"")}</textarea>
+        <label>Tags (vegan,gluten-free)</label><input name="tags" value="${escapeHtml(v.tags||"")}"/>
+        <label>Godziny otwarcia (np. Pn-Pt: 10-22, Sob: 11-23, Nd: zamknięte)</label><textarea name="opening_hours" rows="3">${escapeHtml(v.opening_hours||"")}</textarea>
+        <label>Status chwilowy (np. "Dziś ograniczony dostęp" — puste = brak)</label><input name="status_temporary" value="${escapeHtml(v.status_temporary||"")}"/>
+        <div class="grid2" style="margin-top:12px">
+          <div><label>Lat</label><input name="lat" value="${v.lat||""}"/></div>
+          <div><label>Lng</label><input name="lng" value="${v.lng||""}"/></div>
+        </div>
+        <label>Zniżka %</label><input name="discount_percent" type="number" value="${parseFloat(v.discount_percent)||10}"/>
+        <div style="margin-top:14px"><button type="submit">💾 Zapisz zmiany</button></div>
+      </form>
+    </div>
+  `));
+});
+
+app.post("/admin/venues/:id/edit", requireAdminAuth, async (req, res) => {
+  const venueId = parseInt(req.params.id);
+  const b = req.body;
+  try {
+    await pool.query(
+      `UPDATE fp1_venues SET name=$1, city=$2, address=$3, venue_type=$4, cuisine=$5, description=$6, recommended=$7, tags=$8, opening_hours=$9, status_temporary=$10, lat=$11, lng=$12, discount_percent=$13 WHERE id=$14`,
+      [
+        String(b.name||"").trim(), String(b.city||"").trim(), String(b.address||"").trim(),
+        String(b.venue_type||"").trim(), String(b.cuisine||"").trim(), String(b.description||"").trim(),
+        String(b.recommended||"").trim(), String(b.tags||"").trim(), String(b.opening_hours||"").trim(),
+        String(b.status_temporary||"").trim(),
+        b.lat ? parseFloat(b.lat) : null, b.lng ? parseFloat(b.lng) : null,
+        parseFloat(b.discount_percent) || 10, venueId
+      ]
+    );
+    res.redirect(`/admin/venues/${venueId}/edit?ok=${encodeURIComponent("Zapisano!")}`);
+  } catch (e) {
+    res.redirect(`/admin/venues/${venueId}/edit?err=${encodeURIComponent(String(e?.message||e))}`);
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
