@@ -406,6 +406,11 @@ async function migrate() {
   await ensureColumn("fp1_daily_spins",    "prize_label",           "TEXT");
    await ensureColumn("fp1_foxes",          "consent_at",            "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "consent_version",       "TEXT");
+  await ensureColumn("fp1_foxes",          "is_demo",               "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "demo_venue_id",         "INT");
+  await ensureColumn("fp1_foxes",          "demo_expires_at",       "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "no_show_count",         "INT NOT NULL DEFAULT 0");
+  await ensureColumn("fp1_foxes",          "banned_until",          "TIMESTAMPTZ");
 
   // V27: Reservations table for trial venues
   await pool.query(`
@@ -1193,7 +1198,7 @@ app.get("/venue/:id", async (req, res) => {
       <div class="card" style="text-align:center"><h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(v.name)}</h1>${tpL?`<p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:10px">${escapeHtml(tpL)}</p>`:""}<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${vB}${gB}</div><p style="font-size:14px;color:rgba(255,255,255,.7)">${escapeHtml(v.address||"")}${v.city?", "+escapeHtml(v.city):""}</p>${v.description?`<p style="font-size:13px;color:rgba(255,255,255,.5);margin-top:10px;line-height:1.5">${escapeHtml(v.description)}</p>`:""}</div>
       ${stH}${hrH}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 0"><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#f5a623">${disc}%</div><div style="font-size:11px;color:rgba(255,255,255,.4)">zni&#380;ka</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#7c5cfc">${visits}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">wizyt</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#2ecc71">${foxes}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">Fox'&#243;w</div></div></div>
-      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)"><div style="font-size:28px;margin-bottom:8px">&#128274;</div><h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zni&#380;k&#281; ${disc}% jako Fox</h2><p style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:16px;line-height:1.5">The FoxPot Club to prywatny klub dla smakoszy.<br/>Do&#322;&#261;cz przez Telegram.</p><a href="https://t.me/TheFoxPotBot/app" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none">&#129418; Do&#322;&#261;cz do FoxPot Club</a><p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:12px">Potrzebujesz kodu zaproszenia</p></div>
+      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)"><div style="font-size:28px;margin-bottom:8px">&#128274;</div><h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zni&#380;k&#281; ${disc}% jako Fox</h2><p style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:16px;line-height:1.5">The FoxPot Club to prywatny klub dla smakoszy.<br/>Odwied&#378; ${escapeHtml(v.name)} i aktywuj dost&#281;p!</p><a href="https://t.me/TheFoxPotBot?start=venue_${v.id}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none">&#129418; Do&#322;&#261;cz przez ${escapeHtml(v.name)}</a><p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:12px">Zr&#243;b check-in do ko&#324;ca dnia i aktywuj pe&#322;n&#261; wersj&#281;</p></div>
       <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.25)"><a href="/" style="color:rgba(255,255,255,.35)">thefoxpot.club</a></div>
     `,`body{background:#0a0b14}.card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}`));
   } catch(e) { console.error("venue teaser err:",e); res.status(500).send("Error"); }
@@ -1252,6 +1257,9 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       receipt_count:            savedStats.rows[0].receipt_count,
       stamps:                   stampsQ.rows,
       data_contributions:       f.data_contributions || 0,
+      is_demo:                  !!f.is_demo,
+      demo_venue_id:            f.demo_venue_id || null,
+      demo_expires_at:          f.demo_expires_at || null,
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
@@ -1770,6 +1778,20 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
         `UPDATE fp1_reservations SET used=TRUE WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`,
         [userId, venueId]
       );
+
+      // ── DEMO FOX UPGRADE: check-in at target venue → full Fox + bonus ──
+      const demoCheck = await pool.query(`SELECT is_demo, demo_venue_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (demoCheck.rows[0]?.is_demo && Number(demoCheck.rows[0].demo_venue_id) === Number(venueId)) {
+        await pool.query(
+          `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL, rating=rating+3, invites=invites+1 WHERE user_id=$1`,
+          [userId]
+        );
+        if (bot) {
+          try { await bot.telegram.sendMessage(Number(userId),
+            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n+1 zaproszenie\n\nTeraz masz dostęp do wszystkich lokali i funkcji. Zaproś znajomych! 🦊`
+          ); } catch {}
+        }
+      }
 
       const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
       isFirstEver = tv.rows[0].c === 1;
@@ -2313,6 +2335,45 @@ setInterval(async () => {
     console.error("[ReserveCron] ERR", e?.message || e);
   }
 }, 10 * 60 * 1000); // кожні 10 хвилин
+
+// CRON: Demo no-show — штраф за невикористаний демо-доступ (кожні 15 хв)
+setInterval(async () => {
+  try {
+    const expired = await pool.query(
+      `SELECT user_id, demo_venue_id, no_show_count FROM fp1_foxes
+       WHERE is_demo=TRUE AND demo_expires_at < NOW()
+       LIMIT 50`
+    );
+    for (const f of expired.rows) {
+      const cnt = (f.no_show_count || 0) + 1;
+      let penalty = 10; // 1st no-show
+      if (cnt === 2) penalty = 20;
+      if (cnt >= 3) penalty = 50;
+      const isBanned = cnt >= 3;
+
+      await pool.query(
+        `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL,
+         rating=GREATEST(0, rating-$1), no_show_count=$2
+         ${isBanned ? ", banned_until=NOW() + INTERVAL '7 days'" : ""}
+         WHERE user_id=$3`,
+        [penalty, cnt, String(f.user_id)]
+      );
+
+      if (bot) {
+        try {
+          const v = await pool.query(`SELECT name FROM fp1_venues WHERE id=$1`, [f.demo_venue_id]);
+          let msg = `⚠️ Nie odwiedziłeś ${v.rows[0]?.name || 'lokalu'}!\n📉 -${penalty} pkt rating`;
+          if (isBanned) msg += `\n🚫 Tymczasowy ban na 7 dni`;
+          msg += `\n\nNastępnym razem odwiedź lokal po rejestracji.`;
+          await bot.telegram.sendMessage(Number(f.user_id), msg);
+        } catch {}
+      }
+      console.log(`[DemoCron] Penalty -${penalty} user=${f.user_id} no_show=${cnt}${isBanned ? ' BANNED' : ''}`);
+    }
+  } catch (e) {
+    console.error("[DemoCron] ERR", e?.message || e);
+  }
+}, 15 * 60 * 1000); // кожні 15 хвилин
 
 /* ═══════════════════════════════════════════════════════════════
    GET /api/top
@@ -2999,6 +3060,36 @@ if (BOT_TOKEN) {
         let msg = `🦊 THE FOXPOT CLUB\n\nAby się zarejestrować, potrzebujesz zaproszenia od Fox lub kodu lokalu.\n\nNapisz: /start <KOD>`;
         if (spotsLeft > 0) msg += `\n\n👑 Pierwsze 1000 Fox otrzymuje status FOUNDER!\nPozostało miejsc: ${spotsLeft}`;
         return ctx.reply(msg);
+      }
+
+      // ── VENUE LINK: /start venue_4 → demo registration ──
+      const venueMatch = codeOrInv.match(/^venue_(\d+)$/i);
+      if (venueMatch) {
+        const venueId = parseInt(venueMatch[1]);
+        const vq = await pool.query(`SELECT id, name FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
+        if (vq.rowCount > 0) {
+          const v = vq.rows[0];
+          // Calculate end of day Warsaw
+          const wStr = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Warsaw" });
+          const wOffset = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" })).getTime() - new Date(new Date().toLocaleString("en-US", { timeZone: "UTC" })).getTime();
+          const demoExpires = new Date(new Date(wStr + "T23:59:59.999").getTime() - wOffset);
+
+          await pool.query(
+            `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,demo_expires_at)
+             VALUES($1,$2,0,0,'Warsaw',TRUE,$3,$4) ON CONFLICT(user_id) DO NOTHING`,
+            [userId, username, v.id, demoExpires.toISOString()]
+          );
+          const founderNum = await assignFounderNumber(userId);
+          let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Odwiedź ${v.name} i zrób check-in, aby aktywować pełną wersję!\n\n🎁 Po check-inie otrzymasz: +3 pkt rating + 1 zaproszenie\n⚠️ Masz czas do końca dnia. Brak check-inu = kara punktowa.\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).`;
+          if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
+
+          const webAppUrl = `${PUBLIC_URL}/webapp`;
+          await ctx.reply(msg, Markup.inlineKeyboard([
+            [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+          ]));
+          await sendDistrictKeyboard(ctx, "register");
+          return;
+        }
       }
 
       const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 AND approved=TRUE LIMIT 1`, [codeOrInv.toUpperCase()]);
