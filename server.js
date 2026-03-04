@@ -32,7 +32,7 @@ const { Pool }             = require("pg");
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: "12mb" }));
 
 /* ═══════════════════════════════════════════════════════════════
    ENV
@@ -2506,16 +2506,48 @@ setInterval(async () => {
 }, 15 * 60 * 1000); // кожні 15 хвилин
 
 /* ═══════════════════════════════════════════════════════════════
-   VENUE PHOTOS API (Panel)
+   VENUE PHOTOS API (Panel + Cloudinary)
 ═══════════════════════════════════════════════════════════════ */
-function isValidPhotoUrl(url) {
-  if (!url || typeof url !== "string") return false;
-  try {
-    const u = new URL(url);
-    if (u.protocol !== "https:" && u.protocol !== "http:") return false;
-    return /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(u.pathname);
-  } catch { return false; }
+const CLOUDINARY_CLOUD = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+const CLOUDINARY_KEY   = (process.env.CLOUDINARY_API_KEY || "").trim();
+const CLOUDINARY_SECRET= (process.env.CLOUDINARY_API_SECRET || "").trim();
+
+async function uploadToCloudinary(base64Data, folder) {
+  const https = require("https");
+  const timestamp = Math.floor(Date.now() / 1000);
+  const paramsToSign = `folder=${folder}&timestamp=${timestamp}`;
+  const signature = crypto.createHash("sha1").update(paramsToSign + CLOUDINARY_SECRET).digest("hex");
+
+  const formData = JSON.stringify({
+    file: base64Data,
+    folder: folder,
+    timestamp: timestamp,
+    api_key: CLOUDINARY_KEY,
+    signature: signature
+  });
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: "api.cloudinary.com",
+      path: `/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(formData) }
+    }, (resp) => {
+      let data = "";
+      resp.on("data", chunk => data += chunk);
+      resp.on("end", () => {
+        try { resolve(JSON.parse(data)); }
+        catch(e) { reject(new Error("Cloudinary parse error")); }
+      });
+    });
+    req.on("error", reject);
+    req.write(formData);
+    req.end();
+  });
 }
+
+// Increase body size limit for photo uploads (10MB)
+app.use("/panel/venue/photos/upload", express.json({ limit: "10mb" }));
 
 // GET /panel/venue/photos — get venue photos
 app.get("/panel/venue/photos", requirePanelAuth, async (req, res) => {
@@ -2526,32 +2558,56 @@ app.get("/panel/venue/photos", requirePanelAuth, async (req, res) => {
   res.json({ photos: photos.rows });
 });
 
-// PUT /panel/venue/photos — save up to 5 photos
-app.put("/panel/venue/photos", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
-  const urls = req.body.urls || [];
-  if (!Array.isArray(urls)) return res.status(400).json({ error: "urls must be array" });
-
-  // Validate all URLs
-  const valid = [];
-  for (let i = 0; i < Math.min(urls.length, 5); i++) {
-    const url = (urls[i] || "").trim();
-    if (!url) continue;
-    if (!isValidPhotoUrl(url)) {
-      return res.status(400).json({ error: `Zdjęcie #${i+1}: To nie jest bezpośredni link do zdjęcia. URL musi kończyć się na .jpg, .jpeg, .png lub .webp` });
+// POST /panel/venue/photos/upload — upload photo via Cloudinary
+app.post("/panel/venue/photos/upload", requirePanelAuth, async (req, res) => {
+  try {
+    const venueId = String(req.panel.venue_id);
+    const { image } = req.body; // base64 data URL
+    if (!image) return res.status(400).json({ error: "Brak zdjęcia" });
+    if (!CLOUDINARY_CLOUD || !CLOUDINARY_KEY || !CLOUDINARY_SECRET) {
+      return res.status(500).json({ error: "Cloudinary nie skonfigurowany" });
     }
-    valid.push({ url, sort_order: i + 1 });
-  }
 
-  // Delete existing and insert new
-  await pool.query(`DELETE FROM fp1_venue_photos WHERE venue_id=$1`, [venueId]);
-  for (const p of valid) {
-    await pool.query(
-      `INSERT INTO fp1_venue_photos(venue_id, url, sort_order) VALUES($1, $2, $3)`,
-      [venueId, p.url, p.sort_order]
+    // Check count
+    const existing = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_venue_photos WHERE venue_id=$1`, [venueId]);
+    if (existing.rows[0].c >= 3) return res.status(400).json({ error: "Maksymalnie 3 zdjęcia" });
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(image, `foxpot/venues/${venueId}`);
+    if (result.error) return res.status(400).json({ error: result.error.message || "Błąd Cloudinary" });
+
+    const url = result.secure_url;
+    const nextOrder = existing.rows[0].c + 1;
+
+    const ins = await pool.query(
+      `INSERT INTO fp1_venue_photos(venue_id, url, sort_order) VALUES($1, $2, $3) RETURNING id`,
+      [venueId, url, nextOrder]
     );
+
+    res.json({ ok: true, id: ins.rows[0].id, url, sort_order: nextOrder });
+    console.log(`[Photos] Venue ${venueId} uploaded photo #${nextOrder}: ${url}`);
+  } catch (e) {
+    console.error("PHOTO_UPLOAD_ERR", e);
+    res.status(500).json({ error: "Błąd uploadu: " + (e.message || e) });
   }
-  res.json({ ok: true, count: valid.length });
+});
+
+// DELETE /panel/venue/photos/:id — delete a photo
+app.delete("/panel/venue/photos/:id", requirePanelAuth, async (req, res) => {
+  try {
+    const venueId = String(req.panel.venue_id);
+    const photoId = Number(req.params.id);
+    await pool.query(`DELETE FROM fp1_venue_photos WHERE id=$1 AND venue_id=$2`, [photoId, venueId]);
+    // Re-number sort_order
+    const remaining = await pool.query(`SELECT id FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]);
+    for (let i = 0; i < remaining.rows.length; i++) {
+      await pool.query(`UPDATE fp1_venue_photos SET sort_order=$1 WHERE id=$2`, [i + 1, remaining.rows[i].id]);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("PHOTO_DELETE_ERR", e);
+    res.status(500).json({ error: "Błąd" });
+  }
 });
 
 // GET /api/venue/:id/photos — public photos list
@@ -2788,49 +2844,65 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       }).join("")}
     </div>` : ""}
     <div class="card">
-      <h2>📸 Zdjęcia lokalu</h2>
-      <p class="muted" style="margin-bottom:8px">Wklej bezpośrednie linki do zdjęć (.jpg, .jpeg, .png, .webp). Max 5.</p>
-      <div id="photosForm">
-        <div style="margin-bottom:6px"><label>#1</label><input id="photo1" maxlength="500" placeholder="https://example.com/photo1.jpg" style="width:100%"/></div>
-        <div style="margin-bottom:6px"><label>#2</label><input id="photo2" maxlength="500" placeholder="https://example.com/photo2.jpg" style="width:100%"/></div>
-        <div style="margin-bottom:6px"><label>#3</label><input id="photo3" maxlength="500" placeholder="https://example.com/photo3.jpg" style="width:100%"/></div>
-        <div style="margin-bottom:6px"><label>#4</label><input id="photo4" maxlength="500" placeholder="https://example.com/photo4.jpg" style="width:100%"/></div>
-        <div style="margin-bottom:6px"><label>#5</label><input id="photo5" maxlength="500" placeholder="https://example.com/photo5.jpg" style="width:100%"/></div>
-        <button type="button" onclick="savePhotos()" style="width:100%;margin-top:6px">💾 Zapisz zdjęcia</button>
-        <div id="photosMsg" style="margin-top:8px"></div>
-        <div id="photosPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"></div>
-      </div>
+      <h2>📸 Zdjęcia lokalu (max 3)</h2>
+      <p class="muted" style="margin-bottom:12px">Wybierz zdjęcia z telefonu lub komputera. Automatycznie zostaną zapisane.</p>
+      <div id="photosGrid" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <div id="photosMsg" style="margin-bottom:8px"></div>
       <script>
+        let venuePhotos = [];
         async function loadPhotos(){
           try{
             const r=await fetch('/panel/venue/photos',{credentials:'same-origin'});
             const d=await r.json();
-            if(d.photos) d.photos.forEach(p=>{
-              const el=document.getElementById('photo'+p.sort_order);
-              if(el) el.value=p.url||'';
-            });
-            renderPhotoPreview();
+            venuePhotos = d.photos || [];
+            renderPhotos();
           }catch(e){console.error('loadPhotos',e)}
         }
-        function renderPhotoPreview(){
-          const prev=document.getElementById('photosPreview');
-          prev.innerHTML='';
-          for(let i=1;i<=5;i++){
-            const url=(document.getElementById('photo'+i).value||'').trim();
-            if(url) prev.innerHTML+=\`<div style="width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.1)"><img src="\${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='❌'"/></div>\`;
+        function renderPhotos(){
+          const grid=document.getElementById('photosGrid');
+          let html='';
+          venuePhotos.forEach((p,i)=>{
+            html+=\`<div style="position:relative;width:120px;height:120px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.15)">
+              <img src="\${p.url}" style="width:100%;height:100%;object-fit:cover"/>
+              <button onclick="deletePhoto(\${p.id})" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;color:#ef4444;font-size:16px;width:28px;height:28px;border-radius:50%;cursor:pointer">✕</button>
+            </div>\`;
+          });
+          if(venuePhotos.length<3){
+            html+=\`<label style="display:flex;align-items:center;justify-content:center;width:120px;height:120px;border-radius:12px;border:2px dashed rgba(255,255,255,.2);cursor:pointer;flex-direction:column;gap:4px">
+              <input type="file" accept="image/jpeg,image/png,image/webp" onchange="uploadPhoto(this)" style="display:none"/>
+              <span style="font-size:28px">+</span>
+              <span style="font-size:11px;color:rgba(255,255,255,.4)">Dodaj</span>
+            </label>\`;
           }
+          grid.innerHTML=html;
         }
-        async function savePhotos(){
-          const urls=[];
-          for(let i=1;i<=5;i++) urls.push((document.getElementById('photo'+i).value||'').trim());
+        async function uploadPhoto(input){
+          const file=input.files[0];
+          if(!file) return;
+          if(file.size>5*1024*1024){document.getElementById('photosMsg').innerHTML='<span style="color:#ef4444">❌ Max 5 MB</span>';return}
           const msg=document.getElementById('photosMsg');
+          msg.innerHTML='<span style="color:var(--fox)">⏳ Wysyłanie...</span>';
+          const reader=new FileReader();
+          reader.onload=async function(){
+            try{
+              const r=await fetch('/panel/venue/photos/upload',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:reader.result})});
+              const d=await r.json();
+              if(d.error){msg.innerHTML='<span style="color:#ef4444">❌ '+d.error+'</span>';return}
+              msg.innerHTML='<span style="color:#2ecc71">✅ Zdjęcie dodane!</span>';
+              venuePhotos.push({id:d.id,url:d.url,sort_order:d.sort_order});
+              renderPhotos();
+            }catch(e){msg.innerHTML='<span style="color:#ef4444">❌ Błąd uploadu</span>'}
+          };
+          reader.readAsDataURL(file);
+        }
+        async function deletePhoto(id){
+          if(!confirm('Usunąć zdjęcie?')) return;
           try{
-            const r=await fetch('/panel/venue/photos',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls})});
-            const d=await r.json();
-            if(d.error){msg.innerHTML='<span style="color:#ef4444">❌ '+d.error+'</span>';return}
-            msg.innerHTML='<span style="color:#2ecc71">✅ Zapisano '+d.count+' zdjęć</span>';
-            renderPhotoPreview();
-          }catch(e){msg.innerHTML='<span style="color:#ef4444">❌ Błąd</span>'}
+            await fetch('/panel/venue/photos/'+id,{method:'DELETE',credentials:'same-origin'});
+            venuePhotos=venuePhotos.filter(p=>p.id!==id);
+            renderPhotos();
+            document.getElementById('photosMsg').innerHTML='<span style="color:#2ecc71">✅ Usunięto</span>';
+          }catch(e){document.getElementById('photosMsg').innerHTML='<span style="color:#ef4444">❌ Błąd</span>'}
         }
         loadPhotos();
       </script>
