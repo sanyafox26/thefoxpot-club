@@ -3537,6 +3537,43 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("DISTRICT_ACTION_ERR", e); await ctx.answerCbQuery("❌ Błąd."); }
   });
 
+  // ── Handle plain text messages as invite/venue codes ──
+  bot.on("text", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const text = (ctx.message.text || "").trim();
+
+      // Skip commands
+      if (text.startsWith("/")) return;
+
+      // Check if already registered
+      const existing = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (existing.rowCount > 0) return; // Already Fox, ignore
+
+      // Try as venue ref_code
+      const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 AND approved=TRUE LIMIT 1`, [text.toUpperCase()]);
+      if (venue.rowCount > 0) {
+        // Redirect to /start with code
+        return ctx.reply(`✅ Kod rozpoznany! Kliknij aby się zarejestrować:`, {
+          reply_markup: { inline_keyboard: [[{ text: "🦊 Zarejestruj się", url: `https://t.me/thefoxpot_club_bot?start=${text.toUpperCase()}` }]] }
+        });
+      }
+
+      // Try as invite code
+      const inv = await pool.query(`SELECT code FROM fp1_invite_codes WHERE code=$1 AND used=FALSE LIMIT 1`, [text.toUpperCase()]);
+      if (inv.rowCount > 0) {
+        return ctx.reply(`✅ Kod zaproszenia rozpoznany! Kliknij aby się zarejestrować:`, {
+          reply_markup: { inline_keyboard: [[{ text: "🦊 Zarejestruj się", url: `https://t.me/thefoxpot_club_bot?start=${text.toUpperCase()}` }]] }
+        });
+      }
+
+      // Unknown code
+      ctx.reply(`❌ Nieprawidłowy kod.\n\nWpisz poprawny kod zaproszenia lub kod lokalu.\nPrzykład: /start ABC123`);
+    } catch (e) {
+      console.error("TEXT_HANDLER_ERR", e);
+    }
+  });
+
   app.use(bot.webhookCallback(`/${WEBHOOK_SECRET}`));
   app.get(`/${WEBHOOK_SECRET}`, (_req, res) => res.type("text/plain").send("WEBHOOK_OK"));
 }
