@@ -2587,6 +2587,13 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   const venue   = await getVenue(venueId);
   const pending = await listPending(venueId);
   const status  = await currentVenueStatus(venueId);
+  const reserveUsed = await reserveCountThisMonth(venueId);
+  const limitedUsed = await limitedCountThisWeek(venueId);
+  // Upcoming/active reservations
+  const upcomingRes = await pool.query(
+    `SELECT id, type, reason, starts_at, ends_at FROM fp1_venue_status
+     WHERE venue_id=$1 AND ends_at > NOW() ORDER BY starts_at ASC LIMIT 10`, [venueId]
+  );
   const newFoxMonth = await countNewFoxThisMonth(venueId);
   const newFoxTotal = await countNewFoxTotal(venueId);
   const growth  = await getGrowthLeaderboard(50);
@@ -2641,7 +2648,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       <h2>Statusy lokalu</h2>
       <div class="grid2">
         <div>
-          <b>📍 Rezerwacja</b> <span class="muted">(maks. 2×/mies., min. 24h wcześniej)</span>
+          <b>📍 Rezerwacja</b> <span class="muted">(${reserveUsed}/2 w tym mies., min. 24h wcześniej)</span>
           <form method="POST" action="/panel/reserve" style="margin-top:8px">
             <label>Początek</label><input type="datetime-local" name="starts_at" required/>
             <label>Czas trwania</label>
@@ -2650,7 +2657,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           </form>
         </div>
         <div>
-          <b>⚠️ Dziś ograniczone</b> <span class="muted">(maks. 2×/tydz., do 3h)</span>
+          <b>⚠️ Dziś ograniczone</b> <span class="muted">(${limitedUsed}/2 w tym tyg., do 3h)</span>
           <form method="POST" action="/panel/limited" style="margin-top:8px">
             <label>Powód</label>
             <select name="reason"><option>FULL</option><option>PRIVATE EVENT</option><option>KITCHEN LIMIT</option></select>
@@ -2662,6 +2669,20 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         </div>
       </div>
     </div>
+    ${upcomingRes.rows.length > 0 ? `<div class="card">
+      <h2>📋 Aktywne i nadchodzące</h2>
+      ${upcomingRes.rows.map(r => {
+        const start = new Date(r.starts_at).toLocaleString("pl-PL", { timeZone:"Europe/Warsaw", day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
+        const end = new Date(r.ends_at).toLocaleString("pl-PL", { timeZone:"Europe/Warsaw", day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
+        const isNow = new Date(r.starts_at) <= new Date() && new Date(r.ends_at) > new Date();
+        const icon = r.type === "reserve" ? "📍" : "⚠️";
+        const label = r.type === "reserve" ? "Rezerwacja" : `Ograniczone (${escapeHtml(r.reason || "")})`;
+        return `<div style="padding:8px 12px;margin:4px 0;border-radius:8px;border:1px solid ${isNow ? 'rgba(239,68,68,.4)' : 'rgba(255,255,255,.1)'};background:${isNow ? 'rgba(239,68,68,.08)' : 'transparent'};display:flex;justify-content:space-between;align-items:center">
+          <div>${icon} <b>${label}</b><br/><span class="muted" style="font-size:12px">${start} — ${end}${isNow ? ' <span style="color:#ef4444;font-weight:700">● TERAZ</span>' : ''}</span></div>
+          <form method="POST" action="/panel/status/cancel/${r.id}" style="margin:0"><button type="submit" class="danger" style="font-size:12px;padding:4px 12px">Anuluj</button></form>
+        </div>`;
+      }).join("")}
+    </div>` : ""}
     <div class="card">
       <h2>🍽 Top 3 dania (promowane)</h2>
       <p class="muted" style="margin-bottom:12px">Te dania zobaczą Foxy po check-inie. Wybierz swoje najlepsze!</p>
@@ -2995,6 +3016,13 @@ app.post("/panel/status/cancel", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
   await pool.query(`UPDATE fp1_venue_status SET ends_at=NOW() WHERE venue_id=$1 AND starts_at<=NOW() AND ends_at>NOW()`, [venueId]);
   res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Status anulowany.")}`);
+});
+
+app.post("/panel/status/cancel/:id", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const statusId = Number(req.params.id);
+  await pool.query(`UPDATE fp1_venue_status SET ends_at=NOW() WHERE id=$1 AND venue_id=$2`, [statusId, venueId]);
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Anulowano.")}`);
 });
 
 app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
