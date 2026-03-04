@@ -1261,9 +1261,18 @@ app.get("/venue/:id", async (req, res) => {
     const tpL=[v.venue_type,v.cuisine].filter(Boolean).join(" \u00b7 ");
     const stH=v.status_temporary?`<div class="card" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06);padding:14px 16px"><div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">Status</div><div style="font-size:13px;color:rgba(255,255,255,.6)">${escapeHtml(v.status_temporary)}</div></div>`:"";
     const hrH=v.opening_hours?`<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:4px">Godziny otwarcia</div><div style="font-size:13px;color:rgba(255,255,255,.7);line-height:1.6;white-space:pre-line">${escapeHtml(v.opening_hours)}</div></div>`:"";
-    const photoCheck = await pool.query(`SELECT 1 FROM fp1_venue_photos WHERE venue_id=$1 LIMIT 1`, [venueId]);
-    const hasPhoto = photoCheck.rowCount > 0 || v.google_place_id;
-    const phH=hasPhoto?`<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,.04)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#129418;'"/></div>`:`<div style="font-size:48px;margin-bottom:12px">&#129418;</div>`;
+    const allPhotos = await pool.query(`SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 3`, [venueId]);
+    const hasPhoto = allPhotos.rowCount > 0 || v.google_place_id;
+    let phH = '';
+    if (allPhotos.rowCount > 0) {
+      phH = `<div style="display:flex;gap:8px;overflow-x:auto;margin:0 auto 16px;max-width:400px;scroll-snap-type:x mandatory">${allPhotos.rows.map(p =>
+        `<div style="min-width:100%;height:200px;border-radius:18px;overflow:hidden;scroll-snap-align:start;background:rgba(255,255,255,.04)"><img src="${p.url}" style="width:100%;height:100%;object-fit:cover"/></div>`
+      ).join('')}</div>${allPhotos.rowCount > 1 ? `<div style="text-align:center;margin-bottom:12px"><span style="font-size:11px;color:rgba(255,255,255,.3)">← przesuń aby zobaczyć więcej →</span></div>` : ''}`;
+    } else if (v.google_place_id) {
+      phH = `<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,.04)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#129418;'"/></div>`;
+    } else {
+      phH = `<div style="font-size:48px;margin-bottom:12px">&#129418;</div>`;
+    }
     res.send(pageShell(`${v.name} \u2014 The FoxPot Club`,`
       <div style="text-align:center;padding:32px 16px 16px">${phH}<div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.4)">The FoxPot Club</div></div>
       <div class="card" style="text-align:center"><h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(v.name)}</h1>${tpL?`<p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:10px">${escapeHtml(tpL)}</p>`:""}<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${vB}${gB}</div><p style="font-size:14px;color:rgba(255,255,255,.7)">${escapeHtml(v.address||"")}${v.city?", "+escapeHtml(v.city):""}</p>${v.description?`<p style="font-size:13px;color:rgba(255,255,255,.5);margin-top:10px;line-height:1.5">${escapeHtml(v.description)}</p>`:""}</div>
@@ -3005,7 +3014,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <input name="status_temporary" value="${escapeHtml(venue.status_temporary||'')}" maxlength="120"/>
         <div class="grid2" style="margin-top:8px">
           <div><label>Tags (vegan, gluten-free)</label><input name="tags" value="${escapeHtml(venue.tags||'')}" maxlength="100"/></div>
-          <div><label>Google Place ID (zapasowe)</label><input name="google_place_id" value="${escapeHtml(venue.google_place_id||'')}" maxlength="100" placeholder="ChIJ..."/></div>
+          
         </div>
         <button type="submit" style="margin-top:12px;width:100%">💾 Zapisz ustawienia</button>
       </form>
