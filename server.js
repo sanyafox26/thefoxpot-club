@@ -412,6 +412,14 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "no_show_count",         "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "banned_until",          "TIMESTAMPTZ");
 
+  // V28: Trial system (venue-based, 60min, no penalty)
+  await ensureColumn("fp1_foxes",          "trial_active",          "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "trial_origin_venue_id", "INT");
+  await ensureColumn("fp1_foxes",          "trial_expires_at",      "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "trial_blocked_venue_id","INT");
+  await ensureColumn("fp1_foxes",          "trial_blocked_until",   "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "join_source",           "TEXT");
+
   // V27: Reservations table for trial venues
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_reservations (
@@ -1124,6 +1132,29 @@ function verifyTelegramInitData(initData) {
   }
 }
 
+// ── Trial on-demand expiry check ──
+async function checkTrialExpiry(userId) {
+  const f = await pool.query(
+    `SELECT trial_active, trial_origin_venue_id, trial_expires_at FROM fp1_foxes WHERE user_id=$1 LIMIT 1`,
+    [userId]
+  );
+  if (f.rowCount === 0) return;
+  const fox = f.rows[0];
+  if (fox.trial_active && fox.trial_expires_at && new Date(fox.trial_expires_at) < new Date()) {
+    // Expired → block this venue until midnight Warsaw
+    const wStr = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Warsaw" });
+    const wOffset = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" })).getTime()
+                  - new Date(new Date().toLocaleString("en-US", { timeZone: "UTC" })).getTime();
+    const midnightUtc = new Date(new Date(wStr + "T23:59:59.999").getTime() - wOffset);
+    await pool.query(
+      `UPDATE fp1_foxes SET trial_active=FALSE, trial_origin_venue_id=NULL, trial_expires_at=NULL,
+       trial_blocked_venue_id=$1, trial_blocked_until=$2 WHERE user_id=$3`,
+      [fox.trial_origin_venue_id, midnightUtc.toISOString(), userId]
+    );
+    console.log(`[Trial] Expired user=${userId} venue=${fox.trial_origin_venue_id} blocked until midnight`);
+  }
+}
+
 function requireWebAppAuth(req, res, next) {
   const initData = req.headers["x-telegram-init-data"] || "";
   const user = verifyTelegramInitData(initData);
@@ -1198,7 +1229,7 @@ app.get("/venue/:id", async (req, res) => {
       <div class="card" style="text-align:center"><h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(v.name)}</h1>${tpL?`<p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:10px">${escapeHtml(tpL)}</p>`:""}<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${vB}${gB}</div><p style="font-size:14px;color:rgba(255,255,255,.7)">${escapeHtml(v.address||"")}${v.city?", "+escapeHtml(v.city):""}</p>${v.description?`<p style="font-size:13px;color:rgba(255,255,255,.5);margin-top:10px;line-height:1.5">${escapeHtml(v.description)}</p>`:""}</div>
       ${stH}${hrH}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 0"><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#f5a623">${disc}%</div><div style="font-size:11px;color:rgba(255,255,255,.4)">zni&#380;ka</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#7c5cfc">${visits}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">wizyt</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#2ecc71">${foxes}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">Fox'&#243;w</div></div></div>
-      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)"><div style="font-size:28px;margin-bottom:8px">&#128274;</div><h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zni&#380;k&#281; ${disc}% jako Fox</h2><p style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:16px;line-height:1.5">The FoxPot Club to prywatny klub dla smakoszy.<br/>Odwied&#378; ${escapeHtml(v.name)} i aktywuj dost&#281;p!</p><a href="https://t.me/TheFoxPotBot?start=venue_${v.id}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none">&#129418; Do&#322;&#261;cz przez ${escapeHtml(v.name)}</a><p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:12px">Zr&#243;b check-in do ko&#324;ca dnia i aktywuj pe&#322;n&#261; wersj&#281;</p></div>
+      <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)"><div style="font-size:28px;margin-bottom:8px">&#128274;</div><h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zni&#380;k&#281; ${disc}% jako Fox</h2><p style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:16px;line-height:1.5">The FoxPot Club to prywatny klub dla smakoszy.<br/>Odwied&#378; ${escapeHtml(v.name)} i aktywuj dost&#281;p!</p><a href="https://t.me/TheFoxPotBot?start=venue_${v.id}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none">&#129418; Do&#322;&#261;cz przez ${escapeHtml(v.name)}</a><p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:12px">Masz 60 minut aby zrobi&#263; check-in i aktywowa&#263; konto Fox</p></div>
       <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.25)"><a href="/" style="color:rgba(255,255,255,.35)">thefoxpot.club</a></div>
     `,`body{background:#0a0b14}.card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}`));
   } catch(e) { console.error("venue teaser err:",e); res.status(500).send("Error"); }
@@ -1226,7 +1257,13 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
     const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
     if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
 
-    const f = fox.rows[0];
+    // On-demand trial expiry
+    await checkTrialExpiry(userId);
+    // Re-fetch after possible expiry update
+    const foxRefresh = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    const f_orig = foxRefresh.rows[0];
+
+    const f = f_orig;
     const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
     const spunToday   = await hasSpunToday(userId);
     const savedStats = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COUNT(*)::int AS receipt_count FROM fp1_receipts WHERE user_id=$1`, [userId]);
@@ -1260,6 +1297,13 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       is_demo:                  !!f.is_demo,
       demo_venue_id:            f.demo_venue_id || null,
       demo_expires_at:          f.demo_expires_at || null,
+      // Trial system
+      trial_active:             !!f.trial_active,
+      trial_origin_venue_id:    f.trial_origin_venue_id || null,
+      trial_expires_at:         f.trial_expires_at || null,
+      trial_blocked_venue_id:   f.trial_blocked_venue_id || null,
+      trial_blocked_until:      f.trial_blocked_until || null,
+      join_source:              f.join_source || null,
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
@@ -1279,6 +1323,8 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
 app.get("/api/venues", async (req, res) => {
   try {
     let userId = null;
+    let isFox = false;
+    let trialState = null;
     try {
       const init = req.headers["x-telegram-init-data"];
       if (init) {
@@ -1286,6 +1332,26 @@ app.get("/api/venues", async (req, res) => {
         if (parsed.user) userId = String(JSON.parse(parsed.user).id);
       }
     } catch(_){}
+    if (userId) {
+      const foxQ = await pool.query(`SELECT user_id, trial_active, trial_origin_venue_id, trial_expires_at, trial_blocked_venue_id, trial_blocked_until FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (foxQ.rowCount > 0) {
+        isFox = true;
+        const fx = foxQ.rows[0];
+        // On-demand trial expiry
+        await checkTrialExpiry(userId);
+        if (fx.trial_active || fx.trial_blocked_venue_id) {
+          const fresh = await pool.query(`SELECT trial_active, trial_origin_venue_id, trial_expires_at, trial_blocked_venue_id, trial_blocked_until FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+          const t = fresh.rows[0];
+          trialState = {
+            trial_active: !!t.trial_active,
+            trial_origin_venue_id: t.trial_origin_venue_id || null,
+            trial_expires_at: t.trial_expires_at || null,
+            trial_blocked_venue_id: t.trial_blocked_venue_id || null,
+            trial_blocked_until: t.trial_blocked_until || null,
+          };
+        }
+      }
+    }
     const r = await pool.query(
      `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
@@ -1483,7 +1549,7 @@ app.get("/api/venues", async (req, res) => {
         is_top_alltime: v.id === topAllTimeId
       };
     });
-    res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "" });
+    res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "", is_fox: isFox, trial_state: trialState });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
@@ -1779,7 +1845,7 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
         [userId, venueId]
       );
 
-      // ── DEMO FOX UPGRADE: check-in at target venue → full Fox + bonus ──
+      // ── DEMO FOX UPGRADE (legacy) ──
       const demoCheck = await pool.query(`SELECT is_demo, demo_venue_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (demoCheck.rows[0]?.is_demo && Number(demoCheck.rows[0].demo_venue_id) === Number(venueId)) {
         await pool.query(
@@ -1791,6 +1857,24 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
             `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n+1 zaproszenie\n\nTeraz masz dostęp do wszystkich lokali i funkcji. Zaproś znajomych! 🦊`
           ); } catch {}
         }
+      }
+
+      // ── TRIAL FOX UPGRADE: check-in at trial venue → full Fox + rating +3, invites +0 ──
+      const trialCheck = await pool.query(`SELECT trial_active, trial_origin_venue_id, trial_expires_at FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      const tc = trialCheck.rows[0];
+      if (tc?.trial_active && Number(tc.trial_origin_venue_id) === Number(venueId) && new Date(tc.trial_expires_at) > new Date()) {
+        await pool.query(
+          `UPDATE fp1_foxes SET trial_active=FALSE, trial_origin_venue_id=NULL, trial_expires_at=NULL,
+           trial_blocked_venue_id=NULL, trial_blocked_until=NULL,
+           rating=rating+3, join_source='venue' WHERE user_id=$1`,
+          [userId]
+        );
+        if (bot) {
+          try { await bot.telegram.sendMessage(Number(userId),
+            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n\nTeraz masz dostęp do wszystkich lokali i funkcji. 🦊`
+          ); } catch {}
+        }
+        console.log(`[Trial] User ${userId} activated full Fox via venue ${venueId}`);
       }
 
       const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
@@ -2374,6 +2458,56 @@ setInterval(async () => {
     console.error("[DemoCron] ERR", e?.message || e);
   }
 }, 15 * 60 * 1000); // кожні 15 хвилин
+
+/* ═══════════════════════════════════════════════════════════════
+   POST /api/venue/:venue_id/start-trial — Trial activation (60 min)
+═══════════════════════════════════════════════════════════════ */
+app.post("/api/venue/:venue_id/start-trial", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = Number(req.params.venue_id);
+
+    // Check venue exists
+    const vq = await pool.query(`SELECT id, name FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
+    if (vq.rowCount === 0) return res.status(404).json({ ok: false, code: "VENUE_NOT_FOUND" });
+
+    // On-demand expiry check first
+    await checkTrialExpiry(userId);
+
+    // Ensure user is registered (exists in fp1_foxes)
+    const foxQ = await pool.query(`SELECT user_id, trial_blocked_venue_id, trial_blocked_until FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (foxQ.rowCount === 0) {
+      // Not registered yet — create minimal Fox record for trial
+      const username = req.tgUser.username || req.tgUser.first_name || "fox";
+      await pool.query(
+        `INSERT INTO fp1_foxes(user_id, username, rating, invites, city, trial_active, trial_origin_venue_id, trial_expires_at)
+         VALUES($1, $2, 0, 0, 'Warsaw', TRUE, $3, NOW() + INTERVAL '60 minutes')
+         ON CONFLICT(user_id) DO NOTHING`,
+        [userId, username, venueId]
+      );
+      console.log(`[Trial] New user ${userId} started trial at venue ${venueId}`);
+      return res.json({ ok: true, trial_origin_venue_id: venueId, expires_in_minutes: 60 });
+    }
+
+    const fox = foxQ.rows[0];
+
+    // Check if this venue is blocked for today
+    if (Number(fox.trial_blocked_venue_id) === venueId && fox.trial_blocked_until && new Date(fox.trial_blocked_until) > new Date()) {
+      return res.json({ ok: false, code: "VENUE_TRIAL_BLOCKED", blocked_until: fox.trial_blocked_until });
+    }
+
+    // Start/restart trial
+    await pool.query(
+      `UPDATE fp1_foxes SET trial_active=TRUE, trial_origin_venue_id=$1, trial_expires_at=NOW() + INTERVAL '60 minutes' WHERE user_id=$2`,
+      [venueId, userId]
+    );
+    console.log(`[Trial] User ${userId} started trial at venue ${venueId}`);
+    return res.json({ ok: true, trial_origin_venue_id: venueId, expires_in_minutes: 60 });
+  } catch (e) {
+    console.error("START_TRIAL_ERR", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
 
 /* ═══════════════════════════════════════════════════════════════
    GET /api/top
