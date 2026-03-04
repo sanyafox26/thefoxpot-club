@@ -2920,9 +2920,9 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       <h2>🍽 Top 3 dania (promowane)</h2>
       <p class="muted" style="margin-bottom:12px">Te dania zobaczą Foxy po check-inie. Wybierz swoje najlepsze!</p>
       <div id="dishesForm">
-        <div id="dish1Row" class="grid2" style="margin-bottom:8px"><div><label>#1 Nazwa</label><input id="dish1name" maxlength="40" placeholder="np. Burger wołowy"/></div><div><label>Kategoria</label><select id="dish1cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
-        <div id="dish2Row" class="grid2" style="margin-bottom:8px"><div><label>#2 Nazwa</label><input id="dish2name" maxlength="40" placeholder="np. Latte"/></div><div><label>Kategoria</label><select id="dish2cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
-        <div id="dish3Row" class="grid2" style="margin-bottom:8px"><div><label>#3 Nazwa</label><input id="dish3name" maxlength="40" placeholder="np. Tiramisu"/></div><div><label>Kategoria</label><select id="dish3cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish1Row" class="grid2" style="margin-bottom:8px"><div><label>#1 Nazwa</label><input id="dish1name" maxlength="40" placeholder="np. Burger wołowy"/></div><div><label>Kategoria</label><select id="dish1cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish2Row" class="grid2" style="margin-bottom:8px"><div><label>#2 Nazwa</label><input id="dish2name" maxlength="40" placeholder="np. Latte"/></div><div><label>Kategoria</label><select id="dish2cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
+        <div id="dish3Row" class="grid2" style="margin-bottom:8px"><div><label>#3 Nazwa</label><input id="dish3name" maxlength="40" placeholder="np. Tiramisu"/></div><div><label>Kategoria</label><select id="dish3cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
         <button type="button" onclick="saveDishes()" style="width:100%;margin-top:6px">💾 Zapisz dania</button>
         <div id="dishesMsg" style="margin-top:8px"></div>
       </div>
@@ -2980,7 +2980,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
             const d=await r.json();
             const el=document.getElementById('foxChoiceStats');
             if(!d.stats||d.stats.length===0){el.innerHTML='<span class="muted">Brak danych jeszcze</span>';return;}
-            const catNames={main:'🍽 Główne',snack:'🥗 Przystawka',dessert:'🍰 Deser',drink:'☕ Napój',alcohol:'🍺 Alkohol',other:'📦 Inne'};
+            const catNames={main:'🍽 Główne',snack:'🥗 Przystawka',dessert:'🍰 Deser',drink:'☕ Napój',soup:'🍲 Zupa',alcohol:'🍺 Alkohol',other:'📦 Inne'};
             const total=d.stats.reduce((s,x)=>s+x.cnt,0);
             el.innerHTML=d.stats.map(s=>{
               const pct=total>0?Math.round(s.cnt/total*100):0;
