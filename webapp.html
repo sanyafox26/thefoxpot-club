@@ -461,7 +461,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
            <select id="customCatSelect" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:8px">
              <option value="">— Wybierz kategorię —</option>
              <option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option>
-             <option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option>
+             <option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option>
            </select>
            <input id="customDishInput" type="text" maxlength="30" placeholder="Np. kaczka" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:4px"/>
            <div style="font-size:11px;color:var(--muted)">1–2 słowa, bez linków · +1 pkt bonus</div>
@@ -1660,7 +1660,7 @@ async function startTrial(venueId) {
   </div>` : '';
 
   // Fox top category
-  const catMap = {'main':'🍽 Danie główne','snack':'🥪 Przekąska','dessert':'🍰 Deser','coffee':'☕ Kawa','drink':'🥤 Napój','alcohol':'🍺 Alkohol','other':'🛒 Inne'};
+  const catMap = {'main':'🍽 Danie główne','snack':'🥪 Przekąska','dessert':'🍰 Deser','coffee':'☕ Kawa','drink':'🥤 Napój','soup':'🍲 Zupa','alcohol':'🍺 Alkohol','other':'🛒 Inne'};
   const foxCat = (v.top_dish_name || v.top_category) ? `<div style="background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px">🦊 Najczęściej wybierane</div>
     <div style="font-size:13px;color:var(--muted)">${v.top_dish_name ? esc(v.top_dish_name) : (catMap[v.top_category] || esc(v.top_category))}</div>
