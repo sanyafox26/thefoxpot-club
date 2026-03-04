@@ -136,6 +136,20 @@ function pinHash(pin, salt) {
   return crypto.createHmac("sha256", salt).update(pin).digest("hex");
 }
 
+// ── Telegram user data helper — handles all edge cases ──
+// TG users may have: username (optional), first_name (required by TG), last_name (optional)
+// Some users have NO username, some have unicode names, some have empty strings
+function tgDisplayName(from) {
+  if (!from) return "fox";
+  // Prefer username, then first_name + last_name, then first_name, then user id
+  if (from.username) return from.username;
+  const first = (from.first_name || "").trim();
+  const last = (from.last_name || "").trim();
+  if (first && last) return `${first} ${last}`;
+  if (first) return first;
+  return String(from.id || "fox");
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -224,6 +238,8 @@ async function migrate() {
       created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Ensure username is nullable (fix legacy NOT NULL constraint)
+  await pool.query(`ALTER TABLE fp1_foxes ALTER COLUMN username DROP NOT NULL`).catch(()=>{});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_checkins (
       id                    BIGSERIAL PRIMARY KEY,
@@ -900,7 +916,7 @@ async function getVenue(venueId) {
 
 async function upsertFox(ctx) {
   const tgId = String(ctx.from.id);
-  const username = ctx.from.username || null;
+  const username = tgDisplayName(ctx.from);
   await pool.query(
     `INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,1,3,'Warsaw')
      ON CONFLICT(user_id) DO UPDATE SET username=COALESCE(EXCLUDED.username,fp1_foxes.username)`,
@@ -2478,7 +2494,7 @@ app.post("/api/venue/:venue_id/start-trial", requireWebAppAuth, async (req, res)
     const foxQ = await pool.query(`SELECT user_id, trial_blocked_venue_id, trial_blocked_until FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
     if (foxQ.rowCount === 0) {
       // Not registered yet — create minimal Fox record for trial
-      const username = req.tgUser.username || req.tgUser.first_name || "fox";
+      const username = tgDisplayName(req.tgUser);
       await pool.query(
         `INSERT INTO fp1_foxes(user_id, username, rating, invites, city, trial_active, trial_origin_venue_id, trial_expires_at)
          VALUES($1, $2, 0, 0, 'Warsaw', TRUE, $3, NOW() + INTERVAL '60 minutes')
@@ -3187,7 +3203,7 @@ if (BOT_TOKEN) {
       const parts = text.split(/\s+/);
       const codeOrInv = parts[1] || "";
       const userId = String(ctx.from.id);
-      const username = ctx.from.username || null;
+      const username = tgDisplayName(ctx.from);
 
       const exists = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (exists.rowCount > 0) {
@@ -3408,7 +3424,7 @@ if (BOT_TOKEN) {
       const [name, city, address, pin] = parts;
       if (!name||!city||!address||!pin) return ctx.reply("Wszystkie pola są wymagane.");
       if (!/^\d{6}$/.test(pin)) return ctx.reply("PIN musi mieć dokładnie 6 cyfr.");
-      const foxNick = ctx.from.username || String(ctx.from.id);
+      const foxNick = tgDisplayName(ctx.from);
       const salt = crypto.randomBytes(16).toString("hex");
       const hash = pinHash(pin, salt);
       await pool.query(`INSERT INTO fp1_venues(name,city,address,pin_hash,pin_salt,approved,fox_nick) VALUES($1,$2,$3,$4,$5,FALSE,$6)`, [name, city, address, hash, salt, foxNick]);
