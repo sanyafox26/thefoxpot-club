@@ -385,6 +385,17 @@ async function migrate() {
    await ensureColumn("fp1_venues",         "venue_type",            "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "cuisine",               "TEXT NOT NULL DEFAULT ''");
    await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
+  // V29: Venue photos (multiple URLs)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_photos (
+      id SERIAL PRIMARY KEY,
+      venue_id INT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(venue_id, sort_order)
+    )
+  `);
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
 
   // ── V27: NEW CHOICE SYSTEM (parallel to old category/reason) ──
@@ -1192,15 +1203,26 @@ app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "part
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
 
 
-// VENUE PHOTO PROXY (Google Places)
+// VENUE PHOTO PROXY (custom URLs or Google Places)
 app.get("/api/venue-photo/:id", async (req, res) => {
   try {
     const venueId = parseInt(req.params.id);
+    const idx = parseInt(req.query.idx) || 0; // photo index (0 = first)
     const w = parseInt(req.query.w) || 400;
-    const key = process.env.GOOGLE_MAPS_KEY || "";
-    if (!key) return res.status(404).send("no key");
+
+    // Priority 1: Custom photos from venue_photos table
+    const photos = await pool.query(
+      `SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]
+    );
+    if (photos.rowCount > 0 && photos.rows[idx]) {
+      return res.redirect(photos.rows[idx].url);
+    }
+
+    // Priority 2: Google Places photo
     const vr = await pool.query(`SELECT google_place_id FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
-    if (vr.rowCount === 0 || !vr.rows[0].google_place_id) return res.status(404).send("no photo");
+    if (vr.rowCount === 0) return res.status(404).send("not found");
+    const key = process.env.GOOGLE_MAPS_KEY || "";
+    if (!key || !vr.rows[0].google_place_id) return res.status(404).send("no photo");
     const placeId = vr.rows[0].google_place_id;
     const https = require("https");
     const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=photos&key=${key}`;
@@ -1239,7 +1261,9 @@ app.get("/venue/:id", async (req, res) => {
     const tpL=[v.venue_type,v.cuisine].filter(Boolean).join(" \u00b7 ");
     const stH=v.status_temporary?`<div class="card" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06);padding:14px 16px"><div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">Status</div><div style="font-size:13px;color:rgba(255,255,255,.6)">${escapeHtml(v.status_temporary)}</div></div>`:"";
     const hrH=v.opening_hours?`<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:4px">Godziny otwarcia</div><div style="font-size:13px;color:rgba(255,255,255,.7);line-height:1.6;white-space:pre-line">${escapeHtml(v.opening_hours)}</div></div>`:"";
-    const phH=v.google_place_id?`<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,.04)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#129418;'"/></div>`:`<div style="font-size:48px;margin-bottom:12px">&#129418;</div>`;
+    const photoCheck = await pool.query(`SELECT 1 FROM fp1_venue_photos WHERE venue_id=$1 LIMIT 1`, [venueId]);
+    const hasPhoto = photoCheck.rowCount > 0 || v.google_place_id;
+    const phH=hasPhoto?`<div style="width:100%;max-width:400px;height:200px;border-radius:18px;overflow:hidden;margin:0 auto 16px;background:rgba(255,255,255,.04)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#129418;'"/></div>`:`<div style="font-size:48px;margin-bottom:12px">&#129418;</div>`;
     res.send(pageShell(`${v.name} \u2014 The FoxPot Club`,`
       <div style="text-align:center;padding:32px 16px 16px">${phH}<div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.4)">The FoxPot Club</div></div>
       <div class="card" style="text-align:center"><h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(v.name)}</h1>${tpL?`<p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:10px">${escapeHtml(tpL)}</p>`:""}<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${vB}${gB}</div><p style="font-size:14px;color:rgba(255,255,255,.7)">${escapeHtml(v.address||"")}${v.city?", "+escapeHtml(v.city):""}</p>${v.description?`<p style="font-size:13px;color:rgba(255,255,255,.5);margin-top:10px;line-height:1.5">${escapeHtml(v.description)}</p>`:""}</div>
@@ -1541,6 +1565,11 @@ app.get("/api/venues", async (req, res) => {
     const venueStatuses = {};
     vsQ.rows.forEach(r => venueStatuses[r.venue_id] = { type: r.type, reason: r.reason, ends_at: r.ends_at });
 
+    // Venue photos counts
+    const photoCounts = {};
+    const pcQ = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_venue_photos GROUP BY venue_id`);
+    pcQ.rows.forEach(r => photoCounts[r.venue_id] = r.cnt);
+
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const usedSlots = (trialUsed[v.id] || 0) + (activeResByVenue[v.id] || 0);
@@ -1559,6 +1588,7 @@ app.get("/api/venues", async (req, res) => {
         top_category: topCategory[v.id]?.cat || null,
         top_reason: topReason[v.id]?.reason || null,
         top_dish_name: topDish[v.id] || null,
+    has_photos: (photoCounts[v.id] || 0) > 0,
     is_top_week: v.id === topWeekId,
         is_top_month: v.id === topMonthId,
         is_top_year: v.id === topYearId,
@@ -2476,6 +2506,64 @@ setInterval(async () => {
 }, 15 * 60 * 1000); // кожні 15 хвилин
 
 /* ═══════════════════════════════════════════════════════════════
+   VENUE PHOTOS API (Panel)
+═══════════════════════════════════════════════════════════════ */
+function isValidPhotoUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+    return /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(u.pathname);
+  } catch { return false; }
+}
+
+// GET /panel/venue/photos — get venue photos
+app.get("/panel/venue/photos", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const photos = await pool.query(
+    `SELECT id, url, sort_order FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]
+  );
+  res.json({ photos: photos.rows });
+});
+
+// PUT /panel/venue/photos — save up to 5 photos
+app.put("/panel/venue/photos", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const urls = req.body.urls || [];
+  if (!Array.isArray(urls)) return res.status(400).json({ error: "urls must be array" });
+
+  // Validate all URLs
+  const valid = [];
+  for (let i = 0; i < Math.min(urls.length, 5); i++) {
+    const url = (urls[i] || "").trim();
+    if (!url) continue;
+    if (!isValidPhotoUrl(url)) {
+      return res.status(400).json({ error: `Zdjęcie #${i+1}: To nie jest bezpośredni link do zdjęcia. URL musi kończyć się na .jpg, .jpeg, .png lub .webp` });
+    }
+    valid.push({ url, sort_order: i + 1 });
+  }
+
+  // Delete existing and insert new
+  await pool.query(`DELETE FROM fp1_venue_photos WHERE venue_id=$1`, [venueId]);
+  for (const p of valid) {
+    await pool.query(
+      `INSERT INTO fp1_venue_photos(venue_id, url, sort_order) VALUES($1, $2, $3)`,
+      [venueId, p.url, p.sort_order]
+    );
+  }
+  res.json({ ok: true, count: valid.length });
+});
+
+// GET /api/venue/:id/photos — public photos list
+app.get("/api/venue/:id/photos", async (req, res) => {
+  const venueId = parseInt(req.params.id);
+  const photos = await pool.query(
+    `SELECT url, sort_order FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]
+  );
+  res.json({ photos: photos.rows });
+});
+
+/* ═══════════════════════════════════════════════════════════════
    POST /api/venue/:venue_id/start-trial — Trial activation (60 min)
 ═══════════════════════════════════════════════════════════════ */
 app.post("/api/venue/:venue_id/start-trial", requireWebAppAuth, async (req, res) => {
@@ -2700,6 +2788,54 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       }).join("")}
     </div>` : ""}
     <div class="card">
+      <h2>📸 Zdjęcia lokalu</h2>
+      <p class="muted" style="margin-bottom:8px">Wklej bezpośrednie linki do zdjęć (.jpg, .jpeg, .png, .webp). Max 5.</p>
+      <div id="photosForm">
+        <div style="margin-bottom:6px"><label>#1</label><input id="photo1" maxlength="500" placeholder="https://example.com/photo1.jpg" style="width:100%"/></div>
+        <div style="margin-bottom:6px"><label>#2</label><input id="photo2" maxlength="500" placeholder="https://example.com/photo2.jpg" style="width:100%"/></div>
+        <div style="margin-bottom:6px"><label>#3</label><input id="photo3" maxlength="500" placeholder="https://example.com/photo3.jpg" style="width:100%"/></div>
+        <div style="margin-bottom:6px"><label>#4</label><input id="photo4" maxlength="500" placeholder="https://example.com/photo4.jpg" style="width:100%"/></div>
+        <div style="margin-bottom:6px"><label>#5</label><input id="photo5" maxlength="500" placeholder="https://example.com/photo5.jpg" style="width:100%"/></div>
+        <button type="button" onclick="savePhotos()" style="width:100%;margin-top:6px">💾 Zapisz zdjęcia</button>
+        <div id="photosMsg" style="margin-top:8px"></div>
+        <div id="photosPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"></div>
+      </div>
+      <script>
+        async function loadPhotos(){
+          try{
+            const r=await fetch('/panel/venue/photos',{credentials:'same-origin'});
+            const d=await r.json();
+            if(d.photos) d.photos.forEach(p=>{
+              const el=document.getElementById('photo'+p.sort_order);
+              if(el) el.value=p.url||'';
+            });
+            renderPhotoPreview();
+          }catch(e){console.error('loadPhotos',e)}
+        }
+        function renderPhotoPreview(){
+          const prev=document.getElementById('photosPreview');
+          prev.innerHTML='';
+          for(let i=1;i<=5;i++){
+            const url=(document.getElementById('photo'+i).value||'').trim();
+            if(url) prev.innerHTML+=\`<div style="width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.1)"><img src="\${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='❌'"/></div>\`;
+          }
+        }
+        async function savePhotos(){
+          const urls=[];
+          for(let i=1;i<=5;i++) urls.push((document.getElementById('photo'+i).value||'').trim());
+          const msg=document.getElementById('photosMsg');
+          try{
+            const r=await fetch('/panel/venue/photos',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls})});
+            const d=await r.json();
+            if(d.error){msg.innerHTML='<span style="color:#ef4444">❌ '+d.error+'</span>';return}
+            msg.innerHTML='<span style="color:#2ecc71">✅ Zapisano '+d.count+' zdjęć</span>';
+            renderPhotoPreview();
+          }catch(e){msg.innerHTML='<span style="color:#ef4444">❌ Błąd</span>'}
+        }
+        loadPhotos();
+      </script>
+    </div>
+    <div class="card">
       <h2>🍽 Top 3 dania (promowane)</h2>
       <p class="muted" style="margin-bottom:12px">Te dania zobaczą Foxy po check-inie. Wybierz swoje najlepsze!</p>
       <div id="dishesForm">
@@ -2797,7 +2933,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <input name="status_temporary" value="${escapeHtml(venue.status_temporary||'')}" maxlength="120"/>
         <div class="grid2" style="margin-top:8px">
           <div><label>Tags (vegan, gluten-free)</label><input name="tags" value="${escapeHtml(venue.tags||'')}" maxlength="100"/></div>
-          <div><label>Google Place ID (do zdjęć)</label><input name="google_place_id" value="${escapeHtml(venue.google_place_id||'')}" maxlength="100" placeholder="ChIJ..."/></div>
+          <div><label>Google Place ID (zapasowe)</label><input name="google_place_id" value="${escapeHtml(venue.google_place_id||'')}" maxlength="100" placeholder="ChIJ..."/></div>
         </div>
         <button type="submit" style="margin-top:12px;width:100%">💾 Zapisz ustawienia</button>
       </form>
