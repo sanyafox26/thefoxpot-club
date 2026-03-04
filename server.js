@@ -1849,12 +1849,12 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
       const demoCheck = await pool.query(`SELECT is_demo, demo_venue_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (demoCheck.rows[0]?.is_demo && Number(demoCheck.rows[0].demo_venue_id) === Number(venueId)) {
         await pool.query(
-          `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL, rating=rating+3, invites=invites+1 WHERE user_id=$1`,
+          `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL, rating=rating+3, join_source='venue' WHERE user_id=$1`,
           [userId]
         );
         if (bot) {
           try { await bot.telegram.sendMessage(Number(userId),
-            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n+1 zaproszenie\n\nTeraz masz dostęp do wszystkich lokali i funkcji. Zaproś znajomych! 🦊`
+            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n\nTeraz masz dostęp do wszystkich lokali i funkcji. 🦊`
           ); } catch {}
         }
       }
@@ -3242,7 +3242,7 @@ if (BOT_TOKEN) {
             [userId, username, v.id, demoExpires.toISOString()]
           );
           const founderNum = await assignFounderNumber(userId);
-          let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Odwiedź ${v.name} i zrób check-in, aby aktywować pełną wersję!\n\n🎁 Po check-inie otrzymasz: +3 pkt rating + 1 zaproszenie\n⚠️ Masz czas do końca dnia. Brak check-inu = kara punktowa.\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).`;
+          let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Odwiedź ${v.name} i zrób check-in, aby aktywować pełną wersję!\n\n🎁 Po check-inie otrzymasz: +3 pkt rating\n⚠️ Masz czas do końca dnia.\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).`;
           if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
 
           const webAppUrl = `${PUBLIC_URL}/webapp`;
