@@ -734,6 +734,9 @@ async function loadProfile(){
     q('pFreeze').textContent=d.streak_freeze_available??0;
     q('pSpinToday').textContent=d.spun_today?'✅ '+(d.spin_prize||'kręcono'):'❌ nie kręcono';
     q('pSaved').textContent=(d.total_saved||0).toFixed(0)+' zł';
+    // Demo mode
+    S.isDemo = !!d.is_demo;
+    S.demoVenueId = d.demo_venue_id;
     // Render stamps
     if(d.stamps&&d.stamps.length>0){
       q('stampsCard').style.display='block';
@@ -1450,8 +1453,9 @@ function renderMapList() {
       ? '<span class="venue-map-badge badge-trial">Trial</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const statusWarn = v.venue_status ? `<span style="font-size:10px;color:#EF4444;font-weight:700">${v.venue_status.type==='reserve'?'📍 Rezerwacja':'⚠️ '+(v.venue_status.reason||'Ograniczone')}</span>` : '';
+    const demoTarget = (S.isDemo && S.demoVenueId === v.id) ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Aktywuj tutaj!</span>` : '';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
-   const topStyle = v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.08)' : v.is_top_year ? 'border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.08)' : v.is_top_month ? 'border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)' : v.is_top_week ? 'border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)' : '';
+   const topStyle = (S.isDemo && S.demoVenueId === v.id) ? 'border-color:#f5a623;border-width:2px;background:rgba(245,166,35,.08);box-shadow:0 0 12px rgba(245,166,35,.15)' : v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.08)' : v.is_top_year ? 'border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.08)' : v.is_top_month ? 'border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)' : v.is_top_week ? 'border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)' : '';
     return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon">🏪</div>
       <div class="venue-map-info" style="flex:1">
@@ -1462,6 +1466,7 @@ function renderMapList() {
         ${xy}
         ${badge}
         ${statusWarn}
+        ${demoTarget}
       </div>
     </div>`;
   }).join('');
@@ -1545,6 +1550,14 @@ async function cancelReserve(venueId) {
   // Status temporary
   // Active venue status (reserve/limited)
   const venueStatusReasonMap = {'FULL':'Lokal pełny','PRIVATE EVENT':'Wydarzenie prywatne','KITCHEN LIMIT':'Kuchnia ograniczona'};
+
+  // Demo Fox target venue banner
+  const demoTargetBlock = (S.isDemo && S.demoVenueId === v.id) ? `<div style="background:linear-gradient(135deg,rgba(245,166,35,.15),rgba(232,132,42,.1));border:2px solid var(--fox);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;text-align:center">
+    <div style="font-size:24px;margin-bottom:6px">🦊</div>
+    <div style="font-size:14px;font-weight:800;color:var(--fox);margin-bottom:4px">Zrób check-in i aktywuj FoxPot!</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5">Masz czas do końca dnia. Po check-inie otrzymasz +3 pkt i 1 zaproszenie.</div>
+  </div>` : '';
+
   const activeStatusBlock = v.venue_status ? (() => {
     const s = v.venue_status;
     const till = new Date(s.ends_at).toLocaleString("pl-PL",{timeZone:"Europe/Warsaw",hour:"2-digit",minute:"2-digit"});
@@ -1618,7 +1631,7 @@ async function cancelReserve(venueId) {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>
-    ${activeStatusBlock}${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${stampsBlock}
+    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${stampsBlock}
     <div style="display:flex;flex-direction:column;gap:8px">
       <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
       ${v.is_trial ? (v.my_reservation
