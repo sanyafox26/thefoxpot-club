@@ -1496,6 +1496,66 @@ async function cancelReserve(venueId) {
     alert(e.message || 'Błąd');
   }
 }
+
+// ── Trial Join Block for non-Fox ──
+function buildJoinBlock(v) {
+  const ts = S_map.trialState;
+  // Check if this venue is blocked
+  if (ts && ts.trial_blocked_venue_id === v.id && ts.trial_blocked_until && new Date(ts.trial_blocked_until) > new Date()) {
+    return `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;text-align:center">
+      <div style="font-size:13px;color:#ef4444;font-weight:600">Dziś nie możesz aktywować trial w tym lokalu. Spróbuj jutro.</div>
+    </div>`;
+  }
+  // Check if trial is active for another venue
+  if (ts && ts.trial_active && ts.trial_origin_venue_id !== v.id) {
+    const otherV = S_map.venues.find(x => x.id === ts.trial_origin_venue_id);
+    return `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;text-align:center">
+      <div style="font-size:13px;color:var(--fox);font-weight:600">Masz aktywny trial w ${esc(otherV?.name || 'innym lokalu')}.</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Zrób check-in tam lub poczekaj na wygaśnięcie.</div>
+    </div>`;
+  }
+  // Check if trial is active for THIS venue
+  if (ts && ts.trial_active && ts.trial_origin_venue_id === v.id) {
+    return `<div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));border:2px solid var(--fox);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;text-align:center">
+      <div style="font-size:22px;margin-bottom:6px">🦊</div>
+      <div style="font-size:14px;font-weight:800;color:var(--fox);margin-bottom:4px">Trial aktywny!</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.5">Zrób check-in w tym lokalu aby aktywować konto Fox.<br/>+3 pkt rating po aktywacji.</div>
+    </div>`;
+  }
+  // Default: show join button
+  return `<div style="background:linear-gradient(135deg,rgba(245,166,35,.08),rgba(232,132,42,.05));border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);padding:18px;margin-bottom:8px;text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🦊</div>
+    <div style="font-size:15px;font-weight:800;color:var(--fox);margin-bottom:6px">Dołącz do FoxPot</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px">Masz 60 minut aby zrobić check-in w tym lokalu i aktywować konto Fox.</div>
+    <button onclick="startTrial(${v.id})" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">Dołącz teraz</button>
+  </div>`;
+}
+
+async function startTrial(venueId) {
+  try {
+    const res = await api('/api/venue/' + venueId + '/start-trial', 'POST');
+    if (res.ok) {
+      S_map.trialState = {
+        trial_active: true,
+        trial_origin_venue_id: venueId,
+        trial_expires_at: new Date(Date.now() + 60*60*1000).toISOString(),
+        trial_blocked_venue_id: null,
+        trial_blocked_until: null,
+      };
+      S_map.isFox = true; // Now they have a fox record
+      TG?.HapticFeedback?.notificationOccurred('success');
+      openVenueDetail(venueId); // Re-render
+    } else if (res.code === 'VENUE_TRIAL_BLOCKED') {
+      TG?.HapticFeedback?.notificationOccurred('error');
+      alert('Dziś nie możesz aktywować trial w tym lokalu. Spróbuj jutro.');
+    } else {
+      alert(res.error || 'Błąd');
+    }
+  } catch(e) {
+    alert('Błąd: ' + e.message);
+  }
+}
+
  function openVenueDetail(id) {
   const v = S_map.venues.find(x => x.id === id);
   if (!v) return;
@@ -1609,6 +1669,9 @@ async function cancelReserve(venueId) {
     </div>`;
   })() : '';
 
+  const checkinBtn = S_map.isFox ? '<button onclick="q(\'venueModal\').classList.remove(\'open\');go(\'checkin\')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>' : '';
+  const joinBlock = !S_map.isFox ? buildJoinBlock(v) : '';
+
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
       ${v.google_place_id ? `<div style="width:100%;height:180px;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px;background:var(--card-bg)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#127978;'"/></div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
@@ -1617,7 +1680,7 @@ async function cancelReserve(venueId) {
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       <div>${badge}${topBadges}${dietBadges}</div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+    ${S_map.isFox ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
       <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
         <div style="font-size:18px;font-weight:800;color:var(--fox);font-family:var(--mono)">${v.my_visits||0}</div>
         <div style="font-size:10px;color:var(--muted);font-weight:600">Twoje wizyty</div>
@@ -1630,16 +1693,26 @@ async function cancelReserve(venueId) {
         <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--mono)">${v.discount_percent||10}%</div>
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
-    </div>
-    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${stampsBlock}
+    </div>` : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--accent2);font-family:var(--mono)">${v.total_visits||0}</div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600">Wizyty Fox</div>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--mono)">${v.discount_percent||10}%</div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
+      </div>
+    </div>`}
+    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
     <div style="display:flex;flex-direction:column;gap:8px">
-      <button onclick="q('venueModal').classList.remove('open');go('checkin')" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📍 Check-in tutaj</button>
-      ${v.is_trial ? (v.my_reservation
+      ${checkinBtn}
+      ${(S_map.isFox && v.is_trial) ? (v.my_reservation
         ? `<button disabled style="width:100%;padding:14px;background:var(--card-bg);border:1px solid rgba(46,204,113,.4);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:700;font-family:var(--font)">✅ Zarezerwowano do końca dnia</button>
            <button onclick="cancelReserve(${v.id})" style="width:100%;padding:10px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)">Anuluj rezerwację</button>`
         : `<button onclick="makeReserve(${v.id})" style="width:100%;padding:14px;background:var(--card-bg);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">📅 Zarezerwuj zniżkę (do końca dnia)</button>
            <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:-4px">Niewykorzystana rezerwacja: slot wraca do puli, a rating −5</div>`)
       : ''}
+      ${joinBlock}
       <a href="${mapsUrl}" target="_blank" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
       <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
     </div>
@@ -1655,6 +1728,8 @@ async function loadMap() {
     const data = await fetch(BASE+'/api/venues', {headers:{'X-Telegram-Init-Data': INIT_DATA||''}}).then(r=>r.json());
     if (data.error) throw new Error(data.error);
     S_map.venues = data.venues || [];
+    S_map.isFox = !!data.is_fox;
+    S_map.trialState = data.trial_state || null;
     if (data.maps_key && !window.google?.maps) {
       const sc = document.createElement('script');
       sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + data.maps_key;
