@@ -1497,6 +1497,30 @@ async function cancelReserve(venueId) {
   }
 }
 
+// ── Venue Photo Carousel ──
+const _vPhotoState = {};
+function initVenuePhotos(vid) {
+  fetch(BASE+'/api/venue/'+vid+'/photos').then(r=>r.json()).then(d=>{
+    const cnt = d.photos?.length || 0;
+    if (cnt <= 1) return;
+    _vPhotoState[vid] = { idx: 0, cnt };
+    const dots = document.getElementById('vPhotoDots'+vid);
+    if (!dots) return;
+    let html = '';
+    for (let i = 0; i < cnt; i++) html += '<div style="width:8px;height:8px;border-radius:50%;background:'+(i===0?'white':'rgba(255,255,255,.4)')+'"></div>';
+    dots.innerHTML = html;
+  }).catch(()=>{});
+}
+function nextVenuePhoto(vid) {
+  const st = _vPhotoState[vid];
+  if (!st || st.cnt <= 1) return;
+  st.idx = (st.idx + 1) % st.cnt;
+  const img = document.getElementById('vPhotoImg'+vid);
+  if (img) img.src = BASE+'/api/venue-photo/'+vid+'?w=400&idx='+st.idx;
+  const dots = document.getElementById('vPhotoDots'+vid);
+  if (dots) dots.querySelectorAll('div').forEach((d,i) => d.style.background = i===st.idx ? 'white' : 'rgba(255,255,255,.4)');
+}
+
 // ── Trial Join Block for non-Fox ──
 function buildJoinBlock(v) {
   const ts = S_map.trialState;
@@ -1674,7 +1698,10 @@ async function startTrial(venueId) {
 
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
-      ${v.google_place_id ? `<div style="width:100%;height:180px;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px;background:var(--card-bg)"><img src="/api/venue-photo/${v.id}?w=400" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#127978;'"/></div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
+      ${(v.has_photos || v.google_place_id) ? `<div id="vPhoto${v.id}" style="width:100%;height:180px;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px;background:var(--card-bg);position:relative;cursor:pointer" onclick="nextVenuePhoto(${v.id})">
+        <img id="vPhotoImg${v.id}" src="/api/venue-photo/${v.id}?w=400&idx=0" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#127978;'"/>
+        <div id="vPhotoDots${v.id}" style="position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:6px"></div>
+      </div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
@@ -1719,6 +1746,7 @@ async function startTrial(venueId) {
   `;
   q('venueModal').classList.add('open');
   TG?.HapticFeedback?.selectionChanged();
+  initVenuePhotos(v.id);
 }
 async function loadMap() {
   if (S_map.loaded) return;
