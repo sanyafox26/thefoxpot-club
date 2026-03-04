@@ -1444,6 +1444,13 @@ app.get("/api/venues", async (req, res) => {
       ms.rows.forEach(r => myStamps[r.venue_id] = { emoji: r.emoji, balance: r.balance });
     }
 
+    // Active venue statuses (reserve/limited)
+    const vsQ = await pool.query(
+      `SELECT venue_id, type, reason, ends_at FROM fp1_venue_status WHERE starts_at<=NOW() AND ends_at>NOW()`
+    );
+    const venueStatuses = {};
+    vsQ.rows.forEach(r => venueStatuses[r.venue_id] = { type: r.type, reason: r.reason, ends_at: r.ends_at });
+
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const usedSlots = (trialUsed[v.id] || 0) + (activeResByVenue[v.id] || 0);
@@ -1458,6 +1465,7 @@ app.get("/api/venues", async (req, res) => {
         trial_remaining,
         my_reservation: myReservations[v.id] || null,
         my_stamps: myStamps[v.id] || null,
+        venue_status: venueStatuses[v.id] || null,
         top_category: topCategory[v.id]?.cat || null,
         top_reason: topReason[v.id]?.reason || null,
         top_dish_name: topDish[v.id] || null,
