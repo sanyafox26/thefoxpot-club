@@ -550,6 +550,8 @@ async function migrate() {
   }
 
   // PWA sessions table
+  // Recreate pwa_sessions with correct schema
+  await pool.query(`DROP TABLE IF EXISTS fp1_pwa_sessions`).catch(()=>{});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_pwa_sessions (
       id SERIAL PRIMARY KEY,
@@ -1408,7 +1410,7 @@ app.post("/api/pwa-auth", async (req, res) => {
   try {
     const data = req.body;
     const { hash, ...fields } = data;
-    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    // BOT_TOKEN already defined at top of file
     if (!BOT_TOKEN) return res.status(500).json({ error: "Bot token not configured" });
     const checkString = Object.keys(fields).sort().map(k => `${k}=${fields[k]}`).join("\n");
     const secretKey = crypto.createHash("sha256").update(BOT_TOKEN).digest();
@@ -1417,8 +1419,8 @@ app.post("/api/pwa-auth", async (req, res) => {
     const authDate = parseInt(fields.auth_date);
     const now = Math.floor(Date.now() / 1000);
     if (now - authDate > 86400) return res.status(401).json({ error: "Sesja wygasła. Zaloguj się ponownie." });
-    const userId = parseInt(fields.id);
-    const fox = await pool.query("SELECT id FROM fp1_foxes WHERE tg_id=$1", [userId]);
+    const userId = String(fields.id);
+    const fox = await pool.query("SELECT id FROM fp1_foxes WHERE user_id=$1", [userId]);
     if (!fox.rows.length) return res.status(403).json({ error: "Nie jesteś zarejestrowany w FoxPot. Otwórz bota @thefoxpot_club_bot i dołącz przez zaproszenie." });
     const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
