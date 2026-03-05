@@ -3442,7 +3442,7 @@ if (BOT_TOKEN) {
         if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
         msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
 
-        await updateStreak(userId);
+        // Streak updates only on check-in, not on /start
 
         const webAppUrl = `${PUBLIC_URL}/webapp`;
         return ctx.reply(msg, Markup.inlineKeyboard([
