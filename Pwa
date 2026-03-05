@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="theme-color" content="#0a0b14"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="FoxPot"/>
+<title>The FoxPot Club</title>
+<link rel="manifest" href="/manifest.json"/>
+<link rel="apple-touch-icon" href="/icons/icon-192.png"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0b14;--bg2:#10121f;
+  --fox:#f5a623;--fox2:#e8842a;
+  --text:#f0f0f5;--muted:rgba(240,240,245,0.45);
+  --border:rgba(255,255,255,0.08);
+  --font:'Outfit',sans-serif;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased;overflow:hidden}
+
+/* noise texture */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;z-index:0;opacity:.5
+}
+
+/* glow blobs */
+.blob1{position:fixed;top:-120px;left:-80px;width:400px;height:400px;background:radial-gradient(circle,rgba(245,166,35,.12) 0%,transparent 70%);pointer-events:none;z-index:0}
+.blob2{position:fixed;bottom:-100px;right:-80px;width:350px;height:350px;background:radial-gradient(circle,rgba(124,92,252,.1) 0%,transparent 70%);pointer-events:none;z-index:0}
+
+#app{
+  position:relative;z-index:1;
+  height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:40px 24px calc(40px + var(--safe-bot));
+  max-width:400px;margin:0 auto;
+  text-align:center;
+}
+
+/* Logo */
+.logo-wrap{margin-bottom:32px;animation:floatUp .8s cubic-bezier(.34,1.56,.64,1) both}
+.logo-icon{
+  width:80px;height:80px;
+  background:linear-gradient(135deg,rgba(245,166,35,.15),rgba(232,132,42,.08));
+  border:1px solid rgba(245,166,35,.3);
+  border-radius:24px;
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 16px;
+  box-shadow:0 8px 32px rgba(245,166,35,.2);
+}
+.logo-icon img{width:54px;height:54px;object-fit:contain}
+.logo-title{font-size:26px;font-weight:900;letter-spacing:-.5px;margin-bottom:4px}
+.logo-sub{font-size:13px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;font-weight:600}
+
+/* tagline */
+.tagline{
+  font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:40px;
+  animation:floatUp .8s .15s cubic-bezier(.34,1.56,.64,1) both;
+}
+.tagline strong{color:var(--text);font-weight:700}
+
+/* login box */
+.login-box{
+  width:100%;
+  animation:floatUp .8s .3s cubic-bezier(.34,1.56,.64,1) both;
+}
+
+/* Telegram button wrapper */
+#tg-login-wrap{
+  display:flex;justify-content:center;margin-bottom:16px;
+  min-height:44px;
+}
+
+/* loading state */
+.loading-state{
+  display:none;flex-direction:column;align-items:center;gap:12px;
+  padding:24px;color:var(--muted);font-size:14px;
+}
+.loading-state.show{display:flex}
+.spinner{width:28px;height:28px;border:3px solid rgba(245,166,35,.2);border-top-color:var(--fox);border-radius:50%;animation:spin .7s linear infinite}
+
+/* success state */
+.success-state{
+  display:none;flex-direction:column;align-items:center;gap:12px;
+  padding:24px;text-align:center;
+}
+.success-state.show{display:flex;animation:bounceIn .4s cubic-bezier(.34,1.56,.64,1)}
+.success-icon{font-size:48px}
+.success-title{font-size:18px;font-weight:800;color:var(--fox)}
+.success-sub{font-size:13px;color:var(--muted);line-height:1.5}
+
+/* error */
+.err-msg{
+  background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.2);
+  border-radius:12px;padding:12px 16px;
+  font-size:13px;color:#ff8a80;font-weight:600;
+  margin-bottom:12px;display:none;
+}
+.err-msg.show{display:block}
+
+/* install hint */
+.install-hint{
+  margin-top:32px;
+  padding:16px;
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--border);
+  border-radius:16px;
+  font-size:12px;color:var(--muted);line-height:1.7;
+  animation:floatUp .8s .45s cubic-bezier(.34,1.56,.64,1) both;
+}
+.install-hint strong{color:rgba(240,240,245,.7);font-weight:700}
+.install-steps{list-style:none;text-align:left;margin-top:10px}
+.install-steps li{padding:3px 0;display:flex;align-items:flex-start;gap:8px}
+.install-steps li::before{content:'';display:inline-block;width:18px;height:18px;background:rgba(245,166,35,.15);border-radius:50%;font-size:10px;flex-shrink:0;line-height:18px;text-align:center}
+.install-steps li:nth-child(1)::before{content:'1'}
+.install-steps li:nth-child(2)::before{content:'2'}
+.install-steps li:nth-child(3)::before{content:'3'}
+
+/* install prompt banner */
+.install-banner{
+  display:none;position:fixed;bottom:calc(20px + var(--safe-bot));left:16px;right:16px;
+  background:linear-gradient(135deg,rgba(245,166,35,.15),rgba(232,132,42,.1));
+  border:1px solid rgba(245,166,35,.35);
+  border-radius:16px;padding:14px 16px;
+  display:none;align-items:center;gap:12px;
+  z-index:100;
+  animation:slideUp .3s ease;
+}
+.install-banner.show{display:flex}
+.install-banner-text{flex:1;font-size:13px;color:var(--text);font-weight:600}
+.install-banner-text span{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:2px}
+.install-btn{
+  padding:8px 14px;background:linear-gradient(135deg,var(--fox),var(--fox2));
+  border:none;border-radius:10px;color:white;
+  font-size:13px;font-weight:800;font-family:var(--font);cursor:pointer;white-space:nowrap;
+}
+
+@keyframes floatUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bounceIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</head>
+<body>
+<div class="blob1"></div>
+<div class="blob2"></div>
+
+<div id="app">
+  <div class="logo-wrap">
+    <div class="logo-icon">
+      <img src="data:image/png;base64,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" alt="FoxPot"/>
+    </div>
+    <div class="logo-title">The FoxPot Club</div>
+    <div class="logo-sub">Warszawa · Only for those who know</div>
+  </div>
+
+  <p class="tagline">
+    Zaloguj się przez Telegram,<br/>
+    aby otworzyć <strong>swoją aplikację</strong>.
+  </p>
+
+  <div class="login-box">
+    <div class="err-msg" id="errMsg"></div>
+
+    <!-- Telegram Login Widget -->
+    <div id="tg-login-wrap">
+      <!-- Widget ładuje się tu -->
+    </div>
+
+    <div class="loading-state" id="loadingState">
+      <div class="spinner"></div>
+      <span>Logowanie…</span>
+    </div>
+
+    <div class="success-state" id="successState">
+      <div class="success-icon">🦊</div>
+      <div class="success-title">Zalogowano!</div>
+      <div class="success-sub">Przekierowuję do aplikacji…</div>
+    </div>
+  </div>
+
+  <div class="install-hint" id="installHint">
+    <strong>📲 Dodaj FoxPot do ekranu głównego</strong>
+    <ul class="install-steps">
+      <li>Zaloguj się przez Telegram poniżej</li>
+      <li id="installStep2">Otwórz menu przeglądarki (⋮ lub <img src="" id="shareIcon" style="width:12px;height:12px;vertical-align:middle" alt="⬆️"/>)</li>
+      <li>Wybierz „Dodaj do ekranu głównego"</li>
+    </ul>
+  </div>
+</div>
+
+<!-- PWA install banner (Android Chrome) -->
+<div class="install-banner" id="installBanner">
+  <span style="font-size:28px">🦊</span>
+  <div class="install-banner-text">
+    Dodaj FoxPot do ekranu!
+    <span>Otwieraj jednym kliknięciem</span>
+  </div>
+  <button class="install-btn" id="installBtn">Dodaj</button>
+</div>
+
+<script>
+const BOT_NAME = 'thefoxpot_club_bot';
+
+// ── Detect iOS vs Android for install hint ──
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isAndroid = /android/i.test(navigator.userAgent);
+if (isIOS) {
+  document.getElementById('installStep2').textContent = 'Kliknij ⬆️ (Udostępnij) w Safari';
+}
+
+// ── PWA beforeinstallprompt (Android Chrome) ──
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const banner = document.getElementById('installBanner');
+  banner.classList.add('show');
+  document.getElementById('installBtn').onclick = async () => {
+    banner.classList.remove('show');
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+  };
+});
+
+// ── Hide install hint if already installed (standalone) ──
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+  document.getElementById('installHint').style.display = 'none';
+}
+
+// ── Telegram Login Widget callback ──
+window.onTelegramAuth = async function(user) {
+  document.getElementById('tg-login-wrap').style.display = 'none';
+  document.getElementById('loadingState').classList.add('show');
+  document.getElementById('errMsg').classList.remove('show');
+  try {
+    const res = await fetch('/api/pwa-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Błąd logowania');
+    // Save session token
+    if (data.token) {
+      localStorage.setItem('fp_token', data.token);
+      localStorage.setItem('fp_user_id', String(user.id));
+    }
+    document.getElementById('loadingState').classList.remove('show');
+    document.getElementById('successState').classList.add('show');
+    setTimeout(() => {
+      window.location.href = '/webapp?pwa=1';
+    }, 1200);
+  } catch(e) {
+    document.getElementById('loadingState').classList.remove('show');
+    document.getElementById('tg-login-wrap').style.display = 'flex';
+    const err = document.getElementById('errMsg');
+    err.textContent = '❌ ' + e.message;
+    err.classList.add('show');
+  }
+};
+
+// ── Load Telegram Widget ──
+(function() {
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://telegram.org/js/telegram-widget.js?22';
+  script.setAttribute('data-telegram-login', BOT_NAME);
+  script.setAttribute('data-size', 'large');
+  script.setAttribute('data-radius', '12');
+  script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+  script.setAttribute('data-request-access', 'write');
+  document.getElementById('tg-login-wrap').appendChild(script);
+})();
+</script>
+</body>
+</html>
