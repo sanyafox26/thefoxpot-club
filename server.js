@@ -1900,33 +1900,33 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
         [userId, venueId]
       );
 
-      // ── DEMO FOX UPGRADE (legacy) ──
-      const demoCheck = await pool.query(`SELECT is_demo, demo_venue_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-      if (demoCheck.rows[0]?.is_demo && Number(demoCheck.rows[0].demo_venue_id) === Number(venueId)) {
+      // ── DEMO FOX UPGRADE: first check-in at ANY venue → full Fox (no bonus, first check-in +10 handles it) ──
+      const demoCheck = await pool.query(`SELECT is_demo FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (demoCheck.rows[0]?.is_demo) {
         await pool.query(
-          `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL, rating=rating+3, join_source='venue' WHERE user_id=$1`,
+          `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL, join_source='venue' WHERE user_id=$1`,
           [userId]
         );
         if (bot) {
           try { await bot.telegram.sendMessage(Number(userId),
-            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n\nTeraz masz dostęp do wszystkich lokali i funkcji. 🦊`
+            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\nTeraz masz dostęp do wszystkich lokali i funkcji. 🦊`
           ); } catch {}
         }
       }
 
-      // ── TRIAL FOX UPGRADE: check-in at trial venue → full Fox + rating +3, invites +0 ──
+      // ── TRIAL FOX UPGRADE: check-in at trial venue → full Fox (no bonus) ──
       const trialCheck = await pool.query(`SELECT trial_active, trial_origin_venue_id, trial_expires_at FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       const tc = trialCheck.rows[0];
       if (tc?.trial_active && Number(tc.trial_origin_venue_id) === Number(venueId) && new Date(tc.trial_expires_at) > new Date()) {
         await pool.query(
           `UPDATE fp1_foxes SET trial_active=FALSE, trial_origin_venue_id=NULL, trial_expires_at=NULL,
            trial_blocked_venue_id=NULL, trial_blocked_until=NULL,
-           rating=rating+3, join_source='venue' WHERE user_id=$1`,
+           join_source='venue' WHERE user_id=$1`,
           [userId]
         );
         if (bot) {
           try { await bot.telegram.sendMessage(Number(userId),
-            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\n+3 pkt rating\n\nTeraz masz dostęp do wszystkich lokali i funkcji. 🦊`
+            `🎉 Gratulacje! Aktywowałeś pełną wersję FoxPot!\n\nTeraz masz dostęp do wszystkich lokali i funkcji. 🦊`
           ); } catch {}
         }
         console.log(`[Trial] User ${userId} activated full Fox via venue ${venueId}`);
@@ -2475,44 +2475,7 @@ setInterval(async () => {
   }
 }, 10 * 60 * 1000); // кожні 10 хвилин
 
-// CRON: Demo no-show — штраф за невикористаний демо-доступ (кожні 15 хв)
-setInterval(async () => {
-  try {
-    const expired = await pool.query(
-      `SELECT user_id, demo_venue_id, no_show_count FROM fp1_foxes
-       WHERE is_demo=TRUE AND demo_expires_at < NOW()
-       LIMIT 50`
-    );
-    for (const f of expired.rows) {
-      const cnt = (f.no_show_count || 0) + 1;
-      let penalty = 10; // 1st no-show
-      if (cnt === 2) penalty = 20;
-      if (cnt >= 3) penalty = 50;
-      const isBanned = cnt >= 3;
-
-      await pool.query(
-        `UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL,
-         rating=GREATEST(0, rating-$1), no_show_count=$2
-         ${isBanned ? ", banned_until=NOW() + INTERVAL '7 days'" : ""}
-         WHERE user_id=$3`,
-        [penalty, cnt, String(f.user_id)]
-      );
-
-      if (bot) {
-        try {
-          const v = await pool.query(`SELECT name FROM fp1_venues WHERE id=$1`, [f.demo_venue_id]);
-          let msg = `⚠️ Nie odwiedziłeś ${v.rows[0]?.name || 'lokalu'}!\n📉 -${penalty} pkt rating`;
-          if (isBanned) msg += `\n🚫 Tymczasowy ban na 7 dni`;
-          msg += `\n\nNastępnym razem odwiedź lokal po rejestracji.`;
-          await bot.telegram.sendMessage(Number(f.user_id), msg);
-        } catch {}
-      }
-      console.log(`[DemoCron] Penalty -${penalty} user=${f.user_id} no_show=${cnt}${isBanned ? ' BANNED' : ''}`);
-    }
-  } catch (e) {
-    console.error("[DemoCron] ERR", e?.message || e);
-  }
-}, 15 * 60 * 1000); // кожні 15 хвилин
+// Demo no-show cron removed — no penalties for venue join. Demo Fox stays until first check-in.
 
 /* ═══════════════════════════════════════════════════════════════
    VENUE PHOTOS API (Panel + Cloudinary)
@@ -3464,18 +3427,14 @@ if (BOT_TOKEN) {
         const vq = await pool.query(`SELECT id, name FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
         if (vq.rowCount > 0) {
           const v = vq.rows[0];
-          // Calculate end of day Warsaw
-          const wStr = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Warsaw" });
-          const wOffset = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" })).getTime() - new Date(new Date().toLocaleString("en-US", { timeZone: "UTC" })).getTime();
-          const demoExpires = new Date(new Date(wStr + "T23:59:59.999").getTime() - wOffset);
 
           await pool.query(
-            `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,demo_expires_at)
-             VALUES($1,$2,0,0,'Warsaw',TRUE,$3,$4) ON CONFLICT(user_id) DO NOTHING`,
-            [userId, username, v.id, demoExpires.toISOString()]
+            `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source)
+             VALUES($1,$2,0,0,'Warsaw',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
+            [userId, username, v.id]
           );
           const founderNum = await assignFounderNumber(userId);
-          let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Odwiedź ${v.name} i zrób check-in, aby aktywować pełną wersję!\n\n🎁 Po check-inie otrzymasz: +3 pkt rating\n⚠️ Masz czas do końca dnia.\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).`;
+          let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Zarejestrowano przez ${v.name}.\n\n👉 Zrób swój pierwszy check-in w dowolnym lokalu, aby aktywować pełną wersję!\n\n📋 Korzystając z FoxPot, zgadzasz się na regulamin i politykę prywatności.`;
           if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
 
           const webAppUrl = `${PUBLIC_URL}/webapp`;
@@ -3490,13 +3449,16 @@ if (BOT_TOKEN) {
       const venue = await pool.query(`SELECT * FROM fp1_venues WHERE ref_code=$1 AND approved=TRUE LIMIT 1`, [codeOrInv.toUpperCase()]);
       if (venue.rowCount > 0) {
         const v = venue.rows[0];
-        await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city,referred_by_venue) VALUES($1,$2,1,5,'Warsaw',$3)`, [userId, username, v.id]);
-        await pool.query(`INSERT INTO fp1_counted_visits(venue_id,user_id,war_day) VALUES($1,$2,$3)`, [v.id, userId, warsawDayKey()]);
+        // Venue code = demo Fox (same as venue link). No rating, no invites, no counted visit.
+        // Must do check-in to activate full Fox.
+        await pool.query(
+          `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source)
+           VALUES($1,$2,0,0,'Warsaw',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
+          [userId, username, v.id]
+        );
         const founderNum = await assignFounderNumber(userId);
-        let msg = `✅ Zarejestrowano przez ${v.name}!\n\n+5 zaproszeń\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).\n`;
-        if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
-        else msg += `\n(Miejsca Founder już zajęte)\n`;
-        msg += `\n/checkin ${v.id} — pierwsza wizyta!\n🎰 /spin — kręć codziennie!`;
+        let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Zarejestrowano przez ${v.name}.\n\n👉 Zrób swój pierwszy check-in w dowolnym lokalu, aby aktywować pełną wersję!\n\n📋 Korzystając z FoxPot, zgadzasz się na regulamin i politykę prywatności.`;
+        if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
 
         const webAppUrl = `${PUBLIC_URL}/webapp`;
         await ctx.reply(msg, Markup.inlineKeyboard([
