@@ -681,18 +681,13 @@ if(TG){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor
 const TG_USER   = TG?.initDataUnsafe?.user || null;
 const INIT_DATA = TG?.initData || '';
 
-// ── PWA mode: читаємо токен з URL або localStorage ──
-// Safari PWA має окремий localStorage — передаємо токен через URL при першому відкритті
+// ── PWA mode: cookie-based auth (працює в iOS Safari PWA) ──
+// Cookie встановлюється сервером після логіну через /pwa
 const _urlParams = new URLSearchParams(location.search);
-const _urlToken = _urlParams.get('token');
-if(_urlToken) {
-  try { localStorage.setItem('fp_token', _urlToken); } catch(e){}
-  const _newSearch = location.search.replace(/[?&]token=[^&]*/,'').replace(/^[?&]/,'');
-  history.replaceState(null,'', location.pathname + (_newSearch ? '?' + _newSearch : ''));
-}
-const PWA_TOKEN = _urlToken || localStorage.getItem('fp_token') || null;
-const IS_PWA = !TG_USER && !!PWA_TOKEN;
-if(!TG_USER && !PWA_TOKEN && _urlParams.get('pwa') === '1') {
+const IS_PWA = !TG_USER && _urlParams.get('pwa') === '1';
+const PWA_TOKEN = null; // не потрібен — сервер читає cookie автоматично
+if(IS_PWA && !document.cookie.includes('fp1_pwa=')) {
+  // Немає cookie — повертаємо на логін
   location.href = '/pwa';
 }
 
@@ -726,14 +721,13 @@ function go(name){
 
 async function api(path,method='GET',body=null){
   const headers={'Content-Type':'application/json','X-Telegram-Init-Data':INIT_DATA};
-  if(IS_PWA && PWA_TOKEN) headers['X-PWA-Token'] = PWA_TOKEN;
   const opts={method,headers};
   if(body) opts.body=JSON.stringify(body);
   const res=await fetch(BASE+path,opts);
   const data=await res.json();
   if(!res.ok){
     // Токен протермінований — повертаємо на логін
-    if(res.status===401 && IS_PWA){ localStorage.removeItem('fp_token'); location.href='/pwa'; }
+    if(res.status===401 && IS_PWA){ location.href='/pwa'; }
     throw new Error(data?.error||'HTTP '+res.status);
   }
   return data;
