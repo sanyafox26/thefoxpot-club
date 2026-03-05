@@ -1453,7 +1453,7 @@ function renderMapList() {
       ? '<span class="venue-map-badge badge-trial">Trial</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const statusWarn = v.venue_status ? `<span style="font-size:10px;color:#EF4444;font-weight:700">${v.venue_status.type==='reserve'?'📍 Rezerwacja':'⚠️ '+(v.venue_status.reason||'Ograniczone')}</span>` : '';
-    const demoTarget = (S.isDemo && S.demoVenueId === v.id) ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Aktywuj tutaj!</span>` : '';
+    const demoTarget = S.isDemo ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Zrób pierwszy check-in!</span>` : '';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
    const topStyle = (S.isDemo && S.demoVenueId === v.id) ? 'border-color:#f5a623;border-width:2px;background:rgba(245,166,35,.08);box-shadow:0 0 12px rgba(245,166,35,.15)' : v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.08)' : v.is_top_year ? 'border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.08)' : v.is_top_month ? 'border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)' : v.is_top_week ? 'border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)' : '';
     return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
@@ -1636,10 +1636,10 @@ async function startTrial(venueId) {
   const venueStatusReasonMap = {'FULL':'Lokal pełny','PRIVATE EVENT':'Wydarzenie prywatne','KITCHEN LIMIT':'Kuchnia ograniczona'};
 
   // Demo Fox target venue banner
-  const demoTargetBlock = (S.isDemo && S.demoVenueId === v.id) ? `<div style="background:linear-gradient(135deg,rgba(245,166,35,.15),rgba(232,132,42,.1));border:2px solid var(--fox);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;text-align:center">
+  const demoTargetBlock = S.isDemo ? `<div style="background:linear-gradient(135deg,rgba(245,166,35,.15),rgba(232,132,42,.1));border:2px solid var(--fox);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;text-align:center">
     <div style="font-size:24px;margin-bottom:6px">🦊</div>
-    <div style="font-size:14px;font-weight:800;color:var(--fox);margin-bottom:4px">Zrób check-in i aktywuj FoxPot!</div>
-    <div style="font-size:12px;color:var(--muted);line-height:1.5">Masz czas do końca dnia. Po check-inie otrzymasz +3 pkt i 1 zaproszenie.</div>
+    <div style="font-size:14px;font-weight:800;color:var(--fox);margin-bottom:4px">Zrób swój pierwszy check-in!</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5">Aktywuj pełną wersję FoxPot — wystarczy jeden check-in w dowolnym lokalu.</div>
   </div>` : '';
 
   const activeStatusBlock = v.venue_status ? (() => {
