@@ -1067,10 +1067,30 @@ async function redeemInviteCode(userId, codeRaw) {
   const inv = await pool.query(`SELECT * FROM fp1_invites WHERE code=$1 LIMIT 1`, [code]);
   if (inv.rowCount === 0) return { ok:false, reason:"NOT_FOUND" };
   const invite = inv.rows[0];
-  const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`, [invite.id, String(userId)]);
-  if (used.rowCount > 0) return { ok:false, reason:"ALREADY_USED" };
+
+  // Check if already used — try both possible column names
+  const hasInviteId = await hasColumn("fp1_invite_uses", "invite_id");
+  const hasCodeCol = await hasColumn("fp1_invite_uses", "code");
+
+  if (hasInviteId) {
+    const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`, [invite.id, String(userId)]);
+    if (used.rowCount > 0) return { ok:false, reason:"ALREADY_USED" };
+  } else if (hasCodeCol) {
+    const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE code=$1 AND used_by_user_id=$2 LIMIT 1`, [code, String(userId)]);
+    if (used.rowCount > 0) return { ok:false, reason:"ALREADY_USED" };
+  }
+
   if (Number(invite.uses) >= Number(invite.max_uses)) return { ok:false, reason:"EXHAUSTED" };
-  await pool.query(`INSERT INTO fp1_invite_uses(invite_id,used_by_user_id) VALUES($1,$2)`, [invite.id, String(userId)]);
+
+  // Insert — adapt to actual columns
+  if (hasInviteId && hasCodeCol) {
+    await pool.query(`INSERT INTO fp1_invite_uses(invite_id,code,used_by_user_id) VALUES($1,$2,$3)`, [invite.id, code, String(userId)]);
+  } else if (hasCodeCol) {
+    await pool.query(`INSERT INTO fp1_invite_uses(code,used_by_user_id) VALUES($1,$2)`, [code, String(userId)]);
+  } else if (hasInviteId) {
+    await pool.query(`INSERT INTO fp1_invite_uses(invite_id,used_by_user_id) VALUES($1,$2)`, [invite.id, String(userId)]);
+  }
+
   await pool.query(`UPDATE fp1_invites SET uses=uses+1 WHERE id=$1`, [invite.id]);
   await pool.query(
     `UPDATE fp1_foxes SET invited_by_user_id=COALESCE(invited_by_user_id,$1), invite_code_used=COALESCE(invite_code_used,$2), invite_used_at=COALESCE(invite_used_at,NOW()) WHERE user_id=$3`,
