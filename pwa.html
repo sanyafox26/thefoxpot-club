@@ -257,7 +257,7 @@ window.onTelegramAuth = async function(user) {
     document.getElementById('loadingState').classList.remove('show');
     document.getElementById('successState').classList.add('show');
     setTimeout(() => {
-      window.location.href = '/webapp?pwa=1';
+      window.location.href = '/webapp?pwa=1&token=' + encodeURIComponent(data.token);
     }, 1200);
   } catch(e) {
     document.getElementById('loadingState').classList.remove('show');
