@@ -1957,7 +1957,7 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
     // TG notification
     if (bot && countedAdded) {
       try {
-        let msg = `✅ Rachunek zapisany!\n🏪 ${v.name}\n💰 Zapłacono: ${amountPaid.toFixed(0)} zł\n💸 Zaoszczędzono: ${parseFloat(discountSaved).toFixed(0)} zł\n📊 Łącznie: ${parseFloat(ts.rows[0].total).toFixed(0)} zł`;
+        let msg = `✅ Rachunek zapisany!\n🏪 ${v.name}\n💰 Zapłacono: ${amountPaid.toFixed(2)} zł\n💸 Zaoszczędzono: ${parseFloat(discountSaved).toFixed(2)} zł\n📊 Łącznie: ${parseFloat(ts.rows[0].total).toFixed(2)} zł`;
         if (isFirstEver) msg += `\n🎉 Pierwsza wizyta! +10 pkt`;
         if (inviteAutoAdded > 0) msg += `\n🎁 +${inviteAutoAdded} zaproszenie`;
         msg += formatAchievements(newAch);
