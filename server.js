@@ -549,6 +549,17 @@ async function migrate() {
     await pool.query(`UPDATE fp1_venues SET lat=52.2180, lng=21.0050 WHERE name='Test Bar #3'   AND lat IS NULL`);
   }
 
+  // PWA sessions table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_pwa_sessions (
+      id SERIAL PRIMARY KEY,
+      tg_id BIGINT UNIQUE NOT NULL,
+      token TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   console.log("✅ Migrations OK (V25)");
 }
 
@@ -1368,8 +1379,53 @@ app.get("/health", async (_req, res) => {
   } catch (e) { res.status(500).json({ ok:false, db:false, error:String(e?.message||e) }); }
 });
 
+app.get("/pwa", (_req, res) => {
+  res.sendFile(path.join(__dirname, "pwa.html"));
+});
+
 app.get("/webapp", (_req, res) => {
   res.sendFile(path.join(__dirname, "webapp.html"));
+});
+
+/* ── PWA Auth: Telegram Login Widget ── */
+app.post("/api/pwa-auth", async (req, res) => {
+  try {
+    const data = req.body;
+    const { hash, ...fields } = data;
+    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    if (!BOT_TOKEN) return res.status(500).json({ error: "Bot token not configured" });
+
+    // Verify Telegram signature
+    const checkString = Object.keys(fields).sort().map(k => `${k}=${fields[k]}`).join("\n");
+    const secretKey = crypto.createHash("sha256").update(BOT_TOKEN).digest();
+    const expectedHash = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex");
+    if (expectedHash !== hash) return res.status(401).json({ error: "Nieprawidłowy podpis Telegram" });
+
+    // Check auth_date not too old (max 1 day)
+    const authDate = parseInt(fields.auth_date);
+    const now = Math.floor(Date.now() / 1000);
+    if (now - authDate > 86400) return res.status(401).json({ error: "Sesja wygasła. Zaloguj się ponownie." });
+
+    const userId = parseInt(fields.id);
+    const fox = await pool.query("SELECT id FROM fp1_foxes WHERE tg_id=$1", [userId]);
+    if (!fox.rows.length) {
+      return res.status(403).json({ error: "Nie jesteś zarejestrowany w FoxPot. Otwórz bota @thefoxpot_club_bot i dołącz przez zaproszenie." });
+    }
+
+    // Generate session token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO fp1_pwa_sessions (tg_id, token, expires_at, created_at)
+       VALUES ($1,$2,$3,NOW())
+       ON CONFLICT (tg_id) DO UPDATE SET token=$2, expires_at=$3, created_at=NOW()`,
+      [userId, token, expiresAt]
+    );
+    res.json({ ok: true, token, user: { id: userId, first_name: fields.first_name, username: fields.username } });
+  } catch(e) {
+    console.error("[PWA Auth]", e.message);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
