@@ -450,6 +450,13 @@ async function migrate() {
   // Fix fp1_invite_uses if created with wrong schema
   await ensureColumn("fp1_invite_uses",    "invite_id",             "BIGINT");
   await ensureColumn("fp1_invite_uses",    "used_by_user_id",       "BIGINT");
+  await ensureColumn("fp1_invite_uses",    "code",                  "TEXT");
+  await ensureColumn("fp1_invite_uses",    "used_by_tg",            "BIGINT");
+  // Drop NOT NULL constraints that may exist from old schema
+  await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
+  await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
+  await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN invite_id DROP NOT NULL`).catch(()=>{});
+  await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_user_id DROP NOT NULL`).catch(()=>{});
 
   // V27: Reservations table for trial venues
   await pool.query(`
@@ -1068,27 +1075,38 @@ async function redeemInviteCode(userId, codeRaw) {
   if (inv.rowCount === 0) return { ok:false, reason:"NOT_FOUND" };
   const invite = inv.rows[0];
 
-  // Check if already used — try both possible column names
+  // Check if already used — try available columns
   const hasInviteId = await hasColumn("fp1_invite_uses", "invite_id");
   const hasCodeCol = await hasColumn("fp1_invite_uses", "code");
+  const hasTgCol = await hasColumn("fp1_invite_uses", "used_by_tg");
 
-  if (hasInviteId) {
-    const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`, [invite.id, String(userId)]);
-    if (used.rowCount > 0) return { ok:false, reason:"ALREADY_USED" };
-  } else if (hasCodeCol) {
-    const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE code=$1 AND used_by_user_id=$2 LIMIT 1`, [code, String(userId)]);
-    if (used.rowCount > 0) return { ok:false, reason:"ALREADY_USED" };
-  }
+  let alreadyUsed = false;
+  try {
+    if (hasCodeCol && hasTgCol) {
+      const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE code=$1 AND used_by_tg=$2 LIMIT 1`, [code, String(userId)]);
+      alreadyUsed = used.rowCount > 0;
+    } else if (hasInviteId) {
+      const used = await pool.query(`SELECT 1 FROM fp1_invite_uses WHERE invite_id=$1 AND used_by_user_id=$2 LIMIT 1`, [invite.id, String(userId)]);
+      alreadyUsed = used.rowCount > 0;
+    }
+  } catch { /* column may not exist, ignore */ }
+  if (alreadyUsed) return { ok:false, reason:"ALREADY_USED" };
 
   if (Number(invite.uses) >= Number(invite.max_uses)) return { ok:false, reason:"EXHAUSTED" };
 
-  // Insert — adapt to actual columns
-  if (hasInviteId && hasCodeCol) {
-    await pool.query(`INSERT INTO fp1_invite_uses(invite_id,code,used_by_user_id) VALUES($1,$2,$3)`, [invite.id, code, String(userId)]);
-  } else if (hasCodeCol) {
-    await pool.query(`INSERT INTO fp1_invite_uses(code,used_by_user_id) VALUES($1,$2)`, [code, String(userId)]);
-  } else if (hasInviteId) {
-    await pool.query(`INSERT INTO fp1_invite_uses(invite_id,used_by_user_id) VALUES($1,$2)`, [invite.id, String(userId)]);
+  // Insert — fill all known columns
+  try {
+    await pool.query(
+      `INSERT INTO fp1_invite_uses(invite_id,code,used_by_user_id,used_by_tg) VALUES($1,$2,$3,$4)`,
+      [invite.id, code, String(userId), String(userId)]
+    );
+  } catch(insertErr) {
+    // Fallback if some columns don't exist
+    try {
+      await pool.query(`INSERT INTO fp1_invite_uses(code,used_by_tg) VALUES($1,$2)`, [code, String(userId)]);
+    } catch {
+      console.error("INVITE_USE_INSERT_ERR", insertErr?.message);
+    }
   }
 
   await pool.query(`UPDATE fp1_invites SET uses=uses+1 WHERE id=$1`, [invite.id]);
