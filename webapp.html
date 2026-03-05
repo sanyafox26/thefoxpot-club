@@ -1175,7 +1175,7 @@ function copyCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
   const link='https://t.me/thefoxpot_club_bot?start='+code;
   const btn=q('invCopyBtn');
-  const text=`Dołącz do The FoxPot Club! 🦊\nKliknij: ${link}`;
+  const text=`🦊 Zaproszenie do The FoxPot Club.\nNależysz tu.\n${link}`;
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>{
       btn.textContent='✅ Skopiowano!'; btn.classList.add('copied');
@@ -1193,7 +1193,7 @@ function fallbackCopy(code,btn){
 function shareCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
   const link='https://t.me/thefoxpot_club_bot?start='+code;
-  const text='Dołącz do The FoxPot Club! 🦊 Prywatny klub dla smakoszy Warszawy.';
+  const text='🦊 Zaproszenie do The FoxPot Club.\nNie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.';
   if(TG){TG.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+encodeURIComponent(text))}
   else if(navigator.share){navigator.share({title:'The FoxPot Club',text,url:link}).catch(()=>{})}
   else{copyCode()}
@@ -1232,8 +1232,8 @@ async function quickInvite() {
 function shareInviteLink() {
   const link = _quickInviteLink;
   if (!link) return;
-  const text = `Dołącz do The FoxPot Club! 🦊\n\nPrywatny klub dla smakoszy Warszawy.\nKliknij i dołącz jednym klikiem:\n${link}`;
-  if (TG) { TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent('Dołącz do The FoxPot Club! 🦊 Prywatny klub dla smakoszy Warszawy.')); }
+  const text = `🦊 Zaproszenie do The FoxPot Club.\n\nNie dla wszystkich.\nDla tych, którzy wiedzą, gdzie warto być.\n\nNależysz tu.\n${link}`;
+  if (TG) { TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent('🦊 Zaproszenie do The FoxPot Club. Nie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.')); }
   else if (navigator.share) { navigator.share({ title: 'The FoxPot Club', text, url: link }).catch(() => {}); }
   else { copyInviteLink(); }
   TG?.HapticFeedback?.notificationOccurred('success');
@@ -1242,7 +1242,7 @@ function copyInviteLink() {
   const link = _quickInviteLink;
   if (!link) return;
   const btn = q('profileCopyBtn');
-  const text = `Dołącz do The FoxPot Club! 🦊\nKliknij: ${link}`;
+  const text = `🦊 Zaproszenie do The FoxPot Club.\nNależysz tu.\n${link}`;
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(() => {
       btn.textContent = '✅ Skopiowano!';
