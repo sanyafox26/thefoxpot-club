@@ -447,6 +447,10 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "trial_blocked_until",   "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "join_source",           "TEXT");
 
+  // Fix fp1_invite_uses if created with wrong schema
+  await ensureColumn("fp1_invite_uses",    "invite_id",             "BIGINT");
+  await ensureColumn("fp1_invite_uses",    "used_by_user_id",       "BIGINT");
+
   // V27: Reservations table for trial venues
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_reservations (
