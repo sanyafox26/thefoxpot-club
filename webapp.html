@@ -681,6 +681,14 @@ if(TG){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor
 const TG_USER   = TG?.initDataUnsafe?.user || null;
 const INIT_DATA = TG?.initData || '';
 
+// ── PWA mode: читаємо токен з localStorage ──
+const PWA_TOKEN = localStorage.getItem('fp_token') || null;
+const IS_PWA = !TG_USER && !!PWA_TOKEN;
+// Якщо прийшли через /pwa але токен не збережений — повертаємо на логін
+if(!TG_USER && !PWA_TOKEN && new URLSearchParams(location.search).get('pwa') === '1') {
+  location.href = '/pwa';
+}
+
 const DISTRICTS = [
   "Śródmieście","Praga-Południe","Mokotów","Żoliborz","Wola","Ursynów",
   "Praga-Północ","Targówek","Bielany","Bemowo","Białołęka","Wilanów","Inna dzielnica"
@@ -710,23 +718,29 @@ function go(name){
 }
 
 async function api(path,method='GET',body=null){
-  const opts={method,headers:{'Content-Type':'application/json','X-Telegram-Init-Data':INIT_DATA}};
+  const headers={'Content-Type':'application/json','X-Telegram-Init-Data':INIT_DATA};
+  if(IS_PWA && PWA_TOKEN) headers['X-PWA-Token'] = PWA_TOKEN;
+  const opts={method,headers};
   if(body) opts.body=JSON.stringify(body);
   const res=await fetch(BASE+path,opts);
   const data=await res.json();
-  if(!res.ok) throw new Error(data?.error||'HTTP '+res.status);
+  if(!res.ok){
+    // Токен протермінований — повертаємо на логін
+    if(res.status===401 && IS_PWA){ localStorage.removeItem('fp_token'); location.href='/pwa'; }
+    throw new Error(data?.error||'HTTP '+res.status);
+  }
   return data;
 }
 
 async function loadProfile(){
   S.profileLoaded=true;
   const $l=q('pLoading'),$c=q('pContent'),$e=q('pError'),$u=q('pUnauth');
-  if(!TG_USER){$l.style.display='none';$u.style.display='block';return}
+  if(!TG_USER&&!IS_PWA){$l.style.display='none';$u.style.display='block';return}
   try{
     const d=await api('/api/profile');
     S.profile=d; S.district=d.district;
-    q('pName').textContent=(TG_USER.first_name||'')+' '+(TG_USER.last_name||'');
-    q('pTag').textContent=TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4);
+    q('pName').textContent=TG_USER?(TG_USER.first_name||'')+' '+(TG_USER.last_name||''):(d.first_name||'Fox');
+    q('pTag').textContent=TG_USER?(TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4)):(d.username?'@'+d.username:'Fox #'+String(d.tg_id||'').slice(-4));
     if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='FOUNDER FOX #'+d.founder_number}
     q('pRating').textContent=d.rating??0;
     q('pInvites').textContent=d.invites??0;
@@ -790,7 +804,7 @@ function openDistrictModal(){
 function closeDistrictModal(){q('districtModal').classList.remove('open')}
 function closeModalOutside(e){if(e.target===q('districtModal'))closeDistrictModal()}
 async function selectDistrict(d){
-  if(!TG_USER)return;
+  if(!TG_USER&&!IS_PWA)return;
   try{
     await api('/api/district','POST',{district:d});
     S.district=d;
@@ -843,7 +857,7 @@ async function acceptConsent() {
   btn.disabled = false; btn.textContent = '✅ Akceptuję i kontynuuję';
 }
 async function doCheckin(){
-  if(!TG_USER)return showErr('ciErr','Otwórz przez Telegram.');
+  if(!TG_USER&&!IS_PWA)return showErr('ciErr','Otwórz przez Telegram.');
   const vId=q('venueSelect').value;
   if(!vId)return showErr('ciErr','Wybierz lokal.');
   const btn=q('ciBtn');
@@ -1105,7 +1119,7 @@ function showErr(id,msg){const e=q(id);e.textContent=msg;e.classList.add('show')
 async function loadInvites(){
   S.invLoaded=true;
   const $l=q('invLoading'),$c=q('invContent'),$u=q('invUnauth');
-  if(!TG_USER){$l.style.display='none';$u.style.display='block';return}
+  if(!TG_USER&&!IS_PWA){$l.style.display='none';$u.style.display='block';return}
   try{
     const d=await api('/api/invite/stats');
     q('invCount').textContent=d.invites_available??0;
@@ -1144,7 +1158,7 @@ async function loadInvites(){
 }
 
 async function genInvite(){
-  if(!TG_USER)return;
+  if(!TG_USER&&!IS_PWA)return;
   const btn=q('invGenBtn');
   btn.disabled=true; btn.textContent='Generowanie…';
   q('invErr').classList.remove('show');
@@ -1347,7 +1361,7 @@ const ACH={
 async function loadAchievements(){
   S.achLoaded=true;
   const $l=q('achLoading'),$c=q('achContent'),$s=q('achSummary');
-  if(!TG_USER){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Otwórz przez Telegram</div></div>';return}
+  if(!TG_USER&&!IS_PWA){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Otwórz przez Telegram</div></div>';return}
   try{
     const d=await api('/api/achievements');
     const have=new Set(d.achievements||[]);
