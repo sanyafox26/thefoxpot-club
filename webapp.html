@@ -681,11 +681,18 @@ if(TG){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor
 const TG_USER   = TG?.initDataUnsafe?.user || null;
 const INIT_DATA = TG?.initData || '';
 
-// ── PWA mode: читаємо токен з localStorage ──
-const PWA_TOKEN = localStorage.getItem('fp_token') || null;
+// ── PWA mode: читаємо токен з URL або localStorage ──
+// Safari PWA має окремий localStorage — передаємо токен через URL при першому відкритті
+const _urlParams = new URLSearchParams(location.search);
+const _urlToken = _urlParams.get('token');
+if(_urlToken) {
+  try { localStorage.setItem('fp_token', _urlToken); } catch(e){}
+  const _newSearch = location.search.replace(/[?&]token=[^&]*/,'').replace(/^[?&]/,'');
+  history.replaceState(null,'', location.pathname + (_newSearch ? '?' + _newSearch : ''));
+}
+const PWA_TOKEN = _urlToken || localStorage.getItem('fp_token') || null;
 const IS_PWA = !TG_USER && !!PWA_TOKEN;
-// Якщо прийшли через /pwa але токен не збережений — повертаємо на логін
-if(!TG_USER && !PWA_TOKEN && new URLSearchParams(location.search).get('pwa') === '1') {
+if(!TG_USER && !PWA_TOKEN && _urlParams.get('pwa') === '1') {
   location.href = '/pwa';
 }
 
