@@ -3434,7 +3434,7 @@ if (BOT_TOKEN) {
             [userId, username, v.id]
           );
           const founderNum = await assignFounderNumber(userId);
-          let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Zarejestrowano przez ${v.name}.\n\n👉 Zrób swój pierwszy check-in w dowolnym lokalu, aby aktywować pełną wersję!\n\n📋 Korzystając z FoxPot, zgadzasz się na regulamin i politykę prywatności.`;
+          let msg = `🦊 Witaj w The FoxPot Club.\n\nZrób pierwszy check-in w lokalu,\naby aktywować status Fox.`;
           if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
 
           const webAppUrl = `${PUBLIC_URL}/webapp`;
@@ -3457,7 +3457,7 @@ if (BOT_TOKEN) {
           [userId, username, v.id]
         );
         const founderNum = await assignFounderNumber(userId);
-        let msg = `🦊 Witaj w The FoxPot Club!\n\n📍 Zarejestrowano przez ${v.name}.\n\n👉 Zrób swój pierwszy check-in w dowolnym lokalu, aby aktywować pełną wersję!\n\n📋 Korzystając z FoxPot, zgadzasz się na regulamin i politykę prywatności.`;
+        let msg = `🦊 Witaj w The FoxPot Club.\n\nZrób pierwszy check-in w lokalu,\naby aktywować status Fox.`;
         if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
 
         const webAppUrl = `${PUBLIC_URL}/webapp`;
@@ -3473,10 +3473,8 @@ if (BOT_TOKEN) {
 
       await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,3,3,'Warsaw') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
       const founderNum = await assignFounderNumber(userId);
-     let msg = `✅ Zarejestrowano!\n\n+2 punkty, +3 zaproszenia\n\n📋 Korzystając z FoxPot, zgadzasz się na anonimowe i zagregowane wykorzystanie danych (RODO).\n`;
-      if (founderNum) msg += `\n👑 Jesteś FOUNDER FOX #${founderNum}!\nTen numer należy do Ciebie na zawsze.\n`;
-      else msg += `\n(Miejsca Founder już zajęte)\n`;
-      msg += `\n🎰 /spin — kręć codziennie!`;
+     let msg = `🦊 Zostałeś zaproszony do The FoxPot Club.\n\nTwój status Fox jest już aktywny.\nZrób pierwszy check-in w lokalu, aby zdobyć pierwszą wizytę i zwiększyć swój rating.`;
+      if (founderNum) msg += `\n\n👑 FOUNDER FOX #${founderNum}`;
 
       const webAppUrl = `${PUBLIC_URL}/webapp`;
       await ctx.reply(msg, Markup.inlineKeyboard([
