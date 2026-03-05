@@ -348,6 +348,16 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
       
+      <button id="profileInviteBtn" onclick="quickInvite()" style="width:100%;padding:14px;background:linear-gradient(135deg,#7c5cfc,#6341e0);border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px"><span>🎟️</span>Zaproś znajomego</button>
+      <div id="profileInviteMsg" style="display:none;text-align:center;margin-bottom:12px;padding:12px;background:var(--card-bg);border:1px solid rgba(124,92,252,.3);border-radius:var(--radius-sm)">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Link do zaproszenia:</div>
+        <div id="profileInviteLink" style="font-size:13px;color:var(--accent2);font-weight:700;word-break:break-all;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px">
+          <button onclick="shareInviteLink()" style="flex:1;padding:10px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">✈️ Wyślij</button>
+          <button onclick="copyInviteLink()" id="profileCopyBtn" style="flex:1;padding:10px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">📋 Kopiuj</button>
+        </div>
+      </div>
+
       <div class="streak-card">
         <div class="card-title">🔥 Streak</div>
         <div class="streak-row"><span class="streak-lbl" id="pStreakLbl">Do bonusu</span><span class="streak-val" id="pStreakVal">0 dni</span></div>
@@ -568,7 +578,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <button class="inv-copy-btn" id="invCopyBtn" onclick="copyCode()">📋 Kopiuj kod</button>
           <button class="inv-share-btn" onclick="shareCode()">✈️ Wyślij w Telegram</button>
         </div>
-        <div class="inv-code-note">Prześlij ten kod znajomemu. Wpisze go jako:<br><strong>/start TWÓJ_KOD</strong> w bocie @thefoxpot_club_bot</div>
+        <div class="inv-code-note">Wyślij link znajomemu — klika i dołącza jednym klikiem! 🦊</div>
       </div>
       <div class="card" id="invRecentCard" style="display:none">
         <div class="card-title">OSTATNIE KODY</div>
@@ -576,11 +586,11 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
       <div class="card">
         <div class="card-title">JAK TO DZIAŁA</div>
-        <div class="how-row"><div class="how-num">1</div><div class="how-text">Generujesz kod (kosztuje <strong>1 zaproszenie</strong>)</div></div>
-        <div class="how-row"><div class="how-num">2</div><div class="how-text">Znajomy wpisuje <strong>/start KOD</strong> w bocie</div></div>
-        <div class="how-row"><div class="how-num">3</div><div class="how-text">Ty dostajesz <strong>+1 pkt</strong> gdy zarejestruje się przez Twój kod</div></div>
-        <div class="how-row"><div class="how-num">4</div><div class="how-text">Ty dostajesz <strong>+5 pkt</strong> gdy zrobi pierwszą wizytę w lokalu</div></div>
-        <div class="how-row"><div class="how-num">5</div><div class="how-text">Za każde <strong>5 wizyt</strong> w lokalach automatycznie dostajesz nowe zaproszenie</div></div>
+        <div class="how-row"><div class="how-num">1</div><div class="how-text">Kliknij <strong>Zaproś znajomego</strong></div></div>
+        <div class="how-row"><div class="how-num">2</div><div class="how-text">Wyślij link znajomemu — <strong>klika i dołącza</strong></div></div>
+        <div class="how-row"><div class="how-num">3</div><div class="how-text">Ty dostajesz <strong>+1 pkt</strong> gdy się zarejestruje</div></div>
+        <div class="how-row"><div class="how-num">4</div><div class="how-text">Ty dostajesz <strong>+5 pkt</strong> gdy zrobi pierwszą wizytę</div></div>
+        <div class="how-row"><div class="how-num">5</div><div class="how-text">Za każde <strong>5 wizyt</strong> dostajesz nowe zaproszenie</div></div>
       </div>
     </div>
     <div id="invUnauth" style="display:none">
@@ -733,7 +743,7 @@ async function loadProfile(){
     q('pDistrict').textContent=d.district||'—';
     q('pFreeze').textContent=d.streak_freeze_available??0;
     q('pSpinToday').textContent=d.spun_today?'✅ '+(d.spin_prize||'kręcono'):'❌ nie kręcono';
-    q('pSaved').textContent=(d.total_saved||0).toFixed(0)+' zł';
+    q('pSaved').textContent=(d.total_saved||0).toFixed(2)+' zł';
     // Demo mode
     S.isDemo = !!d.is_demo;
     S.demoVenueId = d.demo_venue_id;
@@ -1163,14 +1173,15 @@ async function genInvite(){
 
 function copyCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
+  const link='https://t.me/thefoxpot_club_bot?start='+code;
   const btn=q('invCopyBtn');
-  const text=`Dołącz do The FoxPot Club! 🦊\n\nTwój kod: ${code}\n\nWpisz w bocie: /start ${code}\n👉 @thefoxpot_club_bot`;
+  const text=`Dołącz do The FoxPot Club! 🦊\nKliknij: ${link}`;
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>{
       btn.textContent='✅ Skopiowano!'; btn.classList.add('copied');
       setTimeout(()=>{btn.textContent='📋 Kopiuj kod'; btn.classList.remove('copied')},2000);
-    }).catch(()=>fallbackCopy(code,btn));
-  }else fallbackCopy(code,btn);
+    }).catch(()=>fallbackCopy(text,btn));
+  }else fallbackCopy(text,btn);
   TG?.HapticFeedback?.notificationOccurred('success');
 }
 function fallbackCopy(code,btn){
@@ -1181,10 +1192,63 @@ function fallbackCopy(code,btn){
 }
 function shareCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
-  const text=`Dołącz do The FoxPot Club! 🦊\n\nPrywatny klub dla smakoszy Warszawy.\nTwój kod dostępu: ${code}\n\nWpisz w bocie: /start ${code}\n👉 @thefoxpot_club_bot`;
-  if(TG){TG.openTelegramLink(`https://t.me/share/url?url=https://t.me/thefoxpot_club_bot&text=${encodeURIComponent(text)}`)}
-  else if(navigator.share){navigator.share({title:'The FoxPot Club',text}).catch(()=>{})}
+  const link='https://t.me/thefoxpot_club_bot?start='+code;
+  const text='Dołącz do The FoxPot Club! 🦊 Prywatny klub dla smakoszy Warszawy.';
+  if(TG){TG.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+encodeURIComponent(text))}
+  else if(navigator.share){navigator.share({title:'The FoxPot Club',text,url:link}).catch(()=>{})}
   else{copyCode()}
+  TG?.HapticFeedback?.notificationOccurred('success');
+}
+
+// ── Quick invite from profile ──
+let _quickInviteLink = null;
+async function quickInvite() {
+  const btn = q('profileInviteBtn');
+  const msg = q('profileInviteMsg');
+  if (_quickInviteLink) {
+    msg.style.display = msg.style.display === 'none' ? 'block' : 'none';
+    return;
+  }
+  btn.innerHTML = '<span>⏳</span>Generowanie...';
+  btn.disabled = true;
+  try {
+    const d = await api('/api/invite/create', 'POST');
+    const link = 'https://t.me/thefoxpot_club_bot?start=' + d.code;
+    _quickInviteLink = link;
+    S.lastCode = d.code;
+    q('profileInviteLink').textContent = link;
+    q('pInvites').textContent = d.invites_left ?? 0;
+    msg.style.display = 'block';
+    btn.innerHTML = '<span>🎟️</span>Zaproś kolejnego';
+    btn.disabled = false;
+    TG?.HapticFeedback?.notificationOccurred('success');
+  } catch(e) {
+    const noInv = e.message.includes('Brak') || e.message.includes('no_invites');
+    btn.innerHTML = noInv ? '<span>❌</span>Brak zaproszeń' : '<span>❌</span>Błąd';
+    btn.disabled = false;
+    setTimeout(() => { btn.innerHTML = '<span>🎟️</span>Zaproś znajomego'; }, 3000);
+  }
+}
+function shareInviteLink() {
+  const link = _quickInviteLink;
+  if (!link) return;
+  const text = `Dołącz do The FoxPot Club! 🦊\n\nPrywatny klub dla smakoszy Warszawy.\nKliknij i dołącz jednym klikiem:\n${link}`;
+  if (TG) { TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent('Dołącz do The FoxPot Club! 🦊 Prywatny klub dla smakoszy Warszawy.')); }
+  else if (navigator.share) { navigator.share({ title: 'The FoxPot Club', text, url: link }).catch(() => {}); }
+  else { copyInviteLink(); }
+  TG?.HapticFeedback?.notificationOccurred('success');
+}
+function copyInviteLink() {
+  const link = _quickInviteLink;
+  if (!link) return;
+  const btn = q('profileCopyBtn');
+  const text = `Dołącz do The FoxPot Club! 🦊\nKliknij: ${link}`;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✅ Skopiowano!';
+      setTimeout(() => { btn.textContent = '📋 Kopiuj'; }, 2000);
+    }).catch(() => {});
+  }
   TG?.HapticFeedback?.notificationOccurred('success');
 }
 
