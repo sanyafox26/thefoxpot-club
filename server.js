@@ -846,6 +846,8 @@ async function founderSpotsLeft() {
 ═══════════════════════════════════════════════════════════════ */
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const COOKIE_NAME    = "fp1_panel_session";
+const PWA_COOKIE_NAME = "fp1_pwa";
+const PWA_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function signSession(obj) {
   const payload = Buffer.from(JSON.stringify(obj)).toString("base64url");
@@ -1247,12 +1249,32 @@ async function checkTrialExpiry(userId) {
 }
 
 async function requireWebAppAuth(req, res, next) {
-  // ── Спочатку пробуємо Telegram initData ──
+  // ── 1. Telegram initData ──
   const initData = req.headers["x-telegram-init-data"] || "";
   const user = verifyTelegramInitData(initData);
   if (user) { req.tgUser = user; return next(); }
 
-  // ── Якщо немає — пробуємо PWA токен ──
+  // ── 2. PWA cookie (найнадійніший спосіб для iOS Safari) ──
+  const rawCookies = req.headers.cookie || "";
+  let pwaCookieVal = null;
+  for (const p of rawCookies.split(";")) {
+    const t = p.trim();
+    if (t.startsWith(PWA_COOKIE_NAME + "=")) { pwaCookieVal = t.slice(PWA_COOKIE_NAME.length + 1); break; }
+  }
+  if (pwaCookieVal) {
+    try {
+      const result = await pool.query(
+        `SELECT tg_id FROM fp1_pwa_sessions WHERE token=$1 AND expires_at > NOW()`,
+        [pwaCookieVal]
+      );
+      if (result.rows.length) {
+        req.tgUser = { id: result.rows[0].tg_id };
+        return next();
+      }
+    } catch(e) { console.error("[PWA Cookie Auth]", e.message); }
+  }
+
+  // ── 3. PWA token header (fallback) ──
   const pwaToken = req.headers["x-pwa-token"] || "";
   if (pwaToken) {
     try {
@@ -1428,6 +1450,8 @@ app.post("/api/pwa-auth", async (req, res) => {
       `INSERT INTO fp1_pwa_sessions (tg_id, token, expires_at, created_at) VALUES ($1,$2,$3,NOW()) ON CONFLICT (tg_id) DO UPDATE SET token=$2, expires_at=$3, created_at=NOW()`,
       [userId, token, expiresAt]
     );
+    // Set PWA cookie — працює в iOS Safari PWA
+    res.setHeader("Set-Cookie", `${PWA_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(PWA_TTL_MS / 1000)}`);
     res.json({ ok: true, token, user: { id: userId, first_name: fields.first_name, username: fields.username } });
   } catch(e) {
     console.error("[PWA Auth]", e.message);
