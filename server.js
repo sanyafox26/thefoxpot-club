@@ -1253,6 +1253,24 @@ app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "priva
 app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
 
+/* ── PWA ── */
+app.get("/manifest.json", (_req, res) => {
+  res.setHeader("Content-Type", "application/manifest+json");
+  res.sendFile(path.join(__dirname, "manifest.json"));
+});
+app.get("/sw.js", (_req, res) => {
+  res.setHeader("Content-Type", "application/javascript");
+  res.setHeader("Service-Worker-Allowed", "/");
+  res.sendFile(path.join(__dirname, "sw.js"));
+});
+app.get("/offline.html", (_req, res) => res.sendFile(path.join(__dirname, "offline.html")));
+app.get("/icons/:file", (req, res) => {
+  const file = req.params.file.replace(/[^a-z0-9.\-_]/gi, "");
+  res.sendFile(path.join(__dirname, "icons", file), err => {
+    if (err) res.status(404).send("Not found");
+  });
+});
+
 
 // VENUE PHOTO PROXY (custom URLs or Google Places)
 app.get("/api/venue-photo/:id", async (req, res) => {
