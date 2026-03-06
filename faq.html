@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0a0b14"/>
+<title>FAQ — The FoxPot Club</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#0a0b14;--bg2:#10121f;--bg3:#161929;
+    --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+    --fox:#f5a623;--fox2:#e8842a;--accent:#7c5cfc;--accent2:#a07bff;
+    --green:#2ecc71;--red:#e74c3c;--gold:#ffd700;--text:#f0f0f5;
+    --muted:rgba(240,240,245,0.45);--muted2:rgba(240,240,245,0.25);
+    --card-bg:rgba(255,255,255,0.04);--card-border:rgba(255,255,255,0.08);
+    --radius:18px;--radius-sm:12px;
+    --font:'Manrope',sans-serif;--mono:'Space Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
+  body{max-width:680px;margin:0 auto;padding:0 0 60px}
+
+  /* HEADER */
+  .header{padding:24px 20px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;background:linear-gradient(to bottom,var(--bg) 80%,transparent);backdrop-filter:blur(8px)}
+  .logo{width:36px;height:36px;background:linear-gradient(135deg,var(--fox),var(--fox2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 16px rgba(245,166,35,.35);flex-shrink:0}
+  .header-text h1{font-size:18px;font-weight:800;letter-spacing:-.3px}
+  .header-text p{font-size:12px;color:var(--muted);margin-top:1px}
+
+  /* HERO */
+  .hero{margin:8px 16px 20px;background:linear-gradient(135deg,#1a1030 0%,#0d1220 60%,#0a1018 100%);border:1px solid var(--card-border);border-radius:var(--radius);padding:24px 20px;position:relative;overflow:hidden}
+  .hero::before{content:'🦊';position:absolute;right:-10px;top:-10px;font-size:90px;opacity:.07;transform:rotate(15deg)}
+  .hero-title{font-size:22px;font-weight:800;line-height:1.2;margin-bottom:8px}
+  .hero-title span{color:var(--fox)}
+  .hero-sub{font-size:13px;color:var(--muted);line-height:1.6}
+
+  /* TOP QUESTIONS */
+  .top-block{margin:0 16px 20px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius);padding:16px 18px}
+  .top-block-title{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--fox);margin-bottom:12px}
+  .top-link{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(245,166,35,.1);cursor:pointer;text-decoration:none}
+  .top-link:last-child{border-bottom:none}
+  .top-link-num{font-family:var(--mono);font-size:10px;color:var(--fox);opacity:.6;width:20px;flex-shrink:0}
+  .top-link-text{font-size:13px;font-weight:600;color:var(--text);flex:1}
+  .top-link-arrow{font-size:10px;color:var(--muted2)}
+  .top-link:hover .top-link-text{color:var(--fox)}
+
+  /* SECTION */
+  .section{margin:0 16px 8px}
+  .section-title{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding:0 4px}
+
+  /* FAQ ITEM */
+  .faq-item{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);margin-bottom:6px;overflow:hidden;transition:border-color .2s}
+  .faq-item:hover{border-color:var(--border2)}
+  .faq-item.open{border-color:rgba(245,166,35,.25)}
+  .faq-q{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .faq-num{font-family:var(--mono);font-size:10px;color:var(--muted2);width:22px;flex-shrink:0}
+  .faq-q-text{flex:1;font-size:14px;font-weight:600;line-height:1.4;color:var(--text)}
+  .faq-item.open .faq-q-text{color:var(--fox)}
+  .faq-chevron{font-size:12px;color:var(--muted2);transition:transform .25s;flex-shrink:0}
+  .faq-item.open .faq-chevron{transform:rotate(180deg);color:var(--fox)}
+  .faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s ease}
+  .faq-item.open .faq-a{max-height:600px}
+  .faq-a-inner{padding:0 16px 16px 50px;font-size:13px;color:var(--muted);line-height:1.7}
+  .faq-a-inner p{margin-bottom:8px}
+  .faq-a-inner p:last-child{margin-bottom:0}
+  .faq-a-inner strong{color:var(--text);font-weight:700}
+  .faq-a-inner .tag{display:inline-block;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;color:var(--fox);font-family:var(--mono);margin:1px 2px}
+  .faq-a-inner .note{background:rgba(255,255,255,.04);border-left:2px solid var(--fox);border-radius:0 8px 8px 0;padding:8px 12px;margin-top:8px;font-size:12px}
+  .faq-a-inner ul{padding-left:16px;margin-top:4px}
+  .faq-a-inner ul li{margin-bottom:4px}
+
+  /* CONTACT */
+  .contact-block{margin:20px 16px 0;background:linear-gradient(135deg,rgba(124,92,252,.12),rgba(124,92,252,.06));border:1px solid rgba(124,92,252,.2);border-radius:var(--radius);padding:20px;text-align:center}
+  .contact-icon{font-size:32px;margin-bottom:8px}
+  .contact-title{font-size:15px;font-weight:800;margin-bottom:4px}
+  .contact-sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+  .contact-btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:12px;padding:10px 20px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;transition:opacity .2s;box-shadow:0 4px 16px rgba(124,92,252,.3)}
+  .contact-btn:hover{opacity:.85}
+
+  /* FOOTER */
+  .footer{margin:24px 16px 0;text-align:center;font-size:11px;color:var(--muted2);font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">🦊</div>
+  <div class="header-text">
+    <h1>FAQ — FoxPot Club</h1>
+    <p>Najczęstsze pytania i odpowiedzi</p>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="hero-title">Masz pytania?<br>Mamy <span>odpowiedzi.</span></div>
+  <div class="hero-sub">Znajdziesz tu wszystko, co musisz wiedzieć o FoxPot — check-inach, zniżkach, punktach i nie tylko.</div>
+</div>
+
+<!-- TOP QUESTIONS -->
+<div class="top-block">
+  <div class="top-block-title">🔝 Najczęstsze pytania</div>
+  <a class="top-link" onclick="openQ('q6')">
+    <span class="top-link-num">01</span>
+    <span class="top-link-text">Co to jest FoxPot Club?</span>
+    <span class="top-link-arrow">▼</span>
+  </a>
+  <a class="top-link" onclick="openQ('q13')">
+    <span class="top-link-num">02</span>
+    <span class="top-link-text">Jak zrobić check-in?</span>
+    <span class="top-link-arrow">▼</span>
+  </a>
+  <a class="top-link" onclick="openQ('q17')">
+    <span class="top-link-num">03</span>
+    <span class="top-link-text">Jak działa zniżka?</span>
+    <span class="top-link-arrow">▼</span>
+  </a>
+  <a class="top-link" onclick="openQ('q24')">
+    <span class="top-link-num">04</span>
+    <span class="top-link-text">Jak zdobywać punkty?</span>
+    <span class="top-link-arrow">▼</span>
+  </a>
+  <a class="top-link" onclick="openQ('q26')">
+    <span class="top-link-num">05</span>
+    <span class="top-link-text">Jak zaprosić znajomego?</span>
+    <span class="top-link-arrow">▼</span>
+  </a>
+</div>
+
+<!-- SECTION: Rejestracja -->
+<div class="section">
+  <div class="section-title">Rejestracja i start</div>
+
+  <div class="faq-item" id="q6">
+    <div class="faq-q" onclick="toggle('q6')">
+      <span class="faq-num">06</span>
+      <span class="faq-q-text">Co to jest FoxPot Club?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>FoxPot Club to zamknięty klub lojalnościowy dla osób, które lubią odkrywać restauracje, kawiarnie i bary w Warszawie.</p>
+      <p>Jako Fox dostajesz <strong>zniżki w lokalach partnerskich</strong>, zbierasz punkty i rywalizujesz z innymi w rankingu.</p>
+      <p>Dostęp tylko na zaproszenie — to nie jest aplikacja dla każdego.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q7">
+    <div class="faq-q" onclick="toggle('q7')">
+      <span class="faq-num">07</span>
+      <span class="faq-q-text">Czy potrzebuję Telegram, aby korzystać z FoxPot?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Tak. FoxPot działa przez Telegram ze względów bezpieczeństwa i autoryzacji.</p>
+      <p>Możesz pobrać Telegram bezpłatnie na <strong>iOS</strong> i <strong>Android</strong> ze swojego sklepu z aplikacjami.</p>
+      <div class="note">Po instalacji wróć do linku zaproszenia i dołącz do klubu.</div>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q8">
+    <div class="faq-q" onclick="toggle('q8')">
+      <span class="faq-num">08</span>
+      <span class="faq-q-text">Jak dołączyć do klubu?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>FoxPot działa wyłącznie na zaproszenie. Możesz dołączyć na dwa sposoby:</p>
+      <ul>
+        <li>Otrzymać link zaproszenia od aktywnego Fox</li>
+        <li>Zostać zaproszonym przez restaurację partnerską (trial)</li>
+      </ul>
+      <p>Po otwarciu linku zaproszenia — uruchom bota w Telegram i gotowe.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q9">
+    <div class="faq-q" onclick="toggle('q9')">
+      <span class="faq-num">09</span>
+      <span class="faq-q-text">Co to jest Founder Fox?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Founder Fox to specjalny status dla pierwszych członków klubu.</p>
+      <p>Otrzymujesz go, jeśli dołączyłeś do FoxPot w fazie założycielskiej.</p>
+      <p>Founder Fox jest oznaczony <strong>złotą odznaką 👑</strong> i ma unikalny numer w historii klubu.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q10">
+    <div class="faq-q" onclick="toggle('q10')">
+      <span class="faq-num">10</span>
+      <span class="faq-q-text">Co to jest Regulamin i dlaczego trzeba zaakceptować?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Przed pierwszym check-inem musisz zaakceptować regulamin i politykę prywatności FoxPot Club.</p>
+      <p>To jednorazowa czynność — potwierdzasz, że znasz zasady i wyrażasz zgodę na przetwarzanie danych w ramach programu.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q11">
+    <div class="faq-q" onclick="toggle('q11')">
+      <span class="faq-num">11</span>
+      <span class="faq-q-text">Czy FoxPot jest darmowy?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Tak, dla Fox'ów FoxPot jest <strong>całkowicie bezpłatny</strong>.</p>
+      <p>Nie płacisz za członkostwo, nie ma subskrypcji. Po prostu odwiedzasz lokale i zbierasz korzyści.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q12">
+    <div class="faq-q" onclick="toggle('q12')">
+      <span class="faq-num">12</span>
+      <span class="faq-q-text">Czy muszę coś zamówić w lokalu, aby skorzystać z FoxPot?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Tak. Zniżka FoxPot dotyczy Twojego rachunku w lokalu — żeby z niej skorzystać, musisz coś zamówić.</p>
+      <p>Check-in bez zakupu jest możliwy, ale <strong>zniżka i punkty za rachunek</strong> przyznawane są tylko po wpisaniu kwoty.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Check-in -->
+<div class="section">
+  <div class="section-title">Check-in</div>
+
+  <div class="faq-item" id="q13">
+    <div class="faq-q" onclick="toggle('q13')">
+      <span class="faq-num">13</span>
+      <span class="faq-q-text">Jak zrobić check-in?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>W aplikacji FoxPot przejdź do zakładki <strong>Check-in</strong>, wybierz lokal i kliknij <em>Generuj OTP</em>.</p>
+      <p>Otrzymasz <strong>kod OTP</strong> — podaj go obsłudze lokalu lub pokaż na ekranie.</p>
+      <p>Lokal potwierdza wizytę po swojej stronie — po potwierdzeniu możesz wpisać kwotę rachunku i odebrać zniżkę.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q14">
+    <div class="faq-q" onclick="toggle('q14')">
+      <span class="faq-num">14</span>
+      <span class="faq-q-text">Co to jest kod OTP i jak długo jest ważny?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>OTP (One-Time Password) to jednorazowy kod, który potwierdza Twoją tożsamość jako Fox w danym lokalu.</p>
+      <p>Kod jest ważny przez <strong>10 minut</strong> od wygenerowania.</p>
+      <div class="note">Jeśli czas minął — wygeneruj nowy kod przed pokazaniem obsłudze.</div>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q15">
+    <div class="faq-q" onclick="toggle('q15')">
+      <span class="faq-num">15</span>
+      <span class="faq-q-text">Kto potwierdza check-in?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Check-in potwierdza obsługa lokalu partnerskiego przez swój panel FoxPot.</p>
+      <p>Po wpisaniu Twojego kodu OTP lokal klika <em>Potwierdź wizytę</em> — i gotowe.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q16">
+    <div class="faq-q" onclick="toggle('q16')">
+      <span class="faq-num">16</span>
+      <span class="faq-q-text">Co zrobić, jeśli lokal nie potwierdził?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Przypomnij obsłudze, żeby wpisała Twój kod OTP w systemie FoxPot.</p>
+      <p>Jeśli problem się powtarza, skontaktuj się z nami przez Telegram — rozwiążemy to.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Zniżki -->
+<div class="section">
+  <div class="section-title">Zniżki i rachunek</div>
+
+  <div class="faq-item" id="q17">
+    <div class="faq-q" onclick="toggle('q17')">
+      <span class="faq-num">17</span>
+      <span class="faq-q-text">Jak działa zniżka?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Po potwierdzeniu check-inu wpisujesz kwotę swojego rachunku w aplikacji.</p>
+      <p>System automatycznie oblicza zniżkę i pokazuje <strong>ile zaoszczędziłeś</strong>.</p>
+      <p>Procent zniżki zależy od lokalu — każdy partner ustala ją samodzielnie.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q18">
+    <div class="faq-q" onclick="toggle('q18')">
+      <span class="faq-num">18</span>
+      <span class="faq-q-text">Czy zniżka obowiązuje na całe menu?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Zniżka FoxPot obowiązuje na standardowe menu lokalu.</p>
+      <p><strong>Promocje się nie łączą</strong> — jeśli lokal ma już inną aktywną promocję na dane danie lub pozycję, zniżka FoxPot nie będzie dotyczyć tej pozycji.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q19">
+    <div class="faq-q" onclick="toggle('q19')">
+      <span class="faq-num">19</span>
+      <span class="faq-q-text">Co to jest "Wartość z FoxPot"?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>To łączna suma pieniędzy, którą zaoszczędziłeś dzięki zniżkom FoxPot od początku swojej aktywności.</p>
+      <p>Widzisz ją w swoim profilu — motywuje do kolejnych wizyt. 😄</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q20">
+    <div class="faq-q" onclick="toggle('q20')">
+      <span class="faq-num">20</span>
+      <span class="faq-q-text">Po co wpisywać kwotę rachunku?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Kwota rachunku jest potrzebna do dwóch rzeczy:</p>
+      <ul>
+        <li>Obliczenia Twojej <strong>rzeczywistej zniżki</strong> w złotówkach</li>
+        <li>Naliczenia dodatkowych <strong>punktów do ratingu</strong></li>
+      </ul>
+      <p>Im wyższy rachunek, tym więcej punktów. Wpisanie kwoty jest opłacalne.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q21">
+    <div class="faq-q" onclick="toggle('q21')">
+      <span class="faq-num">21</span>
+      <span class="faq-q-text">Po co wybierać danie lub kategorię?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Po zapisaniu rachunku możesz (opcjonalnie) wskazać, co zamówiłeś.</p>
+      <p>Twój wybór trafia do anonimowych statystyk lokalu — inni Fox'owie widzą, <strong>co jest najczęściej zamawiane</strong> w danym miejscu.</p>
+      <p>Za wskazanie dania lub kategorii otrzymujesz <strong>dodatkowe punkty</strong>.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q22">
+    <div class="faq-q" onclick="toggle('q22')">
+      <span class="faq-num">22</span>
+      <span class="faq-q-text">Co oznacza opcja "Dlaczego tu?"</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Po wizycie możesz wskazać główny powód, dla którego wybrałeś ten lokal — na przykład <em>szybka obsługa</em>, <em>smaczne jedzenie</em> czy <em>dobre na spotkania</em>.</p>
+      <p>Te dane są widoczne dla innych Fox'ów na mapie — pomagają w wyborze miejsca.</p>
+      <p>Za odpowiedź dostajesz <strong>dodatkowe punkty</strong>.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Punkty -->
+<div class="section">
+  <div class="section-title">Punkty i rating</div>
+
+  <div class="faq-item" id="q23">
+    <div class="faq-q" onclick="toggle('q23')">
+      <span class="faq-num">23</span>
+      <span class="faq-q-text">Co to są punkty Fox?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Punkty Fox to Twój rating — pokazują aktywność w klubie.</p>
+      <p>Zdobywasz je za wizyty w lokalach i inne działania w FoxPot. Im wyższy rating, tym wyższy status Fox.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q24">
+    <div class="faq-q" onclick="toggle('q24')">
+      <span class="faq-num">24</span>
+      <span class="faq-q-text">Jak zdobywać punkty?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Punkty zdobywasz za:</p>
+      <ul>
+        <li>✅ Check-in w lokalu partnerskim</li>
+        <li>💰 Wpisanie kwoty rachunku</li>
+        <li>🍽 Wskazanie dania lub kategorii</li>
+        <li>⚡ Odpowiedź "Dlaczego tu?"</li>
+        <li>🎰 Codzienny spin (koło fortuny)</li>
+        <li>🤝 Zaproszenie aktywnego Fox'a</li>
+        <li>🏆 Odblokowanie osiągnięć</li>
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q25">
+    <div class="faq-q" onclick="toggle('q25')">
+      <span class="faq-num">25</span>
+      <span class="faq-q-text">Na co wpływają punkty?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Punkty wpływają na Twoje miejsce w rankingu TOP tygodnia, miesiąca i roku.</p>
+      <p>Im wyższy rating, tym wyższy status w klubie i większa widoczność wśród innych Fox'ów.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Zaproszenia -->
+<div class="section">
+  <div class="section-title">Zaproszenia</div>
+
+  <div class="faq-item" id="q26">
+    <div class="faq-q" onclick="toggle('q26')">
+      <span class="faq-num">26</span>
+      <span class="faq-q-text">Jak zaprosić znajomego?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Przejdź do zakładki <strong>Zaproszenia</strong> w aplikacji i kliknij <em>Generuj link</em>.</p>
+      <p>Wyślij link znajomemu przez dowolny komunikator — po rejestracji zostaje Twoim zaproszonym Fox'em.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q27">
+    <div class="faq-q" onclick="toggle('q27')">
+      <span class="faq-num">27</span>
+      <span class="faq-q-text">Ile zaproszeń mam?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Liczba dostępnych zaproszeń widoczna jest w zakładce Zaproszenia w aplikacji.</p>
+      <p>Każdy Fox zaczyna z określoną liczbą zaproszeń — możesz ją zwiększyć.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q28">
+    <div class="faq-q" onclick="toggle('q28')">
+      <span class="faq-num">28</span>
+      <span class="faq-q-text">Jak zdobyć więcej zaproszeń?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Dodatkowe zaproszenia możesz zdobyć przez:</p>
+      <ul>
+        <li>🎰 Spin (koło fortuny) — +1 zaproszenie z szansą 10%</li>
+        <li>🏆 Odblokowanie osiągnięć społecznościowych</li>
+      </ul>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Streak -->
+<div class="section">
+  <div class="section-title">Streak</div>
+
+  <div class="faq-item" id="q29">
+    <div class="faq-q" onclick="toggle('q29')">
+      <span class="faq-num">29</span>
+      <span class="faq-q-text">Co to jest streak?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Streak to liczba <strong>kolejnych dni</strong>, w których byłeś aktywny w FoxPot (check-in lub spin).</p>
+      <p>Długi streak zwiększa Twój status i odblokowuje specjalne osiągnięcia — np. 🔥 7 dni z rzędu, 💪 30 dni.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q30">
+    <div class="faq-q" onclick="toggle('q30')">
+      <span class="faq-num">30</span>
+      <span class="faq-q-text">Co się stanie, jeśli opuszczę dzień?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Jeśli nie będziesz aktywny przez jeden dzień, Twój streak <strong>zeruje się</strong> i zaczyna od nowa.</p>
+      <p>Chyba że masz dostępny <strong>freeze</strong> — wtedy jeden dzień przerwy nie zeruje passy.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q31">
+    <div class="faq-q" onclick="toggle('q31')">
+      <span class="faq-num">31</span>
+      <span class="faq-q-text">Co to jest freeze i jak go użyć?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Freeze to jednorazowa <strong>ochrona streaka</strong> — pozwala przeżyć jeden dzień przerwy bez zerowania passy.</p>
+      <p>Freeze zużywa się automatycznie, gdy opuszczasz dzień aktywności.</p>
+      <p>Możesz go zdobyć przez spin (3% szans) lub osiągnięcia.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Spin -->
+<div class="section">
+  <div class="section-title">Spin — koło fortuny</div>
+
+  <div class="faq-item" id="q32">
+    <div class="faq-q" onclick="toggle('q32')">
+      <span class="faq-num">32</span>
+      <span class="faq-q-text">Jak działa codzienny spin?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Raz dziennie możesz zakręcić kołem fortuny w zakładce <strong>Spin</strong>.</p>
+      <p>Każde kręcenie daje losową nagrodę — punkty, zaproszenie lub freeze streak.</p>
+      <p>Spin odnawia się o <strong>północy</strong> każdego dnia.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q33">
+    <div class="faq-q" onclick="toggle('q33')">
+      <span class="faq-num">33</span>
+      <span class="faq-q-text">Jakie nagrody można wygrać?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Możliwe nagrody ze spinu:</p>
+      <ul>
+        <li>🎁 <strong>Punkty ratingu</strong> — najpopularniejsza nagroda</li>
+        <li>🎟️ <strong>Zaproszenie</strong> — dodatkowy slot dla znajomego</li>
+        <li>❄️ <strong>Freeze streak</strong> — ochrona Twojej passy</li>
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q34">
+    <div class="faq-q" onclick="toggle('q34')">
+      <span class="faq-num">34</span>
+      <span class="faq-q-text">Kiedy odnawia się spin?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Spin odnawia się codziennie o <strong>północy (00:00)</strong>.</p>
+      <p>Jeden spin na dobę — użyj go każdego dnia, żeby maksymalizować punkty.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Stamps -->
+<div class="section">
+  <div class="section-title">Stamps — pieczątki</div>
+
+  <div class="faq-item" id="q35">
+    <div class="faq-q" onclick="toggle('q35')">
+      <span class="faq-num">35</span>
+      <span class="faq-q-text">Co to są stamps (pieczątki)?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Stamps to cyfrowa karta lojalnościowa dla każdego lokalu partnerskiego.</p>
+      <p>Za każdą wizytę w danym lokalu otrzymujesz pieczątki — jak w tradycyjnej karcie kawowej.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q36">
+    <div class="faq-q" onclick="toggle('q36')">
+      <span class="faq-num">36</span>
+      <span class="faq-q-text">Ile pieczątek potrzebuję?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Pełna karta to <strong>10 pieczątek</strong> w jednym lokalu.</p>
+      <p>Postęp widzisz na karcie lokalu w zakładce Profil.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q37">
+    <div class="faq-q" onclick="toggle('q37')">
+      <span class="faq-num">37</span>
+      <span class="faq-q-text">Co otrzymuję za pełną kartę?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Po zebraniu 10 pieczątek w jednym lokalu odblokowujesz <strong>nagrodę od tego lokalu</strong>.</p>
+      <p>Pokaż pełną kartę obsłudze podczas wizyty, aby odebrać nagrodę.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Mapa -->
+<div class="section">
+  <div class="section-title">Mapa lokali</div>
+
+  <div class="faq-item" id="q38">
+    <div class="faq-q" onclick="toggle('q38')">
+      <span class="faq-num">38</span>
+      <span class="faq-q-text">Jak korzystać z mapy?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Zakładka <strong>Mapa</strong> pokazuje wszystkich partnerów FoxPot w Warszawie.</p>
+      <p>Możesz filtrować lokale: <em>Wszystkie</em>, <em>Partnerzy</em>, <em>Trial</em> — oraz sortować po popularności lub swoich poprzednich wizytach.</p>
+      <p>Kliknij w lokal, aby zobaczyć szczegóły: opis, zniżkę, godziny otwarcia, popularne dania i opinie Fox'ów.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q39">
+    <div class="faq-q" onclick="toggle('q39')">
+      <span class="faq-num">39</span>
+      <span class="faq-q-text">Co oznaczają kolory znaczników na mapie?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Kolor znacznika na mapie pokazuje aktualny status lokalu w rankingu:</p>
+      <ul>
+        <li><span class="tag" style="background:rgba(245,158,11,.15);color:#F59E0B;border-color:rgba(245,158,11,.3)">🟡 Pomarańczowy</span> — standardowy partner</li>
+        <li><span class="tag" style="background:rgba(234,179,8,.15);color:#EAB308;border-color:rgba(234,179,8,.3)">🥇 Złoty</span> — TOP tygodnia</li>
+        <li><span class="tag" style="background:rgba(37,99,235,.15);color:#2563EB;border-color:rgba(37,99,235,.3)">🔵 Niebieski</span> — TOP miesiąca</li>
+        <li><span class="tag" style="background:rgba(124,58,237,.15);color:#7C3AED;border-color:rgba(124,58,237,.3)">🟣 Fioletowy</span> — TOP roku</li>
+      </ul>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Status lokalu -->
+<div class="section">
+  <div class="section-title">Status lokalu</div>
+
+  <div class="faq-item" id="q40">
+    <div class="faq-q" onclick="toggle('q40')">
+      <span class="faq-num">40</span>
+      <span class="faq-q-text">Co oznacza "Lokal pełny"?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Lokal tymczasowo <strong>nie przyjmuje Fox'ów</strong> z programem FoxPot — na przykład w godzinach szczytu.</p>
+      <p>Status jest widoczny do określonej godziny. Wróć później.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q41">
+    <div class="faq-q" onclick="toggle('q41')">
+      <span class="faq-num">41</span>
+      <span class="faq-q-text">Co oznacza "Wydarzenie prywatne"?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Lokal jest zajęty przez prywatne wydarzenie i nie realizuje zniżek FoxPot w tym czasie.</p>
+      <p>Sprawdź godzinę zakończenia statusu w szczegółach lokalu.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q42">
+    <div class="faq-q" onclick="toggle('q42')">
+      <span class="faq-num">42</span>
+      <span class="faq-q-text">Co oznacza "Kuchnia ograniczona"?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Lokal pracuje z ograniczonym menu — część dań może być niedostępna.</p>
+      <p>Zniżka FoxPot nadal obowiązuje na dostępne pozycje.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q43">
+    <div class="faq-q" onclick="toggle('q43')">
+      <span class="faq-num">43</span>
+      <span class="faq-q-text">Co oznacza "Status chwilowy"?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Lokal może ustawić dowolny komunikat — np. <em>"Dziś gramy na żywo"</em> albo <em>"Kuchnia zamknięta od 15:00"</em>.</p>
+      <p>To informacja dla Fox'ów, żeby wiedzieli co ich czeka.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: TOP -->
+<div class="section">
+  <div class="section-title">TOP rankingu</div>
+
+  <div class="faq-item" id="q44">
+    <div class="faq-q" onclick="toggle('q44')">
+      <span class="faq-num">44</span>
+      <span class="faq-q-text">Co to jest TOP tygodnia, miesiąca i roku?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>TOP to ranking lokali według liczby wizyt Fox'ów w danym okresie.</p>
+      <ul>
+        <li>🥇 <strong>TOP tygodnia</strong> — resetuje się w niedzielę o północy</li>
+        <li>👑 <strong>TOP miesiąca</strong> — resetuje się 1. każdego miesiąca</li>
+        <li>🏆 <strong>TOP roku</strong> — liczony od startu FoxPot</li>
+      </ul>
+      <p>Lider każdego okresu jest wyróżniany na mapie i w aplikacji.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q45">
+    <div class="faq-q" onclick="toggle('q45')">
+      <span class="faq-num">45</span>
+      <span class="faq-q-text">Jak trafić do TOP?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>TOP lokali zależy od liczby check-inów Fox'ów — im więcej wizyt w danym lokalu, tym wyżej w rankingu.</p>
+      <p>Jako Fox możesz wpływać na ranking, odwiedzając swoje ulubione miejsca regularnie.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Osiągnięcia -->
+<div class="section">
+  <div class="section-title">Osiągnięcia</div>
+
+  <div class="faq-item" id="q46">
+    <div class="faq-q" onclick="toggle('q46')">
+      <span class="faq-num">46</span>
+      <span class="faq-q-text">Jakie osiągnięcia istnieją?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Osiągnięcia podzielone są na 6 kategorii:</p>
+      <ul>
+        <li>🗺️ <strong>Odkrywca</strong> — odwiedź różne lokale (1, 10, 30, 100)</li>
+        <li>🤝 <strong>Społeczność</strong> — zaproś Fox'ów (1, 10, 50, 100)</li>
+        <li>🔥 <strong>Streak</strong> — aktywność z rzędu (7, 30, 90, 365 dni)</li>
+        <li>🏪 <strong>Wizyty</strong> — łączna liczba wizyt (1, 10, 50, 100)</li>
+        <li>🎰 <strong>Spin</strong> — liczba spinów (10, 30)</li>
+        <li>⭐ <strong>Specjalne</strong> — wyjątkowe okoliczności</li>
+      </ul>
+      <p>Za każde odblokowane osiągnięcie otrzymujesz <strong>punkty do ratingu</strong>.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q47">
+    <div class="faq-q" onclick="toggle('q47')">
+      <span class="faq-num">47</span>
+      <span class="faq-q-text">Co to są specjalne osiągnięcia?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Specjalne osiągnięcia to wyjątkowe odznaki dla Fox'ów:</p>
+      <ul>
+        <li>🚀 <strong>Pionier</strong> — dołączyłeś do FoxPot w fazie założycielskiej</li>
+        <li>🌙 <strong>Nocny Fox</strong> — check-in późno w nocy</li>
+        <li>🌅 <strong>Poranny Fox</strong> — check-in wczesnym rankiem</li>
+        <li>💎 <strong>VIP Diamond</strong> — osiągasz najwyższy poziom aktywności</li>
+      </ul>
+    </div></div>
+  </div>
+</div>
+
+<!-- SECTION: Inne -->
+<div class="section">
+  <div class="section-title">Inne</div>
+
+  <div class="faq-item" id="q48">
+    <div class="faq-q" onclick="toggle('q48')">
+      <span class="faq-num">48</span>
+      <span class="faq-q-text">Jak zmienić dzielnicę?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Przejdź do zakładki <strong>Profil</strong> i kliknij swoją aktualną dzielnicę.</p>
+      <p>Otworzy się lista dzielnic Warszawy — wybierz swoją.</p>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q49">
+    <div class="faq-q" onclick="toggle('q49')">
+      <span class="faq-num">49</span>
+      <span class="faq-q-text">Jak skontaktować się z zespołem?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Napisz do nas bezpośrednio przez Telegram — link znajdziesz poniżej.</p>
+      <p>Odpowiadamy najszybciej jak możemy.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- CONTACT -->
+<div class="contact-block">
+  <div class="contact-icon">🦊</div>
+  <div class="contact-title">Nie znalazłeś odpowiedzi?</div>
+  <div class="contact-sub">Napisz do nas bezpośrednio.<br>Chętnie pomożemy.</div>
+  <a class="contact-btn" href="https://t.me/thefoxpot_club_bot">
+    <span>✉️</span> Napisz na Telegram
+  </a>
+</div>
+
+<div class="footer">
+  © 2025 The FoxPot Club · Warsaw
+</div>
+
+<script>
+function toggle(id){
+  const el=document.getElementById(id);
+  const isOpen=el.classList.contains('open');
+  // close all
+  document.querySelectorAll('.faq-item.open').forEach(e=>e.classList.remove('open'));
+  if(!isOpen) el.classList.add('open');
+}
+
+function openQ(id){
+  const el=document.getElementById(id);
+  if(!el) return;
+  document.querySelectorAll('.faq-item.open').forEach(e=>e.classList.remove('open'));
+  el.classList.add('open');
+  setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),50);
+}
+</script>
+</body>
+</html>
