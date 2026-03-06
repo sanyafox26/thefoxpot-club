@@ -1302,6 +1302,8 @@ app.get("/privacy", (_req, res) => res.sendFile(path.join(__dirname, "privacy.ht
 app.get("/rules.html",   (_req, res) => res.sendFile(path.join(__dirname, "rules.html")));
 app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "privacy.html")));
 app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
+app.get("/faq",      (_req, res) => res.sendFile(path.join(__dirname, "faq.html")));
+app.get("/faq.html", (_req, res) => res.sendFile(path.join(__dirname, "faq.html")));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
 
 /* ── PWA ── */
