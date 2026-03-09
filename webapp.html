@@ -787,6 +787,7 @@ async function loadProfile(){
     $l.style.display='none'; $c.style.display='block';
     S.spinDone=!!d.spun_today;
     if(S.spinDone) markSpinDone(d.spin_prize);
+    if(!d.consent_given) showConsent();
   }catch(e){
     $l.style.display='none';
     if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
