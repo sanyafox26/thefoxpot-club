@@ -1519,6 +1519,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       trial_blocked_venue_id:   f.trial_blocked_venue_id || null,
       trial_blocked_until:      f.trial_blocked_until || null,
       join_source:              f.join_source || null,
+      consent_given:            !!(f.consent_at && f.consent_version === CONSENT_VERSION),
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
