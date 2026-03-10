@@ -81,6 +81,21 @@
   .contact-btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:12px;padding:10px 20px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;transition:opacity .2s;box-shadow:0 4px 16px rgba(124,92,252,.3)}
   .contact-btn:hover{opacity:.85}
   .footer{margin:24px 16px 0;text-align:center;font-size:11px;color:var(--muted2);font-family:var(--mono)}
+
+  /* Search */
+  .search-box{margin:0 16px 16px;position:relative}
+  .search-input{width:100%;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:12px 16px 12px 44px;font-family:var(--font);font-size:14px;color:var(--text);outline:none;transition:border-color .2s}
+  .search-input::placeholder{color:var(--muted2)}
+  .search-input:focus{border-color:var(--fox)}
+  .search-icon{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--muted2);pointer-events:none}
+  .search-clear{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:14px;color:var(--muted);cursor:pointer;padding:4px;display:none}
+  .search-clear.visible{display:block}
+  .search-clear:hover{color:var(--text)}
+  .no-results{text-align:center;padding:32px 16px;color:var(--muted)}
+  .no-results-icon{font-size:40px;margin-bottom:12px;opacity:.5}
+  .no-results-text{font-size:14px}
+  .faq-item.hidden{display:none}
+  .section.hidden{display:none}
 </style>
 </head>
 <body>
@@ -106,6 +121,18 @@
 
 <!-- FOX TAB -->
 <div class="tab-panel active" id="tab-fox">
+
+<!-- Search box -->
+<div class="search-box">
+  <span class="search-icon">🔍</span>
+  <input type="text" class="search-input" id="search-fox" placeholder="Szukaj pytania..." oninput="searchFAQ('fox')">
+  <button class="search-clear" id="clear-fox" onclick="clearSearch('fox')">✕</button>
+</div>
+<div class="no-results" id="no-results-fox" style="display:none">
+  <div class="no-results-icon">🦊</div>
+  <div class="no-results-text">Nie znaleziono pytań. Spróbuj innego słowa.</div>
+</div>
+
 <!-- TOP QUESTIONS -->
 <div class="top-block">
   <div class="top-block-title">🔝 Najczęstsze pytania</div>
@@ -793,6 +820,35 @@
   <div class="faq-item" id="q49">
     <div class="faq-q" onclick="toggle('q49')">
       <span class="faq-num">49</span>
+      <span class="faq-q-text">Jak znaleźć swój Telegram ID?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Twój Telegram ID znajdziesz na dwa sposoby:</p>
+      <ul>
+        <li>📱 W zakładce <strong>Profil</strong> — Telegram ID jest widoczny pod Twoją nazwą użytkownika</li>
+        <li>💬 Wpisz komendę <strong>/id</strong> w bocie — bot wyświetli Twój Telegram ID</li>
+      </ul>
+      <div class="note">Telegram ID to liczba (np. 457874548), nie nazwa użytkownika (@nazwa).</div>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q50">
+    <div class="faq-q" onclick="toggle('q50')">
+      <span class="faq-num">50</span>
+      <span class="faq-q-text">Jak opuścić klub?</span>
+      <span class="faq-chevron">▼</span>
+    </div>
+    <div class="faq-a"><div class="faq-a-inner">
+      <p>Jeśli chcesz opuścić The FoxPot Club, skontaktuj się z nami przez Telegram.</p>
+      <p><strong>Uwaga:</strong> Opuszczenie klubu oznacza utratę wszystkich wizyt, punktów i osiągnięć — bez możliwości odzyskania.</p>
+      <div class="note">🦊 <strong>Founder Fox</strong> (pierwsze 50 osób) — status pozostaje na zawsze, nawet po opuszczeniu i ponownym dołączeniu.</div>
+    </div></div>
+  </div>
+
+  <div class="faq-item" id="q51">
+    <div class="faq-q" onclick="toggle('q51')">
+      <span class="faq-num">51</span>
       <span class="faq-q-text">Jak skontaktować się z zespołem?</span>
       <span class="faq-chevron">▼</span>
     </div>
@@ -808,6 +864,17 @@
 
 <!-- LOKAL TAB -->
 <div class="tab-panel" id="tab-lokal">
+
+<!-- Search box -->
+<div class="search-box">
+  <span class="search-icon">🔍</span>
+  <input type="text" class="search-input" id="search-lokal" placeholder="Szukaj pytania..." oninput="searchFAQ('lokal')">
+  <button class="search-clear" id="clear-lokal" onclick="clearSearch('lokal')">✕</button>
+</div>
+<div class="no-results" id="no-results-lokal" style="display:none">
+  <div class="no-results-icon">🏪</div>
+  <div class="no-results-text">Nie znaleziono pytań. Spróbuj innego słowa.</div>
+</div>
 
 <!-- LOKAL TOP QUESTIONS -->
 <div class="top-block">
@@ -888,7 +955,7 @@
     </div>
     <div class="faq-a"><div class="faq-a-inner">
       <p>Trial to okres testowy dla nowych lokali — możesz sprawdzić jak działa system zanim zostaniesz pełnym partnerem.</p>
-      <p>W trybie trial liczba dostępnych zniżek dla Fox'ów jest <strong>ograniczona</strong>. Fox'owie mogą rezerwować zniżkę z wyprzedzeniem, żeby mieć pewność dostępności.</p>
+      <p>W trybie trial liczba dostępnych zniżek jest <strong>ograniczona do 20 miesięcznie</strong>. Fox'owie mogą rezerwować zniżkę z wyprzedzeniem, żeby mieć pewność dostępności.</p>
     </div></div>
   </div>
 
@@ -1036,7 +1103,7 @@
     </div>
     <div class="faq-a"><div class="faq-a-inner">
       <p>System automatycznie wykryje, że Fox był już dziś w Twoim lokalu i pokaże komunikat <strong>"DZIŚ JUŻ BYŁO"</strong>.</p>
-      <p>Wizyta zostanie zarejestrowana, ale punkty za ten dzień zostały już naliczone wcześniej.</p>
+      <p><strong>Zniżka nadal obowiązuje</strong> — Fox może ją wykorzystać przy każdej wizycie tego dnia. Jednak check-in nie jest liczony jako nowa wizyta w statystykach, a punkty za ten dzień zostały już naliczone wcześniej.</p>
     </div></div>
   </div>
 
@@ -1066,6 +1133,7 @@
     <div class="faq-a"><div class="faq-a-inner">
       <p>Po potwierdzeniu check-inu Fox wpisuje kwotę swojego rachunku w aplikacji.</p>
       <p>System oblicza zniżkę i pokazuje Fox'owi ile zaoszczędził. Zniżkę odliczasz przy płatności w lokalu.</p>
+      <p><strong>Uwaga:</strong> Zniżka obowiązuje przy każdej wizycie — nawet jeśli Fox był już dziś w tym samym lokalu.</p>
     </div></div>
   </div>
 
@@ -1288,7 +1356,8 @@
       <span class="faq-chevron">▼</span>
     </div>
     <div class="faq-a"><div class="faq-a-inner">
-      <p>Poproś Fox'a żeby pokazał swój profil w aplikacji The FoxPot Club — Telegram ID jest widoczny w jego profilu.</p>
+      <p>Poproś Fox'a żeby pokazał swój profil w aplikacji The FoxPot Club — Telegram ID jest widoczny w zakładce <strong>Profil</strong>, pod nazwą użytkownika.</p>
+      <p>Fox może też użyć komendy <strong>/id</strong> w bocie, aby wyświetlić swój Telegram ID.</p>
       <div class="note">Telegram ID to liczba, nie nazwa użytkownika — np. 457874548.</div>
     </div></div>
   </div>
@@ -1433,7 +1502,55 @@ function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
   event.target.classList.add('active');
+  clearSearch(tab);
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function searchFAQ(tab){
+  const input=document.getElementById('search-'+tab);
+  const query=input.value.toLowerCase().trim();
+  const clearBtn=document.getElementById('clear-'+tab);
+  const noResults=document.getElementById('no-results-'+tab);
+  const panel=document.getElementById('tab-'+tab);
+  
+  clearBtn.classList.toggle('visible',query.length>0);
+  
+  const items=panel.querySelectorAll('.faq-item');
+  const sections=panel.querySelectorAll('.section');
+  const topBlock=panel.querySelector('.top-block');
+  
+  if(query.length===0){
+    items.forEach(i=>i.classList.remove('hidden'));
+    sections.forEach(s=>s.classList.remove('hidden'));
+    if(topBlock)topBlock.style.display='';
+    noResults.style.display='none';
+    return;
+  }
+  
+  if(topBlock)topBlock.style.display='none';
+  
+  let found=0;
+  items.forEach(item=>{
+    const qText=item.querySelector('.faq-q-text')?.textContent.toLowerCase()||'';
+    const aText=item.querySelector('.faq-a-inner')?.textContent.toLowerCase()||'';
+    const match=qText.includes(query)||aText.includes(query);
+    item.classList.toggle('hidden',!match);
+    if(match)found++;
+  });
+  
+  sections.forEach(section=>{
+    const visibleItems=section.querySelectorAll('.faq-item:not(.hidden)');
+    section.classList.toggle('hidden',visibleItems.length===0);
+  });
+  
+  noResults.style.display=found===0?'block':'none';
+}
+
+function clearSearch(tab){
+  const input=document.getElementById('search-'+tab);
+  input.value='';
+  searchFAQ(tab);
+  input.focus();
 }
 </script>
 </body>
