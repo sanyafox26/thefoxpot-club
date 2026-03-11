@@ -1,9 +1,17 @@
 "use strict";
 
 /**
- * THE FOXPOT CLUB — Phase 1 MVP — server.js V24.0
+ * THE FOXPOT CLUB — Phase 1 MVP — server.js V27.0
  *
- * NOWOŚCI V24:
+ * NOWOŚCI V27:
+ *  ✅ /leave + /settings → "🚪 Opuść klub" — soft delete (is_deleted, deleted_at)
+ *  ✅ Potwierdzenie przed usunięciem (inline keyboard)
+ *  ✅ Reset: rating, invites, streak, achievements, visits — founder_number zachowany
+ *  ✅ Powrót z nowym zaproszeniem: /start <KOD> → czyste konto, founder status
+ *  ✅ is_deleted guard na wszystkich komendach bota
+ *  ✅ Admin notification przy opuszczeniu klubu
+ *
+ * V24 (bez zmін):
  *  ✅ POST /api/venue/scan     — Fox сканує QR локалу (+1 rating, +5 invites, obligation 24h)
  *  ✅ POST /api/venue/checkin  — Fox робить check-in в локалі (виконує obligation)
  *  ✅ Штрафна система: 1-й раз -10 + блок до ранку, 2-й -20, 3-й -50 + бан 7 днів
@@ -438,6 +446,8 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "demo_expires_at",       "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "no_show_count",         "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "banned_until",          "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "deleted_at",            "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "is_deleted",            "BOOLEAN NOT NULL DEFAULT FALSE");
 
   // V28: Trial system (venue-based, 60min, no penalty)
   await ensureColumn("fp1_foxes",          "trial_active",          "BOOLEAN NOT NULL DEFAULT FALSE");
@@ -629,7 +639,7 @@ async function applyPrize(userId, prize) {
 async function doSpin(ctx) {
   const userId = String(ctx.from.id);
   const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-  if (fox.rowCount === 0)
+  if (fox.rowCount === 0 || fox.rows[0].is_deleted)
     return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
 
   const alreadySpun = await hasSpunToday(userId);
@@ -3555,6 +3565,50 @@ if (BOT_TOKEN) {
       const exists = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (exists.rowCount > 0) {
         const f = exists.rows[0];
+
+        // ── RETURNING DELETED FOX — re-register with new invite code ──
+        if (f.is_deleted && codeOrInv) {
+          // Reset all data, keep founder_number
+          await pool.query(`
+            UPDATE fp1_foxes SET
+              is_deleted = FALSE,
+              deleted_at = NULL,
+              username = $2,
+              rating = 5,
+              invites = 3,
+              streak_current = 0,
+              streak_best = 0,
+              is_demo = FALSE,
+              demo_venue_id = NULL,
+              consent_at = NULL,
+              consent_version = NULL,
+              banned_until = NULL,
+              trial_active = FALSE
+            WHERE user_id = $1
+          `, [userId, username]);
+
+          const founderNum = await assignFounderNumber(userId);
+          const badge = founderBadge(founderNum);
+          let msg = `🦊 Witaj ponownie w The FoxPot Club!\n\n`;
+          msg += `Twoje konto zostało odtworzone od zera.\n`;
+          if (badge) msg += `\n${badge}\n(Twój status Founder Fox zachowany! 👑)\n`;
+          msg += `\nPunkty: 5\nZaproszenia: 3\n`;
+          msg += `\n/settings — ustawienia\n/venues — lokale`;
+          const webAppUrl = `${PUBLIC_URL}/webapp`;
+          return ctx.reply(msg, Markup.inlineKeyboard([
+            [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
+          ]));
+        }
+
+        // ── DELETED FOX without code ──
+        if (f.is_deleted) {
+          return ctx.reply(
+            `🦊 Twoje konto w The FoxPot Club zostało usunięte.\n\n` +
+            `Aby wrócić, potrzebujesz nowego zaproszenia.\n` +
+            `Napisz: /start <KOD>`
+          );
+        }
+
         const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
         const badge = founderBadge(f.founder_number);
         const spotsLeft = await founderSpotsLeft();
@@ -3570,7 +3624,7 @@ if (BOT_TOKEN) {
         msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
         if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
-        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings\n/leave`;
 
         // Streak updates only on check-in, not on /start
 
@@ -3660,7 +3714,7 @@ if (BOT_TOKEN) {
     try {
       const userId = String(ctx.from.id);
       const fox = await pool.query(`SELECT streak_current,streak_best,streak_freeze_available,streak_last_date FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const f = fox.rows[0];
       const cur = f.streak_current || 0, best = f.streak_best || 0, freeze = f.streak_freeze_available || 0;
       const last = f.streak_last_date ? String(f.streak_last_date).slice(0, 10) : "nigdy";
@@ -3677,12 +3731,109 @@ if (BOT_TOKEN) {
   bot.command("settings", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
-      const fox = await pool.query(`SELECT district,city FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      const fox = await pool.query(`SELECT district,city,is_deleted FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const f = fox.rows[0];
       await ctx.reply(`⚙️ Ustawienia\n\n📍 Dzielnica: ${f.district||"nie podano"}\n🏙️ Miasto: ${f.city||"Warsaw"}`,
-        Markup.inlineKeyboard([[Markup.button.callback("📍 Zmień dzielnicę", "change_district")]]));
+        Markup.inlineKeyboard([
+          [Markup.button.callback("📍 Zmień dzielnicę", "change_district")],
+          [Markup.button.callback("🚪 Opuść klub", "leave_club_ask")]
+        ]));
     } catch (e) { console.error("SETTINGS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.command("leave", async (ctx) => {
+    try {
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT user_id, is_deleted FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Nie jesteś członkiem klubu.");
+      await ctx.reply(
+        `⚠️ Czy na pewno chcesz opuścić The FoxPot Club?\n\n` +
+        `Utracisz:\n• Wszystkie wizyty\n• Punkty i rating\n• Osiągnięcia i streak\n• Zaproszenia\n\n` +
+        `❗ Tej operacji nie można cofnąć.\n` +
+        `Możesz dołączyć ponownie z nowym zaproszeniem — ale zaczniesz od zera.\n\n` +
+        `🦊 Founder Fox — Twój status pozostaje na zawsze.`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback("❌ Tak, opuszczam klub", "leave_club_confirm")],
+          [Markup.button.callback("← Wróć", "leave_club_cancel")]
+        ])
+      );
+    } catch (e) { console.error("LEAVE_CMD_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
+  });
+
+  bot.action("leave_club_ask", async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT user_id, is_deleted FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.editMessageText("❌ Nie jesteś członkiem klubu.");
+      await ctx.editMessageText(
+        `⚠️ Czy na pewno chcesz opuścić The FoxPot Club?\n\n` +
+        `Utracisz:\n• Wszystkie wizyty\n• Punkty i rating\n• Osiągnięcia i streak\n• Zaproszenia\n\n` +
+        `❗ Tej operacji nie można cofnąć.\n` +
+        `Możesz dołączyć ponownie z nowym zaproszeniem — ale zaczniesz od zera.\n\n` +
+        `🦊 Founder Fox — Twój status pozostaje na zawsze.`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback("❌ Tak, opuszczam klub", "leave_club_confirm")],
+          [Markup.button.callback("← Wróć", "leave_club_cancel")]
+        ])
+      );
+    } catch (e) { console.error("LEAVE_ASK_ERR", e); await ctx.answerCbQuery("❌ Błąd."); }
+  });
+
+  bot.action("leave_club_confirm", async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+      const userId = String(ctx.from.id);
+
+      // Soft delete: mark as deleted, reset stats, keep founder_number
+      await pool.query(`
+        UPDATE fp1_foxes SET
+          is_deleted = TRUE,
+          deleted_at = NOW(),
+          rating = 0,
+          invites = 0,
+          streak_current = 0,
+          streak_best = 0
+        WHERE user_id = $1
+      `, [userId]);
+
+      // Delete achievements
+      await pool.query(`DELETE FROM fp1_achievements WHERE user_id = $1`, [userId]);
+
+      // Delete counted visits
+      await pool.query(`DELETE FROM fp1_counted_visits WHERE user_id = $1`, [userId]);
+
+      // Delete daily spins
+      await pool.query(`DELETE FROM fp1_daily_spins WHERE user_id = $1`, [userId]);
+
+      // Notify admin
+      if (ADMIN_TG_ID) {
+        try {
+          const name = tgDisplayName(ctx.from);
+          await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+            `🚪 Fox opuścił klub:\n👤 ${name}\n🆔 ${userId}`);
+        } catch {}
+      }
+
+      await ctx.editMessageText(
+        `🚪 Opuściłeś The FoxPot Club.\n\n` +
+        `Wszystkie Twoje dane zostały zresetowane.\n` +
+        `Możesz wrócić w każdej chwili z nowym zaproszeniem — ale zaczniesz od zera.\n\n` +
+        `🦊 Jeśli byłeś Founder Fox — Twój status pozostaje na zawsze.\n\n` +
+        `Do zobaczenia! 👋`
+      );
+    } catch (e) {
+      console.error("LEAVE_CONFIRM_ERR", e);
+      await ctx.answerCbQuery("❌ Błąd. Spróbuj ponownie.");
+    }
+  });
+
+  bot.action("leave_club_cancel", async (ctx) => {
+    try {
+      await ctx.answerCbQuery("✅ Zostałeś w klubie!");
+      await ctx.editMessageText("✅ Dobrze, zostajesz w The FoxPot Club! 🦊\n\n/settings — wróć do ustawień");
+    } catch (e) { console.error("LEAVE_CANCEL_ERR", e); }
   });
 
   bot.command("panel", async (ctx) => {
@@ -3779,8 +3930,8 @@ if (BOT_TOKEN) {
   bot.command("achievements", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
-      const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      const fox = await pool.query(`SELECT is_deleted FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
 
       const existing = await pool.query(`SELECT achievement_code FROM fp1_achievements WHERE user_id=$1`, [userId]);
       const have = new Set(existing.rows.map(r => r.achievement_code));
@@ -3840,7 +3991,7 @@ if (BOT_TOKEN) {
     try {
       const userId = String(ctx.from.id);
       const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-      if (fox.rowCount === 0) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
+      if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const invited  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]);
       const active   = await pool.query(`SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]);
       const codesGen = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]);
@@ -3952,6 +4103,6 @@ if (BOT_TOKEN) {
         console.log("✅ Webhook:", hookUrl);
       } catch (e) { console.error("WEBHOOK_ERR", e?.message||e); }
     }
-    app.listen(PORT, () => console.log(`✅ Server V26 listening on ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Server V27 listening on ${PORT}`));
   } catch (e) { console.error("BOOT_ERR", e); process.exit(1); }
 })();
