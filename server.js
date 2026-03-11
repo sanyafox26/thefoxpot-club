@@ -1921,6 +1921,51 @@ app.post("/api/spin", requireWebAppAuth, async (req, res) => {
   }
 });
 
+// POST /api/leave — Fox opuszcza klub (soft delete)
+app.post("/api/leave", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const fox = await pool.query(`SELECT user_id, is_deleted, founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie zarejestrowany" });
+    if (fox.rows[0].is_deleted) return res.status(400).json({ error: "konto już usunięte" });
+
+    // Soft delete: reset stats, keep founder_number
+    await pool.query(`
+      UPDATE fp1_foxes SET
+        is_deleted = TRUE,
+        deleted_at = NOW(),
+        rating = 0,
+        invites = 0,
+        streak_current = 0,
+        streak_best = 0
+      WHERE user_id = $1
+    `, [userId]);
+
+    // Delete achievements, counted visits, daily spins
+    await pool.query(`DELETE FROM fp1_achievements WHERE user_id = $1`, [userId]);
+    await pool.query(`DELETE FROM fp1_counted_visits WHERE user_id = $1`, [userId]);
+    await pool.query(`DELETE FROM fp1_daily_spins WHERE user_id = $1`, [userId]);
+
+    // Notify admin
+    if (ADMIN_TG_ID && bot) {
+      try {
+        const name = req.tgUser.first_name || req.tgUser.username || userId;
+        await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+          `🚪 Fox opuścił klub:\n👤 ${name}\n🆔 ${userId}\n${fox.rows[0].founder_number ? `👑 Founder #${fox.rows[0].founder_number}` : ""}`);
+      } catch {}
+    }
+
+    res.json({
+      success: true,
+      message: "Konto usunięte. Możesz wrócić z nowym zaproszeniem.",
+      founder_kept: !!fox.rows[0].founder_number
+    });
+  } catch (e) {
+    console.error("API_LEAVE_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // GET /api/achievements
 app.get("/api/achievements", requireWebAppAuth, async (req, res) => {
   try {
