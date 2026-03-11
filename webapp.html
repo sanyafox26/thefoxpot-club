@@ -402,8 +402,30 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <a href="/rules" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
       <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
       <a href="/privacy" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Polityka Prywatności</a>
+      <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
+      <a href="/faq" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">FAQ</a>
+    </div>
+    <div id="pLeaveSection" style="display:none;text-align:center;padding:8px 0 16px">
+      <button onclick="showLeaveModal()" style="background:none;border:1px solid rgba(231,76,60,.25);border-radius:var(--radius-sm);padding:10px 24px;color:rgba(231,76,60,.6);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .2s">🚪 Opuść klub</button>
     </div>
   </section>
+
+  <!-- LEAVE CLUB MODAL -->
+  <div id="leaveModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(6px)">
+    <div style="background:#12131f;border:1px solid rgba(231,76,60,.3);border-radius:20px;padding:28px 24px;max-width:380px;width:100%;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+      <div style="font-size:18px;font-weight:800;margin-bottom:8px;color:var(--text)">Opuścić The FoxPot Club?</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px">
+        Utracisz wszystkie wizyty, punkty, rating, osiągnięcia i zaproszenia.<br><br>
+        Możesz wrócić z nowym zaproszeniem — ale zaczniesz <strong style="color:var(--text)">od zera</strong>.<br><br>
+        <span style="color:var(--fox)">🦊 Founder Fox — Twój status pozostaje na zawsze.</span>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button onclick="hideLeaveModal()" style="flex:1;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">← Zostań</button>
+        <button onclick="confirmLeave()" id="leaveConfirmBtn" style="flex:1;padding:12px;background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.4);border-radius:var(--radius-sm);color:#e74c3c;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">❌ Opuszczam</button>
+      </div>
+    </div>
+  </div>
   <!-- CHECK-IN -->
   <div id="consentOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(6px)">
       <div style="background:#12131f;border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:28px 24px;max-width:380px;width:100%;text-align:center">
@@ -788,6 +810,8 @@ async function loadProfile(){
     S.spinDone=!!d.spun_today;
     if(S.spinDone) markSpinDone(d.spin_prize);
     if(!d.consent_given) showConsent();
+    // Show leave button only for authenticated users
+    const $leave=q('pLeaveSection');if($leave)$leave.style.display='block';
   }catch(e){
     $l.style.display='none';
     if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
@@ -1269,6 +1293,41 @@ function copyInviteLink() {
     }).catch(() => {});
   }
   TG?.HapticFeedback?.notificationOccurred('success');
+}
+
+function showLeaveModal(){
+  const m=q('leaveModal');if(m){m.style.display='flex'}
+  TG?.HapticFeedback?.impactOccurred('heavy');
+}
+function hideLeaveModal(){
+  const m=q('leaveModal');if(m){m.style.display='none'}
+}
+async function confirmLeave(){
+  const btn=q('leaveConfirmBtn');
+  if(!btn)return;
+  btn.disabled=true;btn.textContent='⏳ Usuwanie...';
+  try{
+    const r=await api('/api/leave','POST');
+    hideLeaveModal();
+    TG?.HapticFeedback?.notificationOccurred('success');
+    // Show goodbye message
+    const $c=q('pContent');if($c)$c.style.display='none';
+    const $leave=q('pLeaveSection');if($leave)$leave.style.display='none';
+    const $e=q('pError');
+    if($e){
+      $e.textContent='🚪 Opuściłeś The FoxPot Club. Możesz wrócić z nowym zaproszeniem.';
+      $e.classList.add('show');
+      $e.style.background='rgba(231,76,60,.1)';
+      $e.style.borderColor='rgba(231,76,60,.3)';
+      $e.style.color='#e74c3c';
+    }
+    // Close app after delay
+    setTimeout(()=>{if(TG?.close)TG.close()},4000);
+  }catch(e){
+    btn.disabled=false;btn.textContent='❌ Opuszczam';
+    TG?.HapticFeedback?.notificationOccurred('error');
+    alert('Błąd: '+(e.message||'Spróbuj ponownie'));
+  }
 }
 
 const EMOJIS=['🦊','💎','⭐','🎁','👑','🔥','🎟️','❄️','🏆','🎰'];
