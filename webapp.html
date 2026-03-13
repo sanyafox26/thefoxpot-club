@@ -398,6 +398,29 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div class="welcome-sub">Otwórz tę aplikację przez bota Telegram, aby zobaczyć swój profil.</div>
      </div>
     </div>
+    <!-- SOCIAL BONUS BLOCK -->
+    <div class="card" id="socialBonusCard" style="display:none;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:28px">🎁</div>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:var(--text)">Bonus FoxPot</div>
+          <div style="font-size:12px;color:var(--muted)">Subskrybuj kanały → zdobądź rating i invite!</div>
+        </div>
+      </div>
+      <div id="socialBonusList"></div>
+      <div id="socialProgress" style="margin-top:14px">
+        <div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:8px">
+          <div id="socialProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--fox),var(--green));border-radius:4px;transition:width .4s"></div>
+        </div>
+        <div id="socialProgressText" style="font-size:13px;font-weight:700;text-align:center;color:var(--fox)"></div>
+      </div>
+      <div id="socialComplete" style="display:none;text-align:center;padding:16px 0">
+        <div style="font-size:40px;margin-bottom:8px">🎉</div>
+        <div style="font-size:18px;font-weight:800;color:var(--green);margin-bottom:4px">Gratulacje!</div>
+        <div style="font-size:14px;color:var(--text)">Zdobyłeś: <strong style="color:var(--fox)">+12 rating</strong> + <strong style="color:var(--accent2)">+1 invite</strong></div>
+      </div>
+    </div>
+
     <div style="display:flex;justify-content:center;gap:16px;padding:16px 0 8px">
       <a href="/rules" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
       <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
@@ -810,12 +833,106 @@ async function loadProfile(){
     S.spinDone=!!d.spun_today;
     if(S.spinDone) markSpinDone(d.spin_prize);
     if(!d.consent_given) showConsent();
+    // Social bonus block
+    renderSocialBonus(d);
     // Show leave button only for authenticated users
     const $leave=q('pLeaveSection');if($leave)$leave.style.display='block';
   }catch(e){
     $l.style.display='none';
     if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
     else{$e.textContent='⚠️ '+e.message;$e.classList.add('show')}
+  }
+}
+
+// ─── Social Bonus ───
+const SOCIAL_PLATFORMS = [
+  { key:'instagram', label:'Instagram',  emoji:'📸', url:'https://www.instagram.com/thefoxpotclub', color:'#E1306C' },
+  { key:'tiktok',    label:'TikTok',     emoji:'🎵', url:'https://www.tiktok.com/@thefoxpotclub',   color:'#00f2ea' },
+  { key:'youtube',   label:'YouTube',    emoji:'▶️', url:'https://www.youtube.com/@thefoxpotclub',  color:'#FF0000' },
+  { key:'telegram',  label:'Telegram',   emoji:'✈️', url:'https://t.me/thefoxpotclub',              color:'#0088cc' },
+];
+
+function renderSocialBonus(d) {
+  const card = q('socialBonusCard');
+  if (!card) return;
+  // If all claimed already — show completed state
+  if (d.sub_bonus_claimed) {
+    card.style.display = 'block';
+    q('socialBonusList').style.display = 'none';
+    q('socialProgress').style.display = 'none';
+    q('socialComplete').style.display = 'block';
+    return;
+  }
+  const subs = {
+    instagram: !!d.sub_instagram,
+    tiktok:    !!d.sub_tiktok,
+    youtube:   !!d.sub_youtube,
+    telegram:  !!d.sub_telegram,
+  };
+  const count = Object.values(subs).filter(Boolean).length;
+  // Show the card
+  card.style.display = 'block';
+  q('socialComplete').style.display = 'none';
+  q('socialProgress').style.display = 'block';
+  q('socialBonusList').style.display = 'block';
+
+  // Render platform rows
+  q('socialBonusList').innerHTML = SOCIAL_PLATFORMS.map(p => {
+    const done = subs[p.key];
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:22px;width:32px;text-align:center">${p.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700;color:${done?'var(--green)':'var(--text)'}">${p.label}</div>
+        <div style="font-size:11px;color:var(--muted)">${done?'✅ Subskrybowano · +3 pkt':'⬜ +3 rating za subskrypcję'}</div>
+      </div>
+      ${done
+        ? '<div style="font-size:18px">✅</div>'
+        : `<button onclick="doSocialSub('${p.key}','${p.url}')" style="background:rgba(255,138,0,.12);border:1px solid rgba(255,138,0,.3);border-radius:10px;padding:8px 16px;color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);white-space:nowrap">Subskrybuj</button>`
+      }
+    </div>`;
+  }).join('');
+
+  // Progress bar
+  const pct = (count / 4) * 100;
+  q('socialProgressBar').style.width = pct + '%';
+
+  // Dynamic text
+  const left = 4 - count;
+  if (count === 4) {
+    q('socialProgressText').innerHTML = '🎉 Komplet! <strong style="color:var(--green)">+1 invite zdobyty!</strong>';
+  } else if (left === 1) {
+    q('socialProgressText').innerHTML = '🦊 Jeszcze <strong>1</strong> subskrypcja aby zdobyć <strong style="color:var(--accent2)">INVITE</strong>';
+  } else {
+    q('socialProgressText').innerHTML = `🔥 Postęp: <strong>${count} / 4</strong> — jeszcze ${left} aby zdobyć <strong style="color:var(--accent2)">INVITE</strong>`;
+  }
+}
+
+async function doSocialSub(platform, url) {
+  // First open the social link
+  window.open(url, '_blank');
+  // Wait a moment, then ask to confirm
+  await new Promise(r => setTimeout(r, 1500));
+  try {
+    const d = await api('/api/social/subscribe', 'POST', { platform });
+    TG?.HapticFeedback?.notificationOccurred('success');
+    // Update profile stats on screen
+    if (q('pRating')) q('pRating').textContent = d.rating;
+    if (q('pInvites')) q('pInvites').textContent = d.invites;
+    // Re-render social bonus with updated data
+    renderSocialBonus(d);
+    // Celebration
+    if (d.invite_bonus) {
+      setTimeout(() => {
+        TG?.HapticFeedback?.notificationOccurred('success');
+        alert('🎉 Gratulacje! Zdobyłeś +12 rating i +1 invite za komplet subskrypcji!');
+      }, 500);
+    }
+  } catch (e) {
+    if (e.message?.includes('already_subscribed')) {
+      // silently ignore
+    } else {
+      TG?.HapticFeedback?.notificationOccurred('error');
+    }
   }
 }
 
