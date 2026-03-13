@@ -734,7 +734,7 @@ function setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL }) {
     const userId = String(ctx.from.id);
     setState(userId, { category, step: 0 });
     const buttons = Object.entries(cat.problems).map(([key, prob]) => {
-      return [{ text: prob.label, callback_data: `sup_prob_${category}_${key}` }];
+      return [{ text: prob.label, callback_data: `sup_prob_${category}:${key}` }];
     });
     buttons.push([{ text: "← Wróć", callback_data: "support_menu" }]);
     try {
@@ -745,7 +745,7 @@ function setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL }) {
   });
 
   // ── PROBLEM SELECTED → FAQ answer (step 1) + status check button ──
-  bot.action(/^sup_prob_(.+)_(.+)$/, async (ctx) => {
+  bot.action(/^sup_prob_([^:]+):(.+)$/, async (ctx) => {
     try { await ctx.answerCbQuery(); } catch {}
     const category = ctx.match[1];
     const problemKey = ctx.match[2];
@@ -768,7 +768,7 @@ function setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL }) {
 
     // v2: Status check button if available
     if (prob.hasStatusCheck) {
-      buttons.push([{ text: "🔍 Sprawdź status", callback_data: `sup_status_${category}_${problemKey}` }]);
+      buttons.push([{ text: "🔍 Sprawdź status", callback_data: `sup_status_${category}:${problemKey}` }]);
     }
 
     if (prob.action) {
@@ -787,7 +787,7 @@ function setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL }) {
   });
 
   // ── 🔍 STATUS CHECK (v2) ──
-  bot.action(/^sup_status_(.+)_(.+)$/, async (ctx) => {
+  bot.action(/^sup_status_([^:]+):(.+)$/, async (ctx) => {
     try { await ctx.answerCbQuery("🔍 Sprawdzam..."); } catch {}
     const category = ctx.match[1];
     const problemKey = ctx.match[2];
@@ -859,7 +859,7 @@ function setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL }) {
 
     // v2: Status check also on step 2
     if (prob.hasStatusCheck) {
-      buttons.push([{ text: "🔍 Sprawdź status", callback_data: `sup_status_${state.category}_${state.problemKey}` }]);
+      buttons.push([{ text: "🔍 Sprawdź status", callback_data: `sup_status_${state.category}:${state.problemKey}` }]);
     }
 
     if (prob.step2_action) {
