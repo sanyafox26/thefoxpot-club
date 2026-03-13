@@ -902,7 +902,7 @@ function renderSocialBonus(d) {
       </div>
       <div style="display:flex;gap:6px">
         <button onclick="openSocialLink('${p.key}','${p.url}')" style="background:rgba(255,138,0,.12);border:1px solid rgba(255,138,0,.3);border-radius:8px;padding:6px 12px;color:var(--fox);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font)">Subskrybuj</button>
-        <button id="verifyBtn_${p.key}" onclick="verifySocial('${p.key}')" style="background:${clicked?'rgba(46,204,113,.12)':'rgba(255,255,255,.05)'};border:1px solid ${clicked?'rgba(46,204,113,.3)':'rgba(255,255,255,.1)'};border-radius:8px;padding:6px 12px;color:${clicked?'var(--green)':'rgba(255,255,255,.25)'};font-size:11px;font-weight:700;cursor:${clicked?'pointer':'default'};font-family:var(--font);transition:all .2s" ${clicked?'':'disabled'}>Sprawdź</button>
+        <button id="verifyBtn_${p.key}" onclick="verifySocial('${p.key}')" style="background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:8px;padding:6px 12px;color:var(--green);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .2s">Sprawdź</button>
       </div>
     </div>`;
   }).join('');
@@ -938,7 +938,6 @@ function openSocialLink(platform, url) {
 }
 
 async function verifySocial(platform) {
-  if (!socialClicked[platform]) return;
   const btn = q('verifyBtn_' + platform);
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
