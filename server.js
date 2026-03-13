@@ -3716,6 +3716,118 @@ app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
+   SUPPORT API (webapp)
+═══════════════════════════════════════════════════════════════ */
+app.post("/api/support/status-check", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const { category, problem_key } = req.body;
+    const { runStatusCheck } = require("./fox_support");
+    if (typeof runStatusCheck === "function") {
+      const result = await runStatusCheck(pool, userId, category, problem_key);
+      return res.json({ ok: true, result });
+    }
+    // Fallback if runStatusCheck not exported — inline basic checks
+    const lines = [];
+    if (category === "checkin" || category === "otp") {
+      const lc = await pool.query(`SELECT venue_id, otp, created_at, confirmed_at, expires_at FROM fp1_checkins WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, [userId]);
+      if (lc.rowCount === 0) { lines.push("Brak check-in w systemie."); }
+      else {
+        const c = lc.rows[0];
+        if (c.confirmed_at) lines.push("✅ Ostatni check-in: potwierdzony");
+        else if (new Date(c.expires_at) < new Date()) lines.push("❌ Ostatni check-in: kod wygasł");
+        else lines.push("⏳ Ostatni check-in: oczekuje na potwierdzenie lokalu");
+      }
+    }
+    if (category === "subscription") {
+      const f = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram FROM fp1_foxes WHERE user_id=$1`, [userId]);
+      if (f.rowCount > 0) {
+        const r = f.rows[0];
+        lines.push(`Instagram: ${r.sub_instagram?"✅":"❌"}`);
+        lines.push(`TikTok: ${r.sub_tiktok?"✅":"❌"}`);
+        lines.push(`YouTube: ${r.sub_youtube?"✅":"❌"}`);
+        lines.push(`Telegram: ${r.sub_telegram?"✅":"❌"}`);
+      }
+    }
+    res.json({ ok: true, result: lines.join("\n") || "Sprawdź ponownie za chwilę." });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/support/ticket", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const { category, problem_key, message } = req.body;
+    if (!category || !problem_key || !message) return res.status(400).json({ error: "missing_fields" });
+
+    // Rate limit: max 2 per 24h
+    const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_support_tickets WHERE telegram_user_id=$1 AND created_at > NOW()-INTERVAL '24 hours'`, [userId]);
+    if (cnt.rows[0].c >= 2) return res.status(429).json({ error: "limit_exceeded" });
+
+    // Check spam block
+    const block = await pool.query(`SELECT support_block_until FROM fp1_foxes WHERE user_id=$1 AND support_block_until > NOW()`, [userId]);
+    if (block.rowCount > 0) return res.status(429).json({ error: "blocked" });
+
+    const fox = await pool.query(`SELECT id, username, rating, district, trial_active, is_demo, banned_until, created_at FROM fp1_foxes WHERE user_id=$1`, [userId]);
+    const f = fox.rows[0] || {};
+    const username = f.username || String(userId);
+
+    const visits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+    const lastCheckin = await pool.query(`SELECT venue_id, otp, created_at, confirmed_at, expires_at FROM fp1_checkins WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, [userId]);
+    const lc = lastCheckin.rows[0];
+
+    // Detect priority
+    const { SUPPORT_CATEGORIES } = require("./fox_support");
+    const prob = SUPPORT_CATEGORIES?.[category]?.problems?.[problem_key];
+    const priority = prob?.priority || "medium";
+
+    const ticket = await pool.query(
+      `INSERT INTO fp1_support_tickets(fox_id, telegram_user_id, username, category, problem_key, venue_id, short_message, status, priority) VALUES($1,$2,$3,$4,$5,$6,$7,'open',$8) RETURNING *`,
+      [f.id || null, userId, username, category, problem_key, lc?.venue_id || null, String(message).slice(0,1000), priority]
+    );
+    const t = ticket.rows[0];
+
+    // Fill venue name
+    if (t.venue_id) {
+      const v = await pool.query(`SELECT name FROM fp1_venues WHERE id=$1`, [t.venue_id]);
+      if (v.rowCount) await pool.query(`UPDATE fp1_support_tickets SET venue_name=$1 WHERE id=$2`, [v.rows[0].name, t.id]);
+    }
+
+    // Log event
+    await pool.query(`INSERT INTO fp1_support_events(ticket_id, event_type, payload) VALUES($1,'created',$2)`, [t.id, JSON.stringify({ source: "webapp" })]);
+
+    // Forward to admin
+    if (ADMIN_TG_ID && bot) {
+      try {
+        const PRIO = { high:"🟥 Wysoki", medium:"🟧 Średni", low:"🟩 Niski" };
+        const memberDate = f.created_at ? new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"}) : "?";
+        const daysAgo = f.created_at ? Math.floor((Date.now() - new Date(f.created_at).getTime()) / 86400000) : "?";
+        let adminMsg = `🦊 FOX SUPPORT TICKET #${t.id}\n\n`;
+        adminMsg += `👤 Fox: @${username}\n🆔 Fox ID: ${userId}\n`;
+        adminMsg += `📂 Kategoria: ${category}\n❓ Problem: ${prob?.label || problem_key}\n`;
+        adminMsg += `🔑 Problem key: ${problem_key}\n⚡ Priorytet: ${PRIO[priority]||priority}\n`;
+        adminMsg += `\n💬 Wiadomość:\n${String(message).slice(0,1000)}\n`;
+        adminMsg += `\n─── Kontekst ───\n📊 Rating: ${f.rating??'?'} | Wizyty: ${visits.rows[0]?.c??'?'}\n📍 Dzielnica: ${f.district||'?'}\n📅 Fox od: ${memberDate} (${daysAgo} dni)\n`;
+        if (lc) {
+          adminMsg += `\n🔑 Ostatni check-in:\n  Lokal: ${lc.venue_id} | OTP: ${lc.otp}\n  Status: ${lc.confirmed_at?"✅":"⏳"}\n`;
+        }
+        adminMsg += `\n🕐 ${new Date().toLocaleString("pl-PL",{timeZone:"Europe/Warsaw"})}\n📱 Źródło: webapp`;
+
+        const sent = await bot.telegram.sendMessage(Number(ADMIN_TG_ID), adminMsg, {
+          reply_markup: { inline_keyboard: [
+            [{ text:"✅ Zamknięte", callback_data:`sup_admin_close_${t.id}` },{ text:"↩️ Odpowiedz", callback_data:`sup_admin_reply_${t.id}` }],
+            [{ text:"⚠️ Do sprawdzenia", callback_data:`sup_admin_check_${t.id}` },{ text:"🚫 Błąd lokalu", callback_data:`sup_admin_venue_error_${t.id}` }],
+            [{ text:"👤 Więcej danych", callback_data:`sup_admin_need_info_${t.id}` },{ text:"🚫 Ogranicz", callback_data:`sup_admin_block_${t.id}` }],
+          ]}
+        });
+        await pool.query(`UPDATE fp1_support_tickets SET admin_message_id=$1 WHERE id=$2`, [sent.message_id, t.id]);
+      } catch(e) { console.error("SUPPORT_API_ADMIN_ERR", e.message); }
+    }
+
+    res.json({ ok: true, ticket_id: t.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ═══════════════════════════════════════════════════════════════
    TELEGRAM BOT
 ═══════════════════════════════════════════════════════════════ */
 let bot = null;
