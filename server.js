@@ -37,6 +37,7 @@ const crypto   = require("crypto");
 const path     = require("path");
 const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
+const { setupSupport, migrateSupport } = require("./fox_support");
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -580,6 +581,7 @@ async function migrate() {
   `);
 
   console.log("✅ Migrations OK (V25)");
+  await migrateSupport(pool);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3721,6 +3723,9 @@ let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
+  // ── FOX SUPPORT SYSTEM ──
+  const { getSupportTextHandler } = setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL });
+
   bot.start(async (ctx) => {
     try {
       const text = String(ctx.message?.text || "").trim();
@@ -3791,7 +3796,7 @@ if (BOT_TOKEN) {
         msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
         if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
-        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings\n/leave`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings\n/pomoc\n/leave`;
 
         // Streak updates only on check-in, not on /start
 
@@ -4214,6 +4219,9 @@ if (BOT_TOKEN) {
       catch { await ctx.reply(`✅ Dzielnica: ${district}\n\nZmień: /settings`); }
     } catch (e) { console.error("DISTRICT_ACTION_ERR", e); await ctx.answerCbQuery("❌ Błąd."); }
   });
+
+  // ── FOX SUPPORT: intercept escalation messages before main text handler ──
+  bot.on("text", getSupportTextHandler());
 
   // ── Handle plain text messages as invite/venue codes ──
   bot.on("text", async (ctx) => {
