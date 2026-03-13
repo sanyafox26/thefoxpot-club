@@ -457,6 +457,13 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "trial_blocked_until",   "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "join_source",           "TEXT");
 
+  // Social subscriptions bonus
+  await ensureColumn("fp1_foxes",          "sub_instagram",         "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "sub_tiktok",            "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "sub_youtube",           "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "sub_telegram",          "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "sub_bonus_claimed",     "BOOLEAN NOT NULL DEFAULT FALSE");
+
   // Fix fp1_invite_uses if created with wrong schema
   await ensureColumn("fp1_invite_uses",    "invite_id",             "BIGINT");
   await ensureColumn("fp1_invite_uses",    "used_by_user_id",       "BIGINT");
@@ -1530,6 +1537,12 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       trial_blocked_until:      f.trial_blocked_until || null,
       join_source:              f.join_source || null,
       consent_given:            !!(f.consent_at && f.consent_version === CONSENT_VERSION),
+      // Social subscriptions
+      sub_instagram:            !!f.sub_instagram,
+      sub_tiktok:               !!f.sub_tiktok,
+      sub_youtube:              !!f.sub_youtube,
+      sub_telegram:             !!f.sub_telegram,
+      sub_bonus_claimed:        !!f.sub_bonus_claimed,
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
@@ -1917,6 +1930,75 @@ app.post("/api/spin", requireWebAppAuth, async (req, res) => {
     });
   } catch (e) {
     console.error("API_SPIN_ERR", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /api/social/subscribe — Fox potwierdza subskrypcję kanału (+3 rating, +1 invite za komplet)
+app.post("/api/social/subscribe", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const { platform } = req.body;
+    const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "telegram"];
+    if (!platform || !VALID_PLATFORMS.includes(platform)) {
+      return res.status(400).json({ error: "nieprawidłowa platforma" });
+    }
+
+    const col = `sub_${platform}`;
+    const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]);
+    if (fox.rowCount === 0) return res.status(404).json({ error: "nie znaleziono" });
+
+    const f = fox.rows[0];
+
+    // Already subscribed to this platform
+    if (f[col]) {
+      return res.status(400).json({ error: "already_subscribed", platform });
+    }
+
+    // Mark as subscribed + add +3 rating
+    await pool.query(
+      `UPDATE fp1_foxes SET ${col} = TRUE, rating = rating + 3 WHERE user_id=$1`,
+      [userId]
+    );
+
+    let invite_bonus = false;
+
+    // Check if all 4 are now subscribed → bonus +1 invite (one-time)
+    if (!f.sub_bonus_claimed) {
+      const updated = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram FROM fp1_foxes WHERE user_id=$1`, [userId]);
+      const u = updated.rows[0];
+      if (u.sub_instagram && u.sub_tiktok && u.sub_youtube && u.sub_telegram) {
+        await pool.query(
+          `UPDATE fp1_foxes SET sub_bonus_claimed = TRUE, invites = invites + 1 WHERE user_id=$1`,
+          [userId]
+        );
+        invite_bonus = true;
+      }
+    }
+
+    // Get updated fox data
+    const result = await pool.query(`SELECT rating, invites, sub_instagram, sub_tiktok, sub_youtube, sub_telegram, sub_bonus_claimed FROM fp1_foxes WHERE user_id=$1`, [userId]);
+    const r = result.rows[0];
+    const count = [r.sub_instagram, r.sub_tiktok, r.sub_youtube, r.sub_telegram].filter(Boolean).length;
+
+    console.log(`[SOCIAL] Fox ${userId} subscribed ${platform} → +3 rating${invite_bonus ? ' + 1 invite (full set bonus)' : ''}`);
+
+    res.json({
+      ok: true,
+      platform,
+      rating_added: 3,
+      invite_bonus,
+      sub_count: count,
+      rating: r.rating,
+      invites: r.invites,
+      sub_instagram: !!r.sub_instagram,
+      sub_tiktok: !!r.sub_tiktok,
+      sub_youtube: !!r.sub_youtube,
+      sub_telegram: !!r.sub_telegram,
+      sub_bonus_claimed: !!r.sub_bonus_claimed,
+    });
+  } catch (e) {
+    console.error("API_SOCIAL_SUBSCRIBE_ERR", e);
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
