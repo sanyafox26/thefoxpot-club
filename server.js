@@ -580,8 +580,8 @@ async function migrate() {
     )
   `);
 
-  console.log("✅ Migrations OK (V25)");
   await migrateSupport(pool);
+  console.log("✅ Migrations OK (V25 + Support)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
