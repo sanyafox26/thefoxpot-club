@@ -1934,8 +1934,9 @@ app.post("/api/spin", requireWebAppAuth, async (req, res) => {
   }
 });
 
-// POST /api/social/subscribe — Fox potwierdza subskrypcję kanału (+3 rating, +1 invite za komplet)
-app.post("/api/social/subscribe", requireWebAppAuth, async (req, res) => {
+// POST /api/social/verify — Fox potwierdza subskrypcję kanału (Sprawdź)
+// Telegram: real check via getChatMember. Others: trust-based (industry standard)
+app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
     const { platform } = req.body;
@@ -1950,12 +1951,49 @@ app.post("/api/social/subscribe", requireWebAppAuth, async (req, res) => {
 
     const f = fox.rows[0];
 
-    // Already subscribed to this platform
+    // Already verified — return success but no new reward
     if (f[col]) {
-      return res.status(400).json({ error: "already_subscribed", platform });
+      const count = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram].filter(Boolean).length;
+      return res.json({
+        ok: true,
+        already_verified: true,
+        platform,
+        rating_added: 0,
+        invite_bonus: false,
+        sub_count: count,
+        rating: f.rating,
+        invites: f.invites,
+        sub_instagram: !!f.sub_instagram,
+        sub_tiktok: !!f.sub_tiktok,
+        sub_youtube: !!f.sub_youtube,
+        sub_telegram: !!f.sub_telegram,
+        sub_bonus_claimed: !!f.sub_bonus_claimed,
+      });
     }
 
-    // Mark as subscribed + add +3 rating
+    // Telegram: real verification via getChatMember
+    if (platform === "telegram") {
+      try {
+        const TG_CHANNEL = "@thefoxpotclub";
+        const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getChatMember?chat_id=${TG_CHANNEL}&user_id=${userId}`;
+        const resp = await fetch(apiUrl);
+        const data = await resp.json();
+        if (!data.ok || !["member", "administrator", "creator"].includes(data.result?.status)) {
+          return res.json({
+            ok: false,
+            verified: false,
+            platform,
+            message: "Nie wykryto subskrypcji kanału Telegram. Subskrybuj i kliknij Sprawdź ponownie."
+          });
+        }
+      } catch (tgErr) {
+        console.error("[SOCIAL] Telegram getChatMember error:", tgErr);
+        // If API fails, fall through to trust-based (graceful degradation)
+      }
+    }
+
+    // Instagram/TikTok/YouTube: trust-based verification (industry standard)
+    // Mark as verified + add +3 rating
     await pool.query(
       `UPDATE fp1_foxes SET ${col} = TRUE, rating = rating + 3 WHERE user_id=$1`,
       [userId]
@@ -1981,10 +2019,12 @@ app.post("/api/social/subscribe", requireWebAppAuth, async (req, res) => {
     const r = result.rows[0];
     const count = [r.sub_instagram, r.sub_tiktok, r.sub_youtube, r.sub_telegram].filter(Boolean).length;
 
-    console.log(`[SOCIAL] Fox ${userId} subscribed ${platform} → +3 rating${invite_bonus ? ' + 1 invite (full set bonus)' : ''}`);
+    console.log(`[SOCIAL] Fox ${userId} verified ${platform} → +3 rating${invite_bonus ? ' + 1 invite (full set bonus)' : ''}`);
 
     res.json({
       ok: true,
+      verified: true,
+      already_verified: false,
       platform,
       rating_added: 3,
       invite_bonus,
@@ -1998,7 +2038,7 @@ app.post("/api/social/subscribe", requireWebAppAuth, async (req, res) => {
       sub_bonus_claimed: !!r.sub_bonus_claimed,
     });
   } catch (e) {
-    console.error("API_SOCIAL_SUBSCRIBE_ERR", e);
+    console.error("API_SOCIAL_VERIFY_ERR", e);
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
