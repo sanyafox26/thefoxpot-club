@@ -1161,4 +1161,4 @@ function setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL }) {
   return { getSupportTextHandler, migrateSupport };
 }
 
-module.exports = { setupSupport, migrateSupport, SUPPORT_CATEGORIES };
+module.exports = { setupSupport, migrateSupport, SUPPORT_CATEGORIES, runStatusCheck };
