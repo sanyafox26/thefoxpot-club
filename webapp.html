@@ -852,10 +852,13 @@ const SOCIAL_PLATFORMS = [
   { key:'telegram',  label:'Telegram',   emoji:'✈️', url:'https://t.me/thefoxpotclub',              color:'#0088cc' },
 ];
 
+// Track which platforms user clicked "Subskrybuj" (enables Sprawdź button)
+const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:false };
+
 function renderSocialBonus(d) {
   const card = q('socialBonusCard');
   if (!card) return;
-  // If all claimed already — show completed state
+  // If all claimed — show completed state
   if (d.sub_bonus_claimed) {
     card.style.display = 'block';
     q('socialBonusList').style.display = 'none';
@@ -870,7 +873,6 @@ function renderSocialBonus(d) {
     telegram:  !!d.sub_telegram,
   };
   const count = Object.values(subs).filter(Boolean).length;
-  // Show the card
   card.style.display = 'block';
   q('socialComplete').style.display = 'none';
   q('socialProgress').style.display = 'block';
@@ -879,16 +881,29 @@ function renderSocialBonus(d) {
   // Render platform rows
   q('socialBonusList').innerHTML = SOCIAL_PLATFORMS.map(p => {
     const done = subs[p.key];
+    const clicked = socialClicked[p.key];
+    if (done) {
+      // Already verified
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:22px;width:32px;text-align:center">${p.emoji}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;color:var(--green)">${p.label}</div>
+          <div style="font-size:11px;color:var(--green)">✅ Subskrybowano · +3 pkt</div>
+        </div>
+        <div style="font-size:18px">✅</div>
+      </div>`;
+    }
+    // Not yet verified — show Subskrybuj + Sprawdź buttons
     return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="font-size:22px;width:32px;text-align:center">${p.emoji}</div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:700;color:${done?'var(--green)':'var(--text)'}">${p.label}</div>
-        <div style="font-size:11px;color:var(--muted)">${done?'✅ Subskrybowano · +3 pkt':'⬜ +3 rating za subskrypcję'}</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text)">${p.label}</div>
+        <div style="font-size:11px;color:var(--muted)">⬜ +3 rating za subskrypcję</div>
       </div>
-      ${done
-        ? '<div style="font-size:18px">✅</div>'
-        : `<button onclick="doSocialSub('${p.key}','${p.url}')" style="background:rgba(255,138,0,.12);border:1px solid rgba(255,138,0,.3);border-radius:10px;padding:8px 16px;color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);white-space:nowrap">Subskrybuj</button>`
-      }
+      <div style="display:flex;gap:6px">
+        <button onclick="openSocialLink('${p.key}','${p.url}')" style="background:rgba(255,138,0,.12);border:1px solid rgba(255,138,0,.3);border-radius:8px;padding:6px 12px;color:var(--fox);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font)">Subskrybuj</button>
+        <button id="verifyBtn_${p.key}" onclick="verifySocial('${p.key}')" style="background:${clicked?'rgba(46,204,113,.12)':'rgba(255,255,255,.05)'};border:1px solid ${clicked?'rgba(46,204,113,.3)':'rgba(255,255,255,.1)'};border-radius:8px;padding:6px 12px;color:${clicked?'var(--green)':'rgba(255,255,255,.25)'};font-size:11px;font-weight:700;cursor:${clicked?'pointer':'default'};font-family:var(--font);transition:all .2s" ${clicked?'':'disabled'}>Sprawdź</button>
+      </div>
     </div>`;
   }).join('');
 
@@ -907,20 +922,43 @@ function renderSocialBonus(d) {
   }
 }
 
-async function doSocialSub(platform, url) {
-  // First open the social link
+function openSocialLink(platform, url) {
   window.open(url, '_blank');
-  // Wait a moment, then ask to confirm
-  await new Promise(r => setTimeout(r, 1500));
+  socialClicked[platform] = true;
+  TG?.HapticFeedback?.selectionChanged();
+  // Enable the Sprawdź button
+  const btn = q('verifyBtn_' + platform);
+  if (btn) {
+    btn.disabled = false;
+    btn.style.background = 'rgba(46,204,113,.12)';
+    btn.style.borderColor = 'rgba(46,204,113,.3)';
+    btn.style.color = 'var(--green)';
+    btn.style.cursor = 'pointer';
+  }
+}
+
+async function verifySocial(platform) {
+  if (!socialClicked[platform]) return;
+  const btn = q('verifyBtn_' + platform);
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
-    const d = await api('/api/social/subscribe', 'POST', { platform });
+    const d = await api('/api/social/verify', 'POST', { platform });
+    if (d.ok === false && d.verified === false) {
+      // Telegram real check failed
+      TG?.HapticFeedback?.notificationOccurred('error');
+      if (btn) { btn.textContent = '❌'; btn.disabled = false; btn.style.background = 'rgba(231,76,60,.12)'; btn.style.borderColor = 'rgba(231,76,60,.3)'; btn.style.color = '#e74c3c'; }
+      setTimeout(() => {
+        if (btn) { btn.textContent = 'Sprawdź'; btn.style.background = 'rgba(46,204,113,.12)'; btn.style.borderColor = 'rgba(46,204,113,.3)'; btn.style.color = 'var(--green)'; }
+      }, 2000);
+      return;
+    }
     TG?.HapticFeedback?.notificationOccurred('success');
-    // Update profile stats on screen
-    if (q('pRating')) q('pRating').textContent = d.rating;
-    if (q('pInvites')) q('pInvites').textContent = d.invites;
-    // Re-render social bonus with updated data
+    // Update profile stats
+    if (d.rating && q('pRating')) q('pRating').textContent = d.rating;
+    if (d.invites && q('pInvites')) q('pInvites').textContent = d.invites;
+    // Re-render social bonus
     renderSocialBonus(d);
-    // Celebration
+    // Celebrate full set
     if (d.invite_bonus) {
       setTimeout(() => {
         TG?.HapticFeedback?.notificationOccurred('success');
@@ -928,11 +966,8 @@ async function doSocialSub(platform, url) {
       }, 500);
     }
   } catch (e) {
-    if (e.message?.includes('already_subscribed')) {
-      // silently ignore
-    } else {
-      TG?.HapticFeedback?.notificationOccurred('error');
-    }
+    TG?.HapticFeedback?.notificationOccurred('error');
+    if (btn) { btn.textContent = 'Sprawdź'; btn.disabled = false; }
   }
 }
 
