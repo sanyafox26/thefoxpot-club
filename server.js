@@ -3908,7 +3908,7 @@ if (BOT_TOKEN) {
         msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
         if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
-        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/settings\n/pomoc\n/leave`;
+        msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/id\n/settings\n/pomoc\n/leave`;
 
         // Streak updates only on check-in, not on /start
 
@@ -4122,6 +4122,19 @@ if (BOT_TOKEN) {
 
   bot.command("panel", async (ctx) => {
     await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`);
+  });
+
+  // ── /id — wyświetl Telegram ID użytkownika ──
+  bot.command("id", async (ctx) => {
+    const userId = ctx.from.id;
+    const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || "Fox");
+    await ctx.replyWithMarkdown(
+      `🦊 *Twój Telegram ID:*\n\n` +
+      `\`${userId}\`\n\n` +
+      `👤 ${username}\n\n` +
+      `_Kliknij na numer powyżej, aby go skopiować._\n` +
+      `_Ten numer jest też widoczny w zakładce Profil w aplikacji._`
+    );
   });
 
   bot.command("venues", async (ctx) => {
