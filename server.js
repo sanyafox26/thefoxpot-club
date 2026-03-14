@@ -3837,15 +3837,21 @@ if (BOT_TOKEN) {
 
   // ── /id — wyświetl Telegram ID użytkownika (przed innymi handlerami) ──
   bot.command("id", async (ctx) => {
-    const userId = ctx.from.id;
-    const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || "Fox");
-    await ctx.replyWithMarkdown(
-      `🦊 *Twój Telegram ID:*\n\n` +
-      `\`${userId}\`\n\n` +
-      `👤 ${username}\n\n` +
-      `_Kliknij na numer powyżej, aby go skopiować._\n` +
-      `_Ten numer jest też widoczny w zakładce Profil w aplikacji._`
-    );
+    try {
+      const userId = ctx.from.id;
+      const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || "Fox");
+      console.log(`[/id] User ${userId} (${username}) requested their Telegram ID`);
+      await ctx.replyWithMarkdown(
+        `🦊 *Twój Telegram ID:*\n\n` +
+        `\`${userId}\`\n\n` +
+        `👤 ${username}\n\n` +
+        `_Kliknij na numer powyżej, aby go skopiować._\n` +
+        `_Ten numer jest też widoczny w zakładce Profil w aplikacji._`
+      );
+    } catch (err) {
+      console.error("[/id] Error:", err);
+      try { await ctx.reply("⚠️ Wystąpił błąd. Spróbuj ponownie."); } catch (_) {}
+    }
   });
 
   // ── FOX SUPPORT SYSTEM ──
