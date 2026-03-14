@@ -3835,6 +3835,19 @@ let bot = null;
 if (BOT_TOKEN) {
   bot = new Telegraf(BOT_TOKEN);
 
+  // ── /id — wyświetl Telegram ID użytkownika (przed innymi handlerami) ──
+  bot.command("id", async (ctx) => {
+    const userId = ctx.from.id;
+    const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || "Fox");
+    await ctx.replyWithMarkdown(
+      `🦊 *Twój Telegram ID:*\n\n` +
+      `\`${userId}\`\n\n` +
+      `👤 ${username}\n\n` +
+      `_Kliknij na numer powyżej, aby go skopiować._\n` +
+      `_Ten numer jest też widoczny w zakładce Profil w aplikacji._`
+    );
+  });
+
   // ── FOX SUPPORT SYSTEM ──
   const { getSupportTextHandler } = setupSupport(bot, pool, { ADMIN_TG_ID, PUBLIC_URL });
 
@@ -4122,19 +4135,6 @@ if (BOT_TOKEN) {
 
   bot.command("panel", async (ctx) => {
     await ctx.reply(`Panel lokalu: ${PUBLIC_URL}/panel`);
-  });
-
-  // ── /id — wyświetl Telegram ID użytkownika ──
-  bot.command("id", async (ctx) => {
-    const userId = ctx.from.id;
-    const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || "Fox");
-    await ctx.replyWithMarkdown(
-      `🦊 *Twój Telegram ID:*\n\n` +
-      `\`${userId}\`\n\n` +
-      `👤 ${username}\n\n` +
-      `_Kliknij na numer powyżej, aby go skopiować._\n` +
-      `_Ten numer jest też widoczny w zakładce Profil w aplikacji._`
-    );
   });
 
   bot.command("venues", async (ctx) => {
