@@ -805,8 +805,8 @@ async function loadProfile(){
     const d=await api('/api/profile');
     S.profile=d; S.district=d.district;
     q('pName').textContent=TG_USER?(TG_USER.first_name||'')+' '+(TG_USER.last_name||''):(d.first_name||'Fox');
-    q('pTag').textContent=TG_USER?(TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4)):(d.username?'@'+d.username:'Fox #'+String(d.tg_id||'').slice(-4));
-    q('pTgId').textContent='ID: '+(TG_USER?TG_USER.id:(d.tg_id||'\u2014'));
+    q('pTag').textContent=TG_USER?(TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4)):(d.username?'@'+d.username:'Fox #'+String(d.user_id||'').slice(-4));
+    q('pTgId').textContent='ID: '+(TG_USER?TG_USER.id:(d.user_id||'\u2014'));
     if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='FOUNDER FOX #'+d.founder_number}
     q('pRating').textContent=d.rating??0;
     q('pInvites').textContent=d.invites??0;
@@ -1467,7 +1467,7 @@ function copyInviteLink() {
 }
 
 function copyTgId(){
-  const id=TG_USER?String(TG_USER.id):String(S.profile?.tg_id||'');
+  const id=TG_USER?String(TG_USER.id):String(S.profile?.user_id||'');
   if(!id)return;
   const el=q('pTgId');
   if(navigator.clipboard){
