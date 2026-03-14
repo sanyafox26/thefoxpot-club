@@ -70,7 +70,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .profile-hero::before{content:'';display:none}
 .profile-avatar{width:64px;height:64px;background:linear-gradient(135deg,var(--fox),var(--fox2));border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:32px;margin-bottom:12px;box-shadow:0 8px 24px rgba(245,166,35,.3)}
 .profile-name{font-size:20px;font-weight:800;line-height:1.2;margin-bottom:4px}
-.profile-tag{font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:12px}
+.profile-tag{font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:4px}
+.profile-tgid{font-size:11px;color:var(--muted2);font-family:var(--mono);margin-bottom:12px;cursor:pointer;opacity:.7;transition:opacity .2s}
+.profile-tgid:hover,.profile-tgid:active{opacity:1}
 .founder-badge{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(90deg,rgba(255,215,0,.15),rgba(255,215,0,.08));border:1px solid rgba(255,215,0,.3);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:12px}
 .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
 .stat-box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-sm);padding:10px 8px;text-align:center}
@@ -353,6 +355,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div class="profile-avatar" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));box-shadow:0 8px 24px rgba(245,166,35,.2)"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="58" height="58" style="display:block;margin:2px auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
         <div class="profile-name" id="pName">Fox</div>
         <div class="profile-tag" id="pTag">@username</div>
+        <div class="profile-tgid" id="pTgId" onclick="copyTgId()" title="Kliknij, aby skopiować">ID: —</div>
         <div class="founder-badge" id="pFounder" style="display:none">👑 <span id="pFounderTxt"></span></div>
         <div class="stats-grid">
           <div class="stat-box fox-color"><div class="stat-val" id="pRating">0</div><div class="stat-lbl">PUNKTY</div></div>
@@ -803,6 +806,7 @@ async function loadProfile(){
     S.profile=d; S.district=d.district;
     q('pName').textContent=TG_USER?(TG_USER.first_name||'')+' '+(TG_USER.last_name||''):(d.first_name||'Fox');
     q('pTag').textContent=TG_USER?(TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4)):(d.username?'@'+d.username:'Fox #'+String(d.tg_id||'').slice(-4));
+    q('pTgId').textContent='ID: '+(TG_USER?TG_USER.id:(d.tg_id||'\u2014'));
     if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='FOUNDER FOX #'+d.founder_number}
     q('pRating').textContent=d.rating??0;
     q('pInvites').textContent=d.invites??0;
@@ -1458,6 +1462,19 @@ function copyInviteLink() {
       btn.textContent = '✅ Skopiowano!';
       setTimeout(() => { btn.textContent = '📋 Kopiuj'; }, 2000);
     }).catch(() => {});
+  }
+  TG?.HapticFeedback?.notificationOccurred('success');
+}
+
+function copyTgId(){
+  const id=TG_USER?String(TG_USER.id):String(S.profile?.tg_id||'');
+  if(!id)return;
+  const el=q('pTgId');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(id).then(()=>{
+      el.textContent='\u2705 Skopiowano!';
+      setTimeout(()=>{el.textContent='ID: '+id},1500);
+    }).catch(()=>{});
   }
   TG?.HapticFeedback?.notificationOccurred('success');
 }
