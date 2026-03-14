@@ -3841,16 +3841,17 @@ if (BOT_TOKEN) {
       const userId = ctx.from.id;
       const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || "Fox");
       console.log(`[/id] User ${userId} (${username}) requested their Telegram ID`);
-      await ctx.replyWithMarkdown(
-        `🦊 *Twój Telegram ID:*\n\n` +
-        `\`${userId}\`\n\n` +
+      await ctx.reply(
+        `🦊 <b>Twój Telegram ID:</b>\n\n` +
+        `<code>${userId}</code>\n\n` +
         `👤 ${username}\n\n` +
-        `_Kliknij na numer powyżej, aby go skopiować._\n` +
-        `_Ten numer jest też widoczny w zakładce Profil w aplikacji._`
+        `<i>Kliknij na numer powyżej, aby go skopiować.</i>\n` +
+        `<i>Ten numer jest też widoczny w zakładce Profil w aplikacji.</i>`,
+        { parse_mode: "HTML" }
       );
     } catch (err) {
       console.error("[/id] Error:", err);
-      try { await ctx.reply("⚠️ Wystąpił błąd. Spróbuj ponownie."); } catch (_) {}
+      try { await ctx.reply(`🦊 Twój Telegram ID: ${ctx.from.id}`); } catch (_) {}
     }
   });
 
