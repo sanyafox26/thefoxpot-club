@@ -568,8 +568,6 @@ async function migrate() {
   }
 
   // PWA sessions table
-  // Recreate pwa_sessions with correct schema
-  await pool.query(`DROP TABLE IF EXISTS fp1_pwa_sessions`).catch(()=>{});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_pwa_sessions (
       id SERIAL PRIMARY KEY,
@@ -616,14 +614,12 @@ function randomSpinRow() {
 }
 
 async function hasSpunToday(userId) {
-  // DEMO MODE: безлімітний спін для демонстрації (прибрати перед launch)
-  return null;
-  // const today = warsawDayKey();
-  // const r = await pool.query(
-  //   `SELECT * FROM fp1_daily_spins WHERE user_id=$1 AND spin_date=$2 LIMIT 1`,
-  //   [String(userId), today]
-  // );
-  // return r.rows[0] || null;
+  const today = warsawDayKey();
+  const r = await pool.query(
+    `SELECT * FROM fp1_daily_spins WHERE user_id=$1 AND spin_date=$2 LIMIT 1`,
+    [String(userId), today]
+  );
+  return r.rows[0] || null;
 }
 
 async function recordSpin(userId, prize) {
@@ -861,6 +857,40 @@ async function founderSpotsLeft() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   TOP FOX BADGES — P0.2: shared helper
+═══════════════════════════════════════════════════════════════ */
+const TOP_FOX_COLORS = { year: "#FF8A00", month: "#3B82F6", week: "#22C55E" };
+const TOP_FOX_LABELS = { year: "🏆 Top Fox roku", month: "👑 Top Fox miesiąca", week: "🔥 Top Fox tygodnia" };
+
+async function getTopFoxBadges() {
+  const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+  const dow = warsawNow.getDay();
+  const weekStart = new Date(warsawNow); weekStart.setDate(weekStart.getDate() - dow); weekStart.setHours(0,0,0,0);
+  const monthStart = new Date(warsawNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+  const yearStart = new Date(warsawNow); yearStart.setMonth(0,1); yearStart.setHours(0,0,0,0);
+
+  const [tw, tm, ty] = await Promise.all([
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, [weekStart.toISOString()]),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, [monthStart.toISOString()]),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, [yearStart.toISOString()]),
+  ]);
+
+  const badges = {};
+  const yId = ty.rows[0]?.user_id ? String(ty.rows[0].user_id) : null;
+  const mId = tm.rows[0]?.user_id ? String(tm.rows[0].user_id) : null;
+  const wId = tw.rows[0]?.user_id ? String(tw.rows[0].user_id) : null;
+  if (yId) badges[yId] = "year";
+  if (mId && !badges[mId]) badges[mId] = "month";
+  if (wId && !badges[wId]) badges[wId] = "week";
+  return badges;
+}
+
+function topFoxHtml(badge) {
+  if (!badge) return "";
+  return ` <span style="color:${TOP_FOX_COLORS[badge]};font-weight:700;font-size:12px">${TOP_FOX_LABELS[badge]}</span>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    SESSION
 ═══════════════════════════════════════════════════════════════ */
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -1010,7 +1040,10 @@ async function createCheckin(venueId, userId) {
 async function listPending(venueId) {
   const now = await dbNow();
   const r = await pool.query(
-    `SELECT otp,expires_at FROM fp1_checkins WHERE venue_id=$1 AND confirmed_at IS NULL AND expires_at>$2 ORDER BY created_at DESC LIMIT 20`,
+    `SELECT c.otp, c.expires_at, c.user_id, f.username, f.rating, f.founder_number
+     FROM fp1_checkins c LEFT JOIN fp1_foxes f ON f.user_id=c.user_id
+     WHERE c.venue_id=$1 AND c.confirmed_at IS NULL AND c.expires_at>$2
+     ORDER BY c.created_at DESC LIMIT 20`,
     [venueId, now]
   );
   return r.rows;
@@ -1501,6 +1534,8 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
     const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
     const spunToday   = await hasSpunToday(userId);
     const savedStats = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COUNT(*)::int AS receipt_count FROM fp1_receipts WHERE user_id=$1`, [userId]);
+    const foxBadges = await getTopFoxBadges();
+    const myTopBadge = foxBadges[userId] || null;
 
     // Stamps per venue
     const stampsQ = await pool.query(
@@ -1545,6 +1580,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       sub_youtube:              !!f.sub_youtube,
       sub_telegram:             !!f.sub_telegram,
       sub_bonus_claimed:        !!f.sub_bonus_claimed,
+      top_badge:                myTopBadge,
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
@@ -1720,18 +1756,16 @@ app.get("/api/venues", async (req, res) => {
       return topId;
     }
 
-    // Priority: alltime > year > month > week (each excludes higher-priority winners)
-    // AllTime activates only after at least 1 full calendar year has passed
-    // (i.e., there must be counted visits in a previous calendar year)
+    // P0.2: Each period finds its own top independently (venue can have multiple badges)
     const prevYearEnd = new Date(warsawNow); prevYearEnd.setMonth(0, 1); prevYearEnd.setHours(0,0,0,0);
     const hasPrevYear = await pool.query(
       `SELECT 1 FROM fp1_counted_visits WHERE created_at < $1 LIMIT 1`,
       [prevYearEnd.toISOString()]
     );
     const topAllTimeId = hasPrevYear.rowCount > 0 ? findTop(allData, []) : null;
-    const topYearId = findTop(yearlyData, [topAllTimeId].filter(Boolean));
-    const topMonthId = findTop(monthlyData, [topAllTimeId, topYearId].filter(Boolean));
-    const topWeekId = findTop(weeklyData, [topAllTimeId, topYearId, topMonthId].filter(Boolean));
+    const topYearId = findTop(yearlyData, []);
+    const topMonthId = findTop(monthlyData, []);
+    const topWeekId = findTop(weeklyData, []);
 
     // Get user's active reservations
     let myReservations = {};
@@ -1796,7 +1830,7 @@ app.get("/api/venues", async (req, res) => {
         is_top_alltime: v.id === topAllTimeId
       };
     });
-    res.json({ venues, maps_key: process.env.GOOGLE_MAPS_KEY || "", is_fox: isFox, trial_state: trialState });
+    res.json({ venues, maps_key: isFox ? (process.env.GOOGLE_MAPS_KEY || "") : "", is_fox: isFox, trial_state: trialState });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
@@ -2541,6 +2575,7 @@ async function applyViolation(client, user_id, obligation_id, new_violation_coun
 }
 
 // POST /api/venue/scan — Fox сканує QR або вводить код локалу
+// P0.1: obligation system вимкнено — scan дає бонуси без зобов'язань
 app.post("/api/venue/scan", requireWebAppAuth, async (req, res) => {
   const user_id    = String(req.tgUser.id);
   const venue_id   = String(req.body.venue_id   || "").trim();
@@ -2548,127 +2583,33 @@ app.post("/api/venue/scan", requireWebAppAuth, async (req, res) => {
 
   if (!venue_id) return res.status(400).json({ ok: false, error: "missing_venue_id" });
 
-  const client = await pool.connect();
   try {
-    // 1. Перевірити бан
-    const banCheck = await client.query(
-      `SELECT banned_until FROM fp1_venue_obligations
-       WHERE user_id = $1 AND banned_until > NOW()
-       ORDER BY banned_until DESC LIMIT 1`,
-      [user_id]
-    );
-    if (banCheck.rows.length > 0) {
-      return res.json({
-        ok: false,
-        error: "banned",
-        banned_until: banCheck.rows[0].banned_until,
-      });
-    }
-
-    // 2. Перевірити активне незавершене зобов'язання
-    const existing = await client.query(
-      `SELECT id, venue_name FROM fp1_venue_obligations
-       WHERE user_id = $1 AND fulfilled = FALSE AND expires_at > NOW()`,
-      [user_id]
-    );
-    if (existing.rows.length > 0) {
-      return res.json({
-        ok: false,
-        error: "obligation_pending",
-        pending_venue: existing.rows[0].venue_name,
-      });
-    }
-
-    // 3. Отримати violation_count (з урахуванням скидання після 7-денного бану)
-    const vcRow = await client.query(
-      `SELECT violation_count, banned_until FROM fp1_venue_obligations
-       WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-      [user_id]
-    );
-    let violation_count = 0;
-    if (vcRow.rows.length > 0) {
-      const last = vcRow.rows[0];
-      const was7DayBan   = last.violation_count >= 3;
-      const banExpired   = last.banned_until && new Date(last.banned_until) < new Date();
-      violation_count = (was7DayBan && banExpired) ? 0 : last.violation_count;
-    }
-
-    // 4. +1 rating, +5 invites
-    await client.query(
+    // +1 rating, +5 invites
+    await pool.query(
       `UPDATE fp1_foxes SET rating = rating + 1, invites = invites + 5 WHERE user_id = $1`,
       [user_id]
     );
 
-    // 5. Зберегти referred_by_venue (як текст venue_id)
-    await client.query(
+    // Зберегти referred_by_venue
+    await pool.query(
       `UPDATE fp1_foxes SET referred_by_venue = $2 WHERE user_id = $1`,
       [user_id, venue_id]
     );
 
-    // 6. Створити obligation (24 години)
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await client.query(
-      `INSERT INTO fp1_venue_obligations
-       (user_id, venue_id, venue_name, expires_at, violation_count)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [user_id, venue_id, venue_name, expiresAt, violation_count]
-    );
-
     res.json({
-      ok:         true,
-      message:    `+1 рейтинг, +5 інвайтів! Зроби check-in у ${venue_name} протягом 24 годин.`,
-      expires_at: expiresAt,
+      ok:      true,
+      message: `+1 punkt, +5 zaproszeń! Odwiedź ${venue_name} i zrób check-in.`,
     });
   } catch (e) {
     console.error("API_VENUE_SCAN_ERR", e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
-  } finally {
-    client.release();
   }
 });
 
-// POST /api/venue/checkin — Fox робить check-in (виконує obligation)
+// POST /api/venue/checkin — P0.1: obligation system вимкнено, endpoint повертає ok
 app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
-  const user_id  = String(req.tgUser.id);
-  const venue_id = String(req.body.venue_id || "").trim();
-
-  if (!venue_id) return res.status(400).json({ ok: false, error: "missing_venue_id" });
-
-  const client = await pool.connect();
   try {
-    // Знайти активне зобов'язання
-    const obligation = await client.query(
-      `SELECT * FROM fp1_venue_obligations
-       WHERE user_id = $1 AND fulfilled = FALSE AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [user_id]
-    );
-
-    if (obligation.rows.length === 0) {
-      return res.json({ ok: false, error: "no_obligation" });
-    }
-
-    const ob = obligation.rows[0];
-
-    if (String(ob.venue_id) === venue_id) {
-      // ✅ Правильний заклад
-      await client.query(
-        `UPDATE fp1_venue_obligations
-         SET fulfilled = TRUE, fulfilled_at = NOW()
-         WHERE id = $1`,
-        [ob.id]
-      );
-      res.json({ ok: true, message: "Check-in підтверджено! 🦊" });
-    } else {
-      // ❌ Неправильний заклад — штраф
-      const new_count = ob.violation_count + 1;
-      await applyViolation(client, user_id, ob.id, new_count);
-      res.json({
-        ok:      false,
-        error:   "wrong_venue",
-        message: `Штраф! Ти зробив check-in в іншому закладі. Порушення #${new_count}.`,
-      });
-    }
+    res.json({ ok: true, message: "Check-in OK 🦊" });
   } catch (e) {
     console.error("API_VENUE_CHECKIN_ERR", e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -2677,29 +2618,8 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
   }
 });
 
-// CRON: кожні 15 хвилин — штрафувати за прострочені obligations
-setInterval(async () => {
-  const client = await pool.connect();
-  try {
-    const expired = await client.query(
-      `SELECT * FROM fp1_venue_obligations
-       WHERE fulfilled = FALSE
-         AND expires_at < NOW()
-         AND (banned_until IS NULL OR banned_until < NOW())
-       ORDER BY expires_at ASC
-       LIMIT 100`
-    );
-    for (const ob of expired.rows) {
-      const new_count = ob.violation_count + 1;
-      await applyViolation(client, ob.user_id, ob.id, new_count);
-      console.log(`[VenueCron] Штраф user=${ob.user_id} violation=${new_count}`);
-    }
-  } catch (e) {
-    console.error("[VenueCron] ERR", e?.message || e);
-  } finally {
-    client.release();
-  }
-}, 15 * 60 * 1000);
+// P0.1: Obligation CRON вимкнено (штрафна система схована)
+// setInterval(async () => { ... }, 15 * 60 * 1000);
 
 // CRON: TOP reset — щонеділі 00:00 (TOP тижня), 1-го числа 00:00 (TOP місяця)
 // Перевіряє кожні 5 хв, шле адміну повідомлення про переможців
@@ -2714,7 +2634,7 @@ setInterval(async () => {
     const dayOfWeek = now.getDay(); // 0=Sunday
     const dayOfMonth = now.getDate();
     const hour = now.getHours();
-    const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
     // Sunday 00:xx — TOP тижня reset
     if (dayOfWeek === 0 && hour === 0 && lastTopWeekReset !== todayKey) {
@@ -2998,14 +2918,14 @@ app.get("/api/top", async (req, res) => {
 
     const top = await pool.query(
       `SELECT user_id, username, rating, founder_number
-       FROM fp1_foxes ORDER BY rating DESC LIMIT 10`
+       FROM fp1_foxes WHERE is_deleted=FALSE ORDER BY rating DESC LIMIT 10`
     );
 
     let myPosition = null, myRating = null;
     if (myId) {
       const myRow = await pool.query(
         `SELECT rating,
-         (SELECT COUNT(*)::int FROM fp1_foxes WHERE rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)) + 1 AS pos
+         (SELECT COUNT(*)::int FROM fp1_foxes WHERE is_deleted=FALSE AND rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)) + 1 AS pos
          FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [myId]
       );
       if (myRow.rowCount > 0) {
@@ -3014,10 +2934,13 @@ app.get("/api/top", async (req, res) => {
       }
     }
 
+    const foxBadges = await getTopFoxBadges();
+
     res.json({
-      top:         top.rows,
+      top:         top.rows.map(f => ({ ...f, top_badge: foxBadges[String(f.user_id)] || null })),
       my_position: myPosition,
       my_rating:   myRating,
+      my_top_badge: myId ? (foxBadges[myId] || null) : null,
     });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -3085,11 +3008,19 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       : `<span class="badge badge-warn">⚠️ Ograniczone (${escapeHtml(status.reason)}) do ${till}</span>`;
   }
 
+  const foxBadges = await getTopFoxBadges();
   const pendingHtml = pending.length === 0
     ? `<div class="muted">Brak aktywnych check-inów</div>`
     : pending.map(p => {
         const min = Math.max(0, Math.ceil((new Date(p.expires_at) - Date.now()) / 60000));
-        return `<div style="margin:6px 0">OTP: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>`;
+        const foxName = p.username ? `@${escapeHtml(p.username)}` : `Fox #${String(p.user_id||'').slice(-4)}`;
+        const badge = foxBadges[String(p.user_id)] || null;
+        const badgeHtml = badge ? topFoxHtml(badge) : '';
+        const nameColor = badge ? ` style="color:${TOP_FOX_COLORS[badge]};font-weight:700"` : '';
+        return `<div style="margin:8px 0;padding:8px;border-radius:10px;border:1px solid ${badge ? TOP_FOX_COLORS[badge]+'40' : '#2a2f49'};background:${badge ? TOP_FOX_COLORS[badge]+'10' : 'transparent'}">
+          <div>OTP: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>
+          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${badgeHtml}${p.founder_number ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} <span class="muted">· ${p.rating||0} pkt</span></div>
+        </div>`;
       }).join("");
 
   const xy = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
@@ -3520,7 +3451,15 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
         await bot.telegram.sendMessage(Number(r.userId), msg);
       } catch (e) { console.error("TG_SEND_ERR", e?.message); }
     }
-    const label = r.debounce ? "Debounce ⚠️" : r.countedAdded ? `Potwierdzone ✅ X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅`;
+    // P0.2: Show fox name + top badge in confirmation
+    const foxQ = await pool.query(`SELECT username, founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [r.userId]);
+    const foxName = foxQ.rows[0]?.username ? `@${foxQ.rows[0].username}` : `Fox #${String(r.userId).slice(-4)}`;
+    const foxBadgesConfirm = await getTopFoxBadges();
+    const foxBadge = foxBadgesConfirm[String(r.userId)];
+    const badgeEmoji = foxBadge === "year" ? "🟠" : foxBadge === "month" ? "🔵" : foxBadge === "week" ? "🟢" : "";
+    const badgeText = foxBadge ? ` ${badgeEmoji} ${TOP_FOX_LABELS[foxBadge]}` : "";
+    const founderText = foxQ.rows[0]?.founder_number ? ` 👑#${foxQ.rows[0].founder_number}` : "";
+    const label = r.debounce ? `Debounce ⚠️ · ${foxName}` : r.countedAdded ? `✅ ${foxName}${founderText}${badgeText} · X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅ · ${foxName}`;
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent(label)}`);
   } catch (e) {
     console.error("CONFIRM_ERR", e);
@@ -4267,11 +4206,13 @@ if (BOT_TOKEN) {
   bot.command("top", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
-      const top = await pool.query(`SELECT user_id, username, rating, founder_number FROM fp1_foxes ORDER BY rating DESC LIMIT 10`);
+      const top = await pool.query(`SELECT user_id, username, rating, founder_number FROM fp1_foxes WHERE is_deleted=FALSE ORDER BY rating DESC LIMIT 10`);
       const myPos = await pool.query(
-        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)`, [userId]
+        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE is_deleted=FALSE AND rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)`, [userId]
       );
       const myRating = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      const foxBadgesTop = await getTopFoxBadges();
+      const badgeEmojis = { year: "🟠", month: "🔵", week: "🟢" };
       const medals = ["🥇","🥈","🥉"];
       let msg = `🦊 Top Fox\n\n`;
       for (let i = 0; i < top.rows.length; i++) {
@@ -4280,12 +4221,16 @@ if (BOT_TOKEN) {
         const medal = medals[i] || `${i+1}.`;
         const nick  = f.username ? `@${f.username}` : `Fox#${String(f.user_id).slice(-4)}`;
         const founder = f.founder_number ? ` 👑#${f.founder_number}` : "";
+        const badge = foxBadgesTop[String(f.user_id)];
+        const badgeStr = badge ? ` ${badgeEmojis[badge]} ${TOP_FOX_LABELS[badge]}` : "";
         const me = isMe ? " ← Ty!" : "";
-        msg += `${medal} ${nick}${founder} — ${f.rating} pkt${me}\n`;
+        msg += `${medal} ${nick}${founder}${badgeStr} — ${f.rating} pkt${me}\n`;
       }
       const pos = (myPos.rows[0]?.pos || 0) + 1;
       if (pos > 10 && myRating.rowCount > 0) {
-        msg += `\n...\n${pos}. Ty — ${myRating.rows[0].rating} pkt`;
+        const myBadge = foxBadgesTop[userId];
+        const myBadgeStr = myBadge ? ` ${badgeEmojis[myBadge]} ${TOP_FOX_LABELS[myBadge]}` : "";
+        msg += `\n...\n${pos}. Ty${myBadgeStr} — ${myRating.rows[0].rating} pkt`;
       }
       await ctx.reply(msg);
     } catch (e) { console.error("TOP_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
@@ -4378,7 +4323,7 @@ if (BOT_TOKEN) {
       }
 
       // Try as invite code
-      const inv = await pool.query(`SELECT code FROM fp1_invite_codes WHERE code=$1 AND used=FALSE LIMIT 1`, [text.toUpperCase()]);
+      const inv = await pool.query(`SELECT code FROM fp1_invites WHERE code=$1 AND uses < max_uses LIMIT 1`, [text.toUpperCase()]);
       if (inv.rowCount > 0) {
         return ctx.reply(`✅ Kod zaproszenia rozpoznany! Kliknij aby się zarejestrować:`, {
           reply_markup: { inline_keyboard: [[{ text: "🦊 Zarejestruj się", url: `https://t.me/thefoxpot_club_bot?start=${text.toUpperCase()}` }]] }
