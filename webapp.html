@@ -374,6 +374,21 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
 
+      <!-- SLOT 1: Profile venue recommendation -->
+      <div id="profileRecSlot" style="display:none;margin-bottom:12px">
+        <div id="profileRecContent" onclick="" style="padding:12px;background:linear-gradient(135deg,rgba(255,138,0,.08),rgba(139,92,246,.06));border:1px solid rgba(255,138,0,.2);border-radius:var(--radius);cursor:pointer">
+          <div id="profileRecLabel" style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px"></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="font-size:24px">🏪</div>
+            <div style="flex:1;min-width:0">
+              <div id="profileRecName" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+              <div id="profileRecSub" style="font-size:11px;color:var(--muted)"></div>
+            </div>
+            <div id="profileRecDiscount" style="font-size:14px;font-weight:800;color:var(--fox)"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- P0.1: streak hidden -->
       <div class="streak-card" style="display:none">
         <div class="card-title">🔥 Streak</div>
@@ -712,20 +727,22 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
    <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
 
-    <!-- Promo -->
-    <div id="promoSection" style="display:none;margin-bottom:12px">
-      <div style="background:linear-gradient(135deg,rgba(255,138,0,.12),rgba(139,92,246,.08));border:1px solid rgba(255,138,0,.25);border-radius:var(--radius);padding:14px;position:relative;overflow:hidden">
-        <div style="font-size:11px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">The FoxPot Club poleca</div>
-        <div id="promoName" style="font-size:16px;font-weight:800;margin-bottom:4px"></div>
-        <div id="promoText" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
-        <button id="promoBtn" onclick="" style="padding:8px 20px;background:var(--fox);border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)">Zobacz lokal →</button>
+    <!-- SLOT 2: Map venue recommendation (promo or system) -->
+    <div id="mapRecSlot" style="display:none;margin-bottom:12px">
+      <div id="mapRecContent" onclick="" style="padding:14px;background:linear-gradient(135deg,rgba(255,138,0,.1),rgba(139,92,246,.06));border:1px solid rgba(255,138,0,.2);border-radius:var(--radius);cursor:pointer">
+        <div id="mapRecLabel" style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px"></div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:28px">🏪</div>
+          <div style="flex:1;min-width:0">
+            <div id="mapRecName" style="font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+            <div id="mapRecSub" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+          </div>
+          <div style="text-align:right">
+            <div id="mapRecDiscount" style="font-size:15px;font-weight:800;color:var(--fox)"></div>
+            <div style="font-size:10px;color:var(--muted)">zniżka</div>
+          </div>
+        </div>
       </div>
-    </div>
-
-    <!-- Recommendations -->
-    <div id="recsSection" style="display:none;margin-bottom:12px">
-      <div style="font-size:14px;font-weight:700;margin-bottom:8px">⭐ Polecane dla Ciebie</div>
-      <div id="recsList"></div>
     </div>
 
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
@@ -2230,77 +2247,74 @@ async function loadVenueMenu(venueId, btn) {
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }
 
-async function loadPromo() {
-  try {
-    const r = await fetch(BASE + '/api/promo');
-    const d = await r.json();
-    const sec = q('promoSection');
-    if (!d.promo) { sec.style.display = 'none'; return; }
-    const p = d.promo;
-    q('promoName').textContent = p.venue_name;
-    q('promoText').textContent = p.promo_text || (p.city + (p.address ? ' · ' + p.address : '') + ' · zniżka ' + (parseFloat(p.discount_percent)||10) + '%');
-    q('promoBtn').onclick = function(){ openVenueDetail(p.venue_id); };
-    sec.style.display = '';
-  } catch(e) { q('promoSection').style.display = 'none'; }
-}
-
-function renderRecommendations() {
-  const sec = q('recsSection');
-  const list = q('recsList');
-  if (!sec || !S_map.isFox || !S_map.venues.length) { if(sec) sec.style.display='none'; return; }
-
+// ── Recommendation scoring engine ──
+function scoreVenues(venues) {
   const myDistrict = S.district || S.profile?.district || null;
-  const visited = new Set(S_map.venues.filter(v => v.my_visits > 0).map(v => v.id));
-
-  // Find venues Fox visited to get preferred types
-  const visitedVenues = S_map.venues.filter(v => v.my_visits > 0);
+  const visited = new Set(venues.filter(v => v.my_visits > 0).map(v => v.id));
+  const visitedVenues = venues.filter(v => v.my_visits > 0);
   const typeCounts = {};
   visitedVenues.forEach(v => { if(v.venue_type) typeCounts[v.venue_type] = (typeCounts[v.venue_type]||0) + v.my_visits; });
   const prefType = Object.entries(typeCounts).sort((a,b) => b[1]-a[1])[0]?.[0] || null;
-
-  // Candidates: not visited, approved
-  const candidates = S_map.venues.filter(v => !visited.has(v.id));
-  if (!candidates.length) { sec.style.display='none'; return; }
-
-  // Score each candidate
+  const candidates = venues.filter(v => !visited.has(v.id));
   candidates.forEach(v => {
-    let score = 0;
-    // Same district bonus (highest priority)
-    if (myDistrict && v.address && v.address.toLowerCase().includes(myDistrict.toLowerCase())) score += 100;
-    if (myDistrict && v.city && v.city.toLowerCase().includes(myDistrict.toLowerCase())) score += 50;
-    // Same venue type
-    if (prefType && v.venue_type === prefType) score += 30;
-    // Popularity
-    score += Math.min(50, (v.total_visits || 0) / 2);
-    // TOP venue bonus
-    if (v.is_top_week) score += 10;
-    if (v.is_top_month) score += 20;
-    if (v.is_top_year) score += 30;
-    // Has photos bonus
-    if (v.has_photos) score += 5;
-    // Pioneer bonus
-    if (v.pioneer_number) score += 5;
-    v._recScore = score;
+    let s = 0;
+    if (myDistrict && v.address && v.address.toLowerCase().includes(myDistrict.toLowerCase())) s += 100;
+    if (prefType && v.venue_type === prefType) s += 30;
+    s += Math.min(50, (v.total_visits || 0) / 2);
+    if (v.is_top_week) s += 10; if (v.is_top_month) s += 20; if (v.is_top_year) s += 30;
+    if (v.has_photos) s += 5; if (v.pioneer_number) s += 5;
+    v._recScore = s;
   });
+  return candidates.sort((a,b) => b._recScore - a._recScore);
+}
 
-  const top3 = candidates.sort((a,b) => b._recScore - a._recScore).slice(0, 3);
-  if (!top3.length) { sec.style.display='none'; return; }
-
+function fillSlot(slotId, labelId, nameId, subId, discountId, v, label) {
+  const slot = q(slotId);
+  if (!v) { slot.style.display = 'none'; return; }
+  q(labelId).textContent = label;
+  q(nameId).textContent = v.name || v.venue_name || '';
   const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
+  const sub = v.promo_text || ((typeMap[v.venue_type]||'') + (v.cuisine ? ' · '+v.cuisine : '') + (v.total_visits ? ' · '+v.total_visits+' wizyt' : ''));
+  q(subId).textContent = sub;
+  q(discountId).textContent = (parseFloat(v.discount_percent)||10) + '%';
+  q(slotId.replace('Slot','RecContent')).onclick = function(){ openVenueDetail(v.venue_id || v.id); };
+  slot.style.display = '';
+}
 
-  list.innerHTML = top3.map(v => {
-    const typeLabel = typeMap[v.venue_type] || '';
-    const visits = v.total_visits || 0;
-    return `<div onclick="openVenueDetail(${v.id})" style="padding:10px;margin:4px 0;border-radius:10px;border:1px solid rgba(255,138,0,.2);background:rgba(255,138,0,.04);cursor:pointer;display:flex;align-items:center;gap:10px">
-      <div style="font-size:24px;width:36px;text-align:center">${v.has_photos?'📸':'🏪'}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.name)}</div>
-        <div style="font-size:11px;color:var(--muted)">${typeLabel}${typeLabel && v.cuisine ? ' · ' : ''}${esc(v.cuisine||'')}${visits ? ' · '+visits+' wizyt' : ''}</div>
-      </div>
-      <div style="font-size:12px;color:var(--fox);font-weight:700">${v.discount_percent||10}%</div>
-    </div>`;
-  }).join('');
-  sec.style.display = '';
+// SLOT 1 — Profile: nearest/unvisited venue
+function renderProfileSlot() {
+  if (!S_map.venues?.length || !S_map.isFox) { q('profileRecSlot').style.display='none'; return; }
+  const ranked = scoreVenues(S_map.venues);
+  const best = ranked[0];
+  if (!best) { q('profileRecSlot').style.display='none'; return; }
+  const myDistrict = S.district || S.profile?.district || null;
+  const isNearby = myDistrict && best.address && best.address.toLowerCase().includes(myDistrict.toLowerCase());
+  const label = isNearby ? 'Partner FoxPot blisko Ciebie' : 'Jeszcze tu nie byłeś';
+  fillSlot('profileRecSlot','profileRecLabel','profileRecName','profileRecSub','profileRecDiscount', best, label);
+}
+
+// SLOT 2 — Map: promo or system recommendation
+let _promoData = null;
+async function loadMapSlot() {
+  // Try promo first
+  try {
+    const r = await fetch(BASE + '/api/promo');
+    const d = await r.json();
+    if (d.promo) { _promoData = d.promo; }
+  } catch(e) {}
+
+  if (_promoData) {
+    fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', _promoData, 'The FoxPot Club poleca');
+    return;
+  }
+
+  // Fallback: system recommendation (different from SLOT 1)
+  if (!S_map.venues?.length || !S_map.isFox) { q('mapRecSlot').style.display='none'; return; }
+  const ranked = scoreVenues(S_map.venues);
+  // Skip first (used in SLOT 1), take second
+  const best = ranked[1] || ranked[0];
+  if (!best) { q('mapRecSlot').style.display='none'; return; }
+  fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', best, 'Polecane dla Ciebie');
 }
 
 async function loadMap() {
@@ -2319,8 +2333,8 @@ async function loadMap() {
       document.head.appendChild(sc);
     }
     renderMapList();
-    renderRecommendations();
-    loadPromo();
+    loadMapSlot();
+    renderProfileSlot();
   } catch(e) {
     q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
