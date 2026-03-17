@@ -364,16 +364,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
       
-      <button id="profileInviteBtn" onclick="quickInvite()" style="width:100%;padding:14px;background:linear-gradient(135deg,#7c5cfc,#6341e0);border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px"><span>🎟️</span>Zaproś znajomego</button>
-      <div id="profileInviteMsg" style="display:none;text-align:center;margin-bottom:12px;padding:12px;background:var(--card-bg);border:1px solid rgba(124,92,252,.3);border-radius:var(--radius-sm)">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Link do zaproszenia:</div>
-        <div id="profileInviteLink" style="font-size:13px;color:var(--accent2);font-weight:700;word-break:break-all;margin-bottom:10px"></div>
-        <div style="display:flex;gap:8px">
-          <button onclick="shareInviteLink()" style="flex:1;padding:10px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">✈️ Wyślij</button>
-          <button onclick="copyInviteLink()" id="profileCopyBtn" style="flex:1;padding:10px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">📋 Kopiuj</button>
-        </div>
-      </div>
-
       <!-- SLOT 1: Profile venue recommendation -->
       <div id="profileRecSlot" style="display:none;margin-bottom:12px">
         <div id="profileRecContent" onclick="" style="padding:12px;background:linear-gradient(135deg,rgba(255,138,0,.08),rgba(139,92,246,.06));border:1px solid rgba(255,138,0,.2);border-radius:var(--radius);cursor:pointer">
@@ -399,6 +389,39 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <span class="streak-val" id="pStreakBest" style="color:var(--muted)">0 dni</span>
         </div>
       </div>
+      <!-- Social bonus (3rd position) -->
+      <div class="card" id="socialBonusCard" style="display:none;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="font-size:28px">🎁</div>
+          <div>
+            <div style="font-size:15px;font-weight:800;color:var(--text)">Bonus FoxPot</div>
+            <div style="font-size:12px;color:var(--muted)">Subskrybuj kanały → zdobądź punkty i zaproszenie!</div>
+          </div>
+        </div>
+        <div id="socialBonusList"></div>
+        <div id="socialProgress" style="margin-top:14px">
+          <div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:8px">
+            <div id="socialProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--fox),var(--green));border-radius:4px;transition:width .4s"></div>
+          </div>
+          <div id="socialProgressText" style="font-size:13px;font-weight:700;text-align:center;color:var(--fox)"></div>
+        </div>
+        <div id="socialComplete" style="display:none;text-align:center;padding:16px 0">
+          <div style="font-size:40px;margin-bottom:8px">🎉</div>
+          <div style="font-size:18px;font-weight:800;color:var(--green);margin-bottom:4px">Gratulacje!</div>
+          <div style="font-size:14px;color:var(--text)">Zdobyłeś: <strong style="color:var(--fox)">+12 pkt</strong> + <strong style="color:var(--accent2)">+1 zaproszenie</strong></div>
+        </div>
+      </div>
+
+      <button id="profileInviteBtn" onclick="quickInvite()" style="width:100%;padding:14px;background:linear-gradient(135deg,#7c5cfc,#6341e0);border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px"><span>🎟️</span>Zaproś znajomego</button>
+      <div id="profileInviteMsg" style="display:none;text-align:center;margin-bottom:12px;padding:12px;background:var(--card-bg);border:1px solid rgba(124,92,252,.3);border-radius:var(--radius-sm)">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Link do zaproszenia:</div>
+        <div id="profileInviteLink" style="font-size:13px;color:var(--accent2);font-weight:700;word-break:break-all;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px">
+          <button onclick="shareInviteLink()" style="flex:1;padding:10px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">✈️ Wyślij</button>
+          <button onclick="copyInviteLink()" id="profileCopyBtn" style="flex:1;padding:10px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">📋 Kopiuj</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-title">📍 Informacje</div>
         <div class="info-grid">
@@ -434,28 +457,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div class="welcome-sub">Otwórz tę aplikację przez bota Telegram, aby zobaczyć swój profil.</div>
      </div>
     </div>
-    <!-- SOCIAL BONUS BLOCK -->
-    <div class="card" id="socialBonusCard" style="display:none;margin-top:12px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:28px">🎁</div>
-        <div>
-          <div style="font-size:15px;font-weight:800;color:var(--text)">Bonus FoxPot</div>
-          <div style="font-size:12px;color:var(--muted)">Subskrybuj kanały → zdobądź punkty i zaproszenie!</div>
-        </div>
-      </div>
-      <div id="socialBonusList"></div>
-      <div id="socialProgress" style="margin-top:14px">
-        <div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:8px">
-          <div id="socialProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--fox),var(--green));border-radius:4px;transition:width .4s"></div>
-        </div>
-        <div id="socialProgressText" style="font-size:13px;font-weight:700;text-align:center;color:var(--fox)"></div>
-      </div>
-      <div id="socialComplete" style="display:none;text-align:center;padding:16px 0">
-        <div style="font-size:40px;margin-bottom:8px">🎉</div>
-        <div style="font-size:18px;font-weight:800;color:var(--green);margin-bottom:4px">Gratulacje!</div>
-        <div style="font-size:14px;color:var(--text)">Zdobyłeś: <strong style="color:var(--fox)">+12 pkt</strong> + <strong style="color:var(--accent2)">+1 zaproszenie</strong></div>
-      </div>
-    </div>
+    <!-- Social bonus moved to socialBonusSlot in profile -->
 
     <div style="display:flex;justify-content:center;gap:16px;padding:16px 0 8px">
       <a href="/rules" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
