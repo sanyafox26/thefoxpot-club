@@ -532,6 +532,20 @@ async function migrate() {
     )
   `);
 
+  // Individual Fox discounts per venue
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_fox_discounts (
+      id SERIAL PRIMARY KEY,
+      venue_id INT NOT NULL,
+      user_id TEXT NOT NULL,
+      discount_percent NUMERIC(5,2) NOT NULL,
+      is_temporary BOOLEAN NOT NULL DEFAULT FALSE,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(venue_id, user_id)
+    )
+  `);
+
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
   await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
@@ -1170,7 +1184,9 @@ async function createCheckin(venueId, userId) {
 async function listPending(venueId) {
   const now = await dbNow();
   const r = await pool.query(
-    `SELECT c.otp, c.expires_at, c.user_id, f.username, f.rating, f.founder_number
+    `SELECT c.otp, c.expires_at, c.user_id, f.username, f.rating, f.founder_number,
+     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.user_id=c.user_id) AS fox_visits,
+     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1) AS total_visits
      FROM fp1_checkins c LEFT JOIN fp1_foxes f ON f.user_id=c.user_id
      WHERE c.venue_id=$1 AND c.confirmed_at IS NULL AND c.expires_at>$2
      ORDER BY c.created_at DESC LIMIT 20`,
@@ -1963,13 +1979,20 @@ app.get("/api/venues", async (req, res) => {
     const pcQ = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_venue_photos GROUP BY venue_id`);
     pcQ.rows.forEach(r => photoCounts[r.venue_id] = r.cnt);
 
+    // Individual Fox discounts
+    const foxDiscounts = {};
+    if (userId) {
+      const fdQ = await pool.query(`SELECT venue_id, discount_percent FROM fp1_fox_discounts WHERE user_id=$1 AND (is_temporary=FALSE OR expires_at > NOW())`, [userId]);
+      fdQ.rows.forEach(r => foxDiscounts[r.venue_id] = parseFloat(r.discount_percent));
+    }
+
     const venues = r.rows.map(v => {
       const tv_cnt = totalVisits[v.id] || 0;
       const usedSlots = (trialUsed[v.id] || 0) + (activeResByVenue[v.id] || 0);
       const trial_remaining = v.is_trial ? Math.max(0, (v.monthly_visit_limit || 20) - usedSlots) : null;
       return {
         ...v,
-        discount_percent: parseFloat(v.discount_percent) || 10,
+        discount_percent: Math.max(parseFloat(v.discount_percent) || 10, foxDiscounts[v.id] || 0),
         my_visits: myVisits[v.id] || 0,
         total_visits: tv_cnt,
         weekly_visits: weeklyVisits[v.id] || 0,
@@ -2425,7 +2448,14 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
     if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
     const v = await getVenue(venueId);
     if (!v) return res.status(404).json({ error: "Lokal nie istnieje" });
-    const discountPct = parseFloat(v.discount_percent) || 10;
+    // Check individual Fox discount (higher priority), then venue default
+    let discountPct = parseFloat(v.discount_percent) || 10;
+    const foxDisc = await pool.query(
+      `SELECT discount_percent FROM fp1_fox_discounts WHERE venue_id=$1 AND user_id=$2
+       AND (is_temporary=FALSE OR expires_at > NOW()) LIMIT 1`,
+      [venueId, userId]
+    );
+    if (foxDisc.rowCount > 0) discountPct = Math.max(discountPct, parseFloat(foxDisc.rows[0].discount_percent));
     const day = warsawDayKey();
 
     // Duplicate check
@@ -3405,7 +3435,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         const borderColor = isAdminUser ? '#FFD700' : (badge ? TOP_FOX_COLORS[badge] : null);
         return `<div style="margin:8px 0;padding:8px;border-radius:10px;border:1px solid ${borderColor ? borderColor+'40' : '#2a2f49'};background:${borderColor ? borderColor+'10' : 'transparent'}">
           <div>Kod wizyty: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>
-          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} <span class="muted">· ${p.rating||0} pkt</span></div>
+          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} <span class="muted">· ${p.rating||0} pkt · X/Y: ${p.fox_visits||0}/${p.total_visits||0}</span></div>
         </div>`;
       }).join("");
 
@@ -3542,7 +3572,22 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         loadPhotos();
       </script>
     </div>
-    <!-- Top 3 dania removed — duplicates Co wybierają Foxy + Ustawienia recommended -->
+    <div class="card">
+      <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">🎟️ Indywidualna zniżka dla Fox'a ▾</button>
+      <div style="display:none;margin-top:12px">
+        <p class="muted" style="margin-bottom:8px">Ustaw większą zniżkę dla konkretnego Fox'a. Minimum: ${parseFloat(venue.discount_percent)||10}% (domyślna).</p>
+        <form method="POST" action="/panel/discount">
+          <div class="grid2">
+            <div><label>Telegram ID Fox'a</label><input name="user_id" type="number" required placeholder="np. 457874548"/></div>
+            <div><label>Zniżka %</label><input name="discount_percent" type="number" min="${parseFloat(venue.discount_percent)||10}" max="100" step="1" required placeholder="np. 15" value="15"/></div>
+          </div>
+          <div style="margin-top:8px"><label>Czas trwania</label>
+            <select name="is_temporary"><option value="0">Stała</option><option value="1">Tylko dziś</option></select>
+          </div>
+          <button type="submit" style="margin-top:10px;width:100%">💰 Ustaw zniżkę</button>
+        </form>
+      </div>
+    </div>
     <div class="card">
       <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">🎫 Program stempli ▾</button>
       <div style="display:none;margin-top:12px">
@@ -3891,6 +3936,31 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
     } catch (e) { console.error("STAMP_TG_ERR", e?.message); }
   }
   res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Stempel ${delta > 0 ? "dodany" : "użyty"} ✅ (saldo: ${newBal})`)}`);
+});
+
+// POST /panel/discount — set individual Fox discount
+app.post("/panel/discount", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const userId = String(req.body.user_id || "").trim();
+  const pct = parseFloat(req.body.discount_percent);
+  const temp = req.body.is_temporary === "1";
+  if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy Telegram ID.")}`);
+  const venue = await getVenue(venueId);
+  const minDiscount = parseFloat(venue?.discount_percent) || 10;
+  if (isNaN(pct) || pct < minDiscount || pct > 100) return res.redirect(`/panel/dashboard?err=${encodeURIComponent(`Zniżka musi być ${minDiscount}%–100%.`)}`);
+  // End of today Warsaw time
+  let expiresAt = null;
+  if (temp) {
+    const wStr = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Warsaw" });
+    expiresAt = new Date(wStr + "T23:59:59.999Z");
+  }
+  await pool.query(
+    `INSERT INTO fp1_fox_discounts(venue_id,user_id,discount_percent,is_temporary,expires_at)
+     VALUES($1,$2,$3,$4,$5)
+     ON CONFLICT(venue_id,user_id) DO UPDATE SET discount_percent=$3, is_temporary=$4, expires_at=$5, created_at=NOW()`,
+    [venueId, userId, pct, temp, expiresAt]
+  );
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Zniżka ${pct}% dla Fox #${userId.slice(-4)} ${temp ? "(dziś)" : "(stała)"} ✅`)}`);
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -4459,8 +4529,8 @@ if (BOT_TOKEN) {
           const v = vq.rows[0];
 
           await pool.query(
-            `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source)
-             VALUES($1,$2,0,0,'Warszawa',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
+            `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source,referred_by_venue)
+             VALUES($1,$2,0,0,'Warszawa',TRUE,$3,'venue',$3) ON CONFLICT(user_id) DO NOTHING`,
             [userId, username, v.id]
           );
           const founderNum = await assignFounderNumber(userId);
@@ -4482,8 +4552,8 @@ if (BOT_TOKEN) {
         // Venue code = demo Fox (same as venue link). No rating, no invites, no counted visit.
         // Must do check-in to activate full Fox.
         await pool.query(
-          `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source)
-           VALUES($1,$2,0,0,'Warszawa',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
+          `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source,referred_by_venue)
+           VALUES($1,$2,0,0,'Warszawa',TRUE,$3,'venue',$3) ON CONFLICT(user_id) DO NOTHING`,
           [userId, username, v.id]
         );
         const founderNum = await assignFounderNumber(userId);
