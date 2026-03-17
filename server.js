@@ -3729,7 +3729,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
     </div>
     <div class="card" style="border:1px solid rgba(255,138,0,.3);background:rgba(255,138,0,.06)">
       <h2>📣 Reklama w The FoxPot Club</h2>
-      <p style="font-size:13px;color:rgba(255,255,255,.7);margin-bottom:12px">Promuj swój lokal wśród Fox'ów. Twój lokal pojawi się jako polecany na mapie i w aplikacji.</p>
+      <p style="font-size:13px;color:rgba(255,255,255,.7);margin-bottom:12px">Promuj swój lokal wśród Fox'ów. Twój lokal pojawi się jako polecany w aplikacji The FoxPot Club.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <div style="padding:10px;border-radius:8px;border:1px solid rgba(255,138,0,.25);background:rgba(255,138,0,.06);text-align:center">
           <div style="font-size:13px;font-weight:800;color:var(--fox)">START</div>
