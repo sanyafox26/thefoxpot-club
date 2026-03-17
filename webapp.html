@@ -407,8 +407,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
       <div class="card" id="stampsCard" style="display:none">
-        <div class="card-title">🎫 Twoje stemple</div>
-        <div id="stampsList"></div>
+        <button type="button" id="stampsToggle" onclick="var c=q('stampsList');c.style.display=c.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,138,0,.2);border-radius:8px;padding:10px;color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;text-align:left;font-family:var(--font)">🎫 Twoje stemple ▾</button>
+        <div id="stampsList" style="display:none;margin-top:10px"></div>
       </div>
     </div>
     <div id="pError" class="err-banner"></div>
