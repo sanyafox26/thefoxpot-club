@@ -159,16 +159,16 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
   </div>
 </section>
 
-<!-- FOUNDER FOX -->
+<!-- PIONIER FOX -->
 <section style="padding:80px 24px">
   <div class="section-inner">
     <div class="founder-box">
       <div class="founder-num">1000</div>
-      <div class="founder-label" id="ff-spots">Miejsc Founder Fox</div>
+      <div class="founder-label" id="ff-spots">Miejsc Pionier Fox</div>
       <h3 class="founder-title" id="ff-title">Nie każdy wejdzie.<br>Pierwsi zostają na zawsze.</h3>
       <p class="founder-story" id="ff-story">To moment, w którym decyduje się, kto będzie w środku — a kto zostanie na zewnątrz.</p>
       <div class="founder-perks">
-        <span class="founder-perk" id="ff-b1">🦊 Founder Fox Badge</span>
+        <span class="founder-perk" id="ff-b1">🦊 Odznaka Pionier Fox</span>
         <span class="founder-perk" id="ff-b2">🔢 Numer seryjny #1–1000</span>
         <span class="founder-perk" id="ff-b3">👑 Status, którego nie da się zdobyć później</span>
       </div>
@@ -258,10 +258,10 @@ const T = {
     "s1-title": "Otwórz Telegram i użyj kodu zaproszenia", "s1-desc": "Wpisz kod w bocie @thefoxpot_club_bot. Kod dostaniesz od znajomego Fox-a, w lokalu partnerskim lub na naszych kanałach.",
     "s2-title": "Odwiedzaj ze zniżką 10%", "s2-desc": "Pokaż status w lokalu, zapłać ze zniżką. Po wizycie wpisz kwotę rachunku — system sam policzy Twoje oszczędności.",
     "s3-title": "Zdobywaj przywileje", "s3-desc": "Każdy rachunek = punkty, status i nowe przywileje. Im wyższy status — tym lepsze bonusy. Zapraszaj znajomych i rośnij razem.",
-    "ff-spots": "Miejsc Founder Fox",
+    "ff-spots": "Miejsc Pionier Fox",
     "ff-title": "Nie każdy wejdzie.<br>Pierwsi zostają na zawsze.",
     "ff-story": "To moment, w którym decyduje się, kto będzie w środku — a kto zostanie na zewnątrz.",
-    "ff-b1": "🦊 Founder Fox Badge", "ff-b2": "🔢 Numer seryjny #1–1000", "ff-b3": "👑 Status, którego nie da się zdobyć później",
+    "ff-b1": "🦊 Odznaka Pionier Fox", "ff-b2": "🔢 Numer seryjny #1–1000", "ff-b3": "👑 Status, którego nie da się zdobyć później",
     "ff-limit": "Dostęp ograniczony. Gdy miejsca znikną — nie wrócą.",
     "ff-btn": "🦊 Wejdź do klubu przez Telegram",
     "fomo-title": "Nie każdy ma dostęp.<br><span style='color:var(--gold)'>I właśnie o to chodzi.</span>",
@@ -303,10 +303,10 @@ const T = {
     "s1-title": "Open Telegram and use your invite code", "s1-desc": "Enter your code in the bot @thefoxpot_club_bot. You'll get it from a Fox, a partner venue, or our channels.",
     "s2-title": "Visit with 10% discount", "s2-desc": "Show your status at the venue, pay with discount. After each visit enter the receipt — the system calculates your savings.",
     "s3-title": "Unlock privileges", "s3-desc": "Every receipt = points, status and new perks. The higher your status — the better the bonuses. Invite friends and grow together.",
-    "ff-spots": "Founder Fox Spots",
+    "ff-spots": "Pionier Fox Spots",
     "ff-title": "Not everyone gets in.<br>The first stay forever.",
     "ff-story": "This is the moment that decides who's inside — and who stays outside.",
-    "ff-b1": "🦊 Founder Fox Badge", "ff-b2": "🔢 Serial number #1–1000", "ff-b3": "👑 A status that can never be earned later",
+    "ff-b1": "🦊 Pionier Fox Badge", "ff-b2": "🔢 Serial number #1–1000", "ff-b3": "👑 A status that can never be earned later",
     "ff-limit": "Limited access. Once the spots are gone — they're gone.",
     "ff-btn": "🦊 Enter the club via Telegram",
     "fomo-title": "Not everyone has access.<br><span style='color:var(--gold)'>That's the point.</span>",
@@ -353,7 +353,7 @@ async function loadVenues() {
       `<div class="top-item">
         <div class="top-rank ${ranks[i]||''}">${medals[i]||i+1}</div>
         <div class="top-info"><div class="top-name">${v.name}</div><div class="top-addr">📍 ${v.city}${v.address?' · '+v.address:''}</div></div>
-        <span class="top-badge ${v.is_trial?'badge-t':'badge-p'}">${v.is_trial?'Trial':'Partner'}</span>
+        <span class="top-badge ${v.is_trial?'badge-t':'badge-p'}">${v.is_trial?'Testowa':'Partner'}</span>
       </div>`
     ).join('') || '';
   } catch(e) { document.getElementById('topList').innerHTML = ''; }

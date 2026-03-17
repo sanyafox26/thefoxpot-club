@@ -41,9 +41,9 @@ const SUPPORT_CATEGORIES = {
       },
       venue_not_confirmed: {
         label: "Lokal nie potwierdził wizyty",
-        answer: "🔹 Lokal powinien potwierdzić wizytę po wpisaniu OTP\n🔹 Jeśli status się nie zmienia — poczekaj kilka minut\n🔹 Pokaż kod OTP personelowi ponownie",
+        answer: "🔹 Lokal powinien potwierdzić wizytę po wpisaniu kodu wizyty\n🔹 Jeśli status się nie zmienia — poczekaj kilka minut\n🔹 Pokaż kod wizyty personelowi ponownie",
         action: { text: "📋 Sprawdź status wizyty", key: "check_visit_status" },
-        step2_answer: "🔹 Poprosź personel o sprawdzenie panelu\n🔹 Upewnij się, że kod OTP nie wygasł (ważny 10 min)\n🔹 Jeśli problem nie ustąpi — zgłoś poniżej",
+        step2_answer: "🔹 Poprosź personel o sprawdzenie panelu\n🔹 Upewnij się, że kod wizyty nie wygasł (ważny 10 min)\n🔹 Jeśli problem nie ustąpi — zgłoś poniżej",
         step2_action: { text: "🔑 Nowy check-in", key: "new_checkin" },
         priority: "high",
         hasStatusCheck: true,
@@ -59,7 +59,7 @@ const SUPPORT_CATEGORIES = {
       },
       checkin_not_saved: {
         label: "Check-in nie został zapisany",
-        answer: "🔹 Check-in może pojawić się z opóźnieniem\n🔹 Sprawdź po chwili ponownie w profilu\n🔹 Upewnij się, że OTP został potwierdzony przez lokal",
+        answer: "🔹 Check-in może pojawić się z opóźnieniem\n🔹 Sprawdź po chwili ponownie w profilu\n🔹 Upewnij się, że kod wizyty został potwierdzony przez lokal",
         action: { text: "🔄 Sprawdź ponownie", key: "retry_checkin" },
         step2_answer: "🔹 Otwórz /achievements i sprawdź liczbę wizyt\n🔹 Wizyta jest naliczana tylko raz dziennie w danym lokalu\n🔹 Jeśli nadal brak — zgłoś problem poniżej",
         step2_action: { text: "📜 Historia wizyt", key: "visit_history" },
@@ -71,11 +71,11 @@ const SUPPORT_CATEGORIES = {
 
   otp: {
     emoji: "🔑",
-    label: "Kod OTP",
-    intro: "Najczęstsze problemy z kodem OTP:",
+    label: "Kod wizyty",
+    intro: "Najczęstsze problemy z kodem wizyty:",
     problems: {
       otp_not_working: {
-        label: "Kod OTP nie działa",
+        label: "Kod wizyty nie działa",
         answer: "🔹 Upewnij się, że wpisujesz prawidłowy 6-cyfrowy kod\n🔹 Kod jest ważny 10 minut od wygenerowania\n🔹 Sprawdź, czy nie ma literówki",
         action: { text: "🔁 Wyślij kod ponownie", key: "resend_otp" },
         step2_answer: "🔹 Wygeneruj nowy check-in przez /checkin <venue_id>\n🔹 Pokaż nowy kod personelowi\n🔹 Jeśli nadal nie działa — zgłoś problem",
@@ -85,7 +85,7 @@ const SUPPORT_CATEGORIES = {
       },
       no_otp_received: {
         label: "Nie dostałem kodu",
-        answer: "🔹 Kod OTP wyświetla się w bocie po /checkin <venue_id>\n🔹 Sprawdź historię wiadomości w bocie\n🔹 Upewnij się, że wpisałeś poprawne venue_id",
+        answer: "🔹 Kod wizyty wyświetla się w bocie po /checkin <venue_id>\n🔹 Sprawdź historię wiadomości w bocie\n🔹 Upewnij się, że wpisałeś poprawne venue_id",
         action: { text: "🆕 Pokaż nowy kod", key: "new_checkin" },
         step2_answer: "🔹 Sprawdź listę lokali: /venues\n🔹 Użyj poprawnego ID lokalu\n🔹 Spróbuj ponownie lub zgłoś problem",
         step2_action: { text: "🏪 Lista lokali", key: "show_venues" },
@@ -94,17 +94,17 @@ const SUPPORT_CATEGORIES = {
       },
       otp_expired: {
         label: "Kod wygasł",
-        answer: "🔹 Kod OTP jest ważny 10 minut\n🔹 Wygeneruj nowy check-in: /checkin <venue_id>\n🔹 Pokaż nowy kod personelowi od razu",
+        answer: "🔹 Kod wizyty jest ważny 10 minut\n🔹 Wygeneruj nowy check-in: /checkin <venue_id>\n🔹 Pokaż nowy kod personelowi od razu",
         action: { text: "🆕 Pokaż nowy kod", key: "new_checkin" },
         step2_answer: "🔹 Jeśli kod wygasa zbyt szybko — zrób check-in tuż przed pokazaniem personelowi\n🔹 Możesz też poprosić personel o szybszą weryfikację",
-        step2_action: { text: "📋 Sprawdź status OTP", key: "check_otp_status" },
+        step2_action: { text: "📋 Sprawdź status kodu", key: "check_otp_status" },
         priority: "low",
         hasStatusCheck: true,
       },
       otp_entered_nothing: {
         label: "Wpisałem kod, ale nic się nie stało",
-        answer: "🔹 Kod wpisuje personel w panelu lokalu, nie Ty\n🔹 Pokaż kod OTP na ekranie telefonu pracownikowi\n🔹 Poczekaj na potwierdzenie",
-        action: { text: "📋 Sprawdź status OTP", key: "check_otp_status" },
+        answer: "🔹 Kod wpisuje personel w panelu lokalu, nie Ty\n🔹 Pokaż kod wizyty na ekranie telefonu pracownikowi\n🔹 Poczekaj na potwierdzenie",
+        action: { text: "📋 Sprawdź status kodu", key: "check_otp_status" },
         step2_answer: "🔹 Poprosź personel o otwarcie panelu lokalu\n🔹 Panel dostępny pod: /panel\n🔹 Jeśli lokal nie może potwierdzić — zgłoś problem",
         step2_action: { text: "🔄 Sprawdź ponownie", key: "retry_checkin" },
         priority: "medium",
@@ -138,7 +138,7 @@ const SUPPORT_CATEGORIES = {
       },
       how_to_use_discount: {
         label: "Nie wiem jak użyć zniżki",
-        answer: "🔹 Zrób check-in w lokalu: /checkin <venue_id>\n🔹 Pokaż personelowi kod OTP\n🔹 Po potwierdzeniu — zniżka aktywna na ten dzień\n🔹 Poinformuj kelnera przed zamówieniem",
+        answer: "🔹 Zrób check-in w lokalu: /checkin <venue_id>\n🔹 Pokaż personelowi kod wizyty\n🔹 Po potwierdzeniu — zniżka aktywna na ten dzień\n🔹 Poinformuj kelnera przed zamówieniem",
         action: { text: "🏪 Lista lokali", key: "show_venues" },
         step2_answer: "🔹 Zniżka wynosi domyślnie 10%\n🔹 Obowiązuje na cały rachunek w dniu wizyty\n🔹 Niektóre lokale mogą mieć indywidualną zniżkę",
         step2_action: { text: "🗺️ Otwórz mapę lokali", key: "open_map" },
@@ -430,12 +430,12 @@ async function runStatusCheck(pool, userId, category, problemKey) {
       } else if (new Date(c.expires_at) < new Date()) {
         lines.push(`❌ Ostatni check-in: kod wygasł`);
         lines.push(`🏪 Lokal: ${vName}`);
-        lines.push(`🔑 OTP: ${c.otp} (wygasł)`);
+        lines.push(`🔑 Kod wizyty: ${c.otp} (wygasł)`);
         lines.push(`💡 Wygeneruj nowy: /checkin ${c.venue_id}`);
       } else {
         lines.push(`⏳ Ostatni check-in: oczekuje na potwierdzenie lokalu`);
         lines.push(`🏪 Lokal: ${vName}`);
-        lines.push(`🔑 OTP: ${c.otp}`);
+        lines.push(`🔑 Kod wizyty: ${c.otp}`);
         lines.push(`Może to potrwać kilka minut.`);
       }
     }
@@ -651,14 +651,14 @@ function formatAdminTicket(ticket, context) {
     msg += `📨 Poprzednie zgłoszenia: ${context.total_tickets}\n`;
   }
 
-  if (context.trial_active) msg += `⚠️ Trial aktywny\n`;
+  if (context.trial_active) msg += `⚠️ Współpraca testowa aktywna\n`;
   if (context.is_demo) msg += `⚠️ Konto demo\n`;
   if (context.banned_until) msg += `🚫 Zbanowany do: ${new Date(context.banned_until).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" })}\n`;
 
   if (context.last_checkin) {
     const lc = context.last_checkin;
     msg += `\n🔑 Ostatni check-in:\n`;
-    msg += `  Lokal: ${lc.venue_id} | OTP: ${lc.otp}\n`;
+    msg += `  Lokal: ${lc.venue_id} | Kod wizyty: ${lc.otp}\n`;
     msg += `  Czas: ${new Date(lc.created).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" })}\n`;
     msg += `  Status: ${lc.confirmed ? "✅ Potwierdzony" : lc.expired ? "❌ Wygasły" : "⏳ Oczekuje"}\n`;
   }

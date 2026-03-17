@@ -49,14 +49,17 @@ app.use(express.json({ limit: "12mb" }));
 const BOT_TOKEN      = (process.env.BOT_TOKEN      || "").trim();
 const DATABASE_URL   = (process.env.DATABASE_URL   || "").trim();
 const PUBLIC_URL     = (process.env.PUBLIC_URL     || "").trim().replace(/\/+$/, "");
-const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || "wh").trim();
-const COOKIE_SECRET  = (process.env.COOKIE_SECRET  || `${WEBHOOK_SECRET}_cookie`).trim();
-const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "admin_foxpot_2025").trim();
+const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || require("crypto").randomBytes(32).toString("hex")).trim();
+const COOKIE_SECRET  = (process.env.COOKIE_SECRET  || require("crypto").randomBytes(32).toString("hex")).trim();
+const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "").trim();
 const ADMIN_TG_ID    = (process.env.ADMIN_TG_ID    || "").trim();
 const PORT           = process.env.PORT || 8080;
 
-if (!DATABASE_URL) console.error("❌ DATABASE_URL missing");
-if (!BOT_TOKEN)    console.error("❌ BOT_TOKEN missing");
+if (!DATABASE_URL)            console.error("❌ DATABASE_URL missing");
+if (!BOT_TOKEN)               console.error("❌ BOT_TOKEN missing");
+if (!process.env.WEBHOOK_SECRET) console.warn("⚠️  WEBHOOK_SECRET not set — using random (sessions reset on restart)");
+if (!process.env.COOKIE_SECRET)  console.warn("⚠️  COOKIE_SECRET not set — using random (sessions reset on restart)");
+if (!ADMIN_SECRET)            console.warn("⚠️  ADMIN_SECRET not set — admin panel disabled");
 if (!PUBLIC_URL)   console.error("❌ PUBLIC_URL missing");
 
 /* ═══════════════════════════════════════════════════════════════
@@ -394,6 +397,7 @@ async function migrate() {
    await ensureColumn("fp1_venues",         "venue_type",            "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "cuisine",               "TEXT NOT NULL DEFAULT ''");
    await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues",         "pioneer_number",        "INT");
   // V29: Venue photos (multiple URLs)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_venue_photos (
@@ -504,6 +508,18 @@ async function migrate() {
   }
 
   await ensureIndex(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_founder_number ON fp1_foxes(founder_number) WHERE founder_number IS NOT NULL`);
+  await ensureIndex(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_pioneer_number ON fp1_venues(pioneer_number) WHERE pioneer_number IS NOT NULL`);
+
+  // Auto-assign pioneer_number for first 50 venues in Warsaw
+  await pool.query(`
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+      FROM fp1_venues
+      WHERE pioneer_number IS NULL AND approved=TRUE AND LOWER(city)='warsaw'
+    )
+    UPDATE fp1_venues SET pioneer_number=ranked.rn
+    FROM ranked WHERE fp1_venues.id=ranked.id AND ranked.rn <= 50
+  `);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_achievements_user   ON fp1_achievements(user_id)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp        ON fp1_checkins(otp)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires    ON fp1_checkins(expires_at)`);
@@ -821,7 +837,7 @@ function formatAchievements(newOnes) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   FOUNDER FOX
+   PIONIER FOX
 ═══════════════════════════════════════════════════════════════ */
 const FOUNDER_LIMIT = 1000;
 
@@ -849,7 +865,7 @@ async function assignFounderNumber(userId) {
   } finally { client.release(); }
 }
 
-function founderBadge(num) { return num ? `👑 FOUNDER FOX #${num}` : ""; }
+function founderBadge(num) { return num ? `👑 Pionier Fox #${num}` : ""; }
 
 async function founderSpotsLeft() {
   const r = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE founder_number IS NOT NULL`);
@@ -869,10 +885,13 @@ async function getTopFoxBadges() {
   const monthStart = new Date(warsawNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
   const yearStart = new Date(warsawNow); yearStart.setMonth(0,1); yearStart.setHours(0,0,0,0);
 
+  // Exclude admin from TOP rankings (parameterized)
+  const adminExclude = ADMIN_TG_ID ? ` AND user_id != $2` : '';
+  const mkParams = (dateStr) => ADMIN_TG_ID ? [dateStr, ADMIN_TG_ID] : [dateStr];
   const [tw, tm, ty] = await Promise.all([
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, [weekStart.toISOString()]),
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, [monthStart.toISOString()]),
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, [yearStart.toISOString()]),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(weekStart.toISOString())),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(monthStart.toISOString())),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(yearStart.toISOString())),
   ]);
 
   const badges = {};
@@ -953,8 +972,21 @@ function requireAdminAuth(req, res, next) {
 const loginFail = new Map();
 function getIp(req) { return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.ip || "unknown"; }
 function loginRate(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; return x.until && Date.now() < x.until ? { blocked:true } : { blocked:false }; }
-function loginBad(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; x.fails += 1; if (x.fails >= 10) { x.until = Date.now() + 15*60*1000; x.fails = 0; } loginFail.set(ip, x); }
+function loginBad(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; x.fails += 1; if (x.fails >= 5) { x.until = Date.now() + 15*60*1000; x.fails = 0; } loginFail.set(ip, x); }
 function loginOk(ip) { loginFail.delete(ip); }
+
+// Generic rate limiter: key → { count, windowStart }
+const rateBuckets = new Map();
+function rateLimit(key, maxAttempts, windowMs) {
+  const now = Date.now();
+  const b = rateBuckets.get(key);
+  if (!b || now - b.start > windowMs) { rateBuckets.set(key, { count: 1, start: now }); return false; }
+  b.count++;
+  if (b.count > maxAttempts) return true; // blocked
+  return false;
+}
+// Cleanup stale buckets every 10 min
+setInterval(() => { const now = Date.now(); for (const [k, v] of rateBuckets) { if (now - v.start > 30*60*1000) rateBuckets.delete(k); } }, 10*60*1000);
 
 /* ═══════════════════════════════════════════════════════════════
    UI HELPERS
@@ -1580,7 +1612,8 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       sub_youtube:              !!f.sub_youtube,
       sub_telegram:             !!f.sub_telegram,
       sub_bonus_claimed:        !!f.sub_bonus_claimed,
-      top_badge:                myTopBadge,
+      top_badge:                isAdmin(userId) ? null : myTopBadge,
+      is_admin:                 isAdmin(userId),
     });
   } catch (e) {
     console.error("API_PROFILE_ERR", e);
@@ -1630,7 +1663,7 @@ app.get("/api/venues", async (req, res) => {
       }
     }
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -1840,6 +1873,10 @@ app.get("/api/venues", async (req, res) => {
 app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
   try {
     const userId  = String(req.tgUser.id);
+    // Rate limit: max 5 check-in requests per user per 10 min
+    if (rateLimit(`checkin:${userId}`, 5, 10*60*1000)) {
+      return res.status(429).json({ error: "Zbyt wiele prób. Poczekaj kilka minut." });
+    }
     const venueId = Number(req.body.venue_id);
     if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
 
@@ -1917,6 +1954,9 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
 app.post("/api/spin", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
+    if (rateLimit(`spin:${userId}`, 3, 60*1000)) {
+      return res.status(429).json({ error: "Zbyt wiele prób." });
+    }
 
     const fox = await pool.query(`SELECT 1 FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
     if (fox.rowCount === 0) return res.status(403).json({ error: "nie zarejestrowany" });
@@ -1975,6 +2015,9 @@ app.post("/api/spin", requireWebAppAuth, async (req, res) => {
 app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
+    if (rateLimit(`social:${userId}`, 10, 5*60*1000)) {
+      return res.status(429).json({ error: "Zbyt wiele prób. Poczekaj." });
+    }
     const { platform } = req.body;
     const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "telegram"];
     if (!platform || !VALID_PLATFORMS.includes(platform)) {
@@ -2109,7 +2152,7 @@ app.post("/api/leave", requireWebAppAuth, async (req, res) => {
       try {
         const name = req.tgUser.first_name || req.tgUser.username || userId;
         await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
-          `🚪 Fox opuścił klub:\n👤 ${name}\n🆔 ${userId}\n${fox.rows[0].founder_number ? `👑 Founder #${fox.rows[0].founder_number}` : ""}`);
+          `🚪 Fox opuścił klub:\n👤 ${name}\n🆔 ${userId}\n${fox.rows[0].founder_number ? `👑 Pionier Fox #${fox.rows[0].founder_number}` : ""}`);
       } catch {}
     }
 
@@ -2381,11 +2424,14 @@ app.post("/api/consent", requireWebAppAuth, async (req, res) => {
 app.post("/api/reserve", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
+    if (rateLimit(`reserve:${userId}`, 5, 5*60*1000)) {
+      return res.status(429).json({ error: "Zbyt wiele prób." });
+    }
     const venueId = Number(req.body.venue_id);
     if (!venueId) return res.status(400).json({ error: "Brak venue_id" });
 
     const v = await getVenue(venueId);
-    if (!v || !v.is_trial) return res.status(400).json({ error: "Rezerwacja tylko dla lokali Trial" });
+    if (!v || !v.is_trial) return res.status(400).json({ error: "Rezerwacja tylko dla lokali we współpracy testowej" });
 
     // Check min rating +1
     const fox = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
@@ -2863,6 +2909,9 @@ app.get("/api/venue/:id/photos", async (req, res) => {
 app.post("/api/venue/:venue_id/start-trial", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
+    if (rateLimit(`trial:${userId}`, 5, 10*60*1000)) {
+      return res.status(429).json({ error: "Zbyt wiele prób." });
+    }
     const venueId = Number(req.params.venue_id);
 
     // Check venue exists
@@ -2916,17 +2965,22 @@ app.get("/api/top", async (req, res) => {
     const tgUser   = verifyTelegramInitData(initData);
     const myId     = tgUser ? String(tgUser.id) : null;
 
+    // Exclude admin from ranking list (parameterized)
+    const adminExcludeSQL = ADMIN_TG_ID ? ` AND user_id != $1` : '';
+    const topParams = ADMIN_TG_ID ? [ADMIN_TG_ID] : [];
     const top = await pool.query(
       `SELECT user_id, username, rating, founder_number
-       FROM fp1_foxes WHERE is_deleted=FALSE ORDER BY rating DESC LIMIT 10`
+       FROM fp1_foxes WHERE is_deleted=FALSE${adminExcludeSQL} ORDER BY rating DESC LIMIT 10`,
+      topParams
     );
 
     let myPosition = null, myRating = null;
-    if (myId) {
+    if (myId && !isAdmin(myId)) {
+      const adminExcludePos = ADMIN_TG_ID ? ` AND user_id != $2` : '';
       const myRow = await pool.query(
         `SELECT rating,
-         (SELECT COUNT(*)::int FROM fp1_foxes WHERE is_deleted=FALSE AND rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)) + 1 AS pos
-         FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [myId]
+         (SELECT COUNT(*)::int FROM fp1_foxes WHERE is_deleted=FALSE${adminExcludePos} AND rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)) + 1 AS pos
+         FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, ADMIN_TG_ID ? [myId, ADMIN_TG_ID] : [myId]
       );
       if (myRow.rowCount > 0) {
         myPosition = myRow.rows[0].pos;
@@ -2940,7 +2994,7 @@ app.get("/api/top", async (req, res) => {
       top:         top.rows.map(f => ({ ...f, top_badge: foxBadges[String(f.user_id)] || null })),
       my_position: myPosition,
       my_rating:   myRating,
-      my_top_badge: myId ? (foxBadges[myId] || null) : null,
+      my_top_badge: myId ? (isAdmin(myId) ? null : (foxBadges[myId] || null)) : null,
     });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -3014,12 +3068,15 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
     : pending.map(p => {
         const min = Math.max(0, Math.ceil((new Date(p.expires_at) - Date.now()) / 60000));
         const foxName = p.username ? `@${escapeHtml(p.username)}` : `Fox #${String(p.user_id||'').slice(-4)}`;
-        const badge = foxBadges[String(p.user_id)] || null;
+        const isAdminUser = isAdmin(String(p.user_id));
+        const badge = isAdminUser ? null : (foxBadges[String(p.user_id)] || null);
+        const founderLabel = isAdminUser ? ` <span style="color:#FFD700;font-weight:700;font-size:12px">⭐ Założyciel</span>` : '';
         const badgeHtml = badge ? topFoxHtml(badge) : '';
-        const nameColor = badge ? ` style="color:${TOP_FOX_COLORS[badge]};font-weight:700"` : '';
-        return `<div style="margin:8px 0;padding:8px;border-radius:10px;border:1px solid ${badge ? TOP_FOX_COLORS[badge]+'40' : '#2a2f49'};background:${badge ? TOP_FOX_COLORS[badge]+'10' : 'transparent'}">
-          <div>OTP: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>
-          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${badgeHtml}${p.founder_number ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} <span class="muted">· ${p.rating||0} pkt</span></div>
+        const nameColor = isAdminUser ? ` style="color:#FFD700;font-weight:700"` : (badge ? ` style="color:${TOP_FOX_COLORS[badge]};font-weight:700"` : '');
+        const borderColor = isAdminUser ? '#FFD700' : (badge ? TOP_FOX_COLORS[badge] : null);
+        return `<div style="margin:8px 0;padding:8px;border-radius:10px;border:1px solid ${borderColor ? borderColor+'40' : '#2a2f49'};background:${borderColor ? borderColor+'10' : 'transparent'}">
+          <div>Kod wizyty: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>
+          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} <span class="muted">· ${p.rating||0} pkt</span></div>
         </div>`;
       }).join("");
 
@@ -3039,7 +3096,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
     </div>
     <div class="grid2">
       <div class="card">
-        <h2>Potwierdź OTP</h2>
+        <h2>Potwierdź kod wizyty</h2>
         <form method="POST" action="/panel/confirm">
           <input name="otp" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" required autocomplete="off" autofocus style="font-size:28px;letter-spacing:10px;text-align:center"/>
           <button type="submit" style="width:100%;margin-top:10px">Potwierdź ✓</button>
@@ -3237,11 +3294,24 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         })();
       </script>
     </div>
+    <div class="card" style="border:1px solid rgba(255,138,0,.3);background:rgba(255,138,0,.06)">
+      <h2>📣 Reklama w FoxPot</h2>
+      <p style="font-size:13px;color:rgba(255,255,255,.7);margin-bottom:12px">Chcesz więcej gości? Zamów promowanie lokalu w aplikacji FoxPot — wyróżnienie w mapie, powiadomienia dla Fox'ów w okolicy i więcej.</p>
+      <a href="https://t.me/thefoxpot" target="_blank" style="display:block;text-align:center;background:var(--fox);color:#000;font-weight:700;padding:12px;border-radius:var(--radius-sm);text-decoration:none;font-size:14px">📩 Zamów reklamę</a>
+    </div>
     <div class="card">
       <h2>⚙️ Ustawienia lokalu</h2>
       <form method="POST" action="/panel/settings">
         <div class="grid2">
-          <div><label>Typ lokalu (np. sushi bar, pizzeria, kawiarnia)</label><input name="venue_type" value="${escapeHtml(venue.venue_type||'')}" maxlength="60" placeholder="np. sushi bar, pizzeria, bistro"/></div>
+          <div><label>Typ lokalu</label><select name="venue_type">
+            <option value=""${!venue.venue_type?' selected':''}>— wybierz —</option>
+            <option value="restauracja"${venue.venue_type==='restauracja'?' selected':''}>🍝 Restauracja</option>
+            <option value="kawiarnia"${venue.venue_type==='kawiarnia'?' selected':''}>☕ Kawiarnia</option>
+            <option value="bar"${venue.venue_type==='bar'?' selected':''}>🍺 Bar</option>
+            <option value="fastfood"${venue.venue_type==='fastfood'?' selected':''}>🍔 Fast food</option>
+            <option value="streetfood"${venue.venue_type==='streetfood'?' selected':''}>🥡 Street food</option>
+            <option value="inne"${venue.venue_type==='inne'?' selected':''}>➕ Inne</option>
+          </select></div>
           <div><label>Kuchnia (np. włoska, azjatycka)</label><input name="cuisine" value="${escapeHtml(venue.cuisine||'')}" maxlength="60"/></div>
         </div>
         <label>Opis lokalu (widoczny dla Fox)</label>
@@ -3411,7 +3481,7 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
       `UPDATE fp1_venues SET venue_type=$1, cuisine=$2, description=$3, recommended=$4,
        opening_hours=$5, status_temporary=$6, tags=$7, google_place_id=$8 WHERE id=$9`,
       [
-        String(b.venue_type||"").trim().slice(0,30),
+        String(b.venue_type||"").trim().slice(0,60),
         String(b.cuisine||"").trim().slice(0,60),
         String(b.description||"").trim().slice(0,300),
         String(b.recommended||"").trim().slice(0,300),
@@ -3430,11 +3500,15 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
 
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
   const venueId = String(req.panel.venue_id);
+  // Rate limit: max 10 OTP attempts per venue per 5 min
+  if (rateLimit(`otp_confirm:${venueId}`, 10, 5*60*1000)) {
+    return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Zbyt wiele prób. Poczekaj 5 minut.")}`);
+  }
   const otp = String(req.body.otp || "").trim();
-  if (!/^\d{6}$/.test(otp)) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP musi mieć 6 cyfr.")}`);
+  if (!/^\d{6}$/.test(otp)) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Kod wizyty musi mieć 6 cyfr.")}`);
   try {
     const r = await confirmOtp(venueId, otp);
-    if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("OTP nie znaleziono lub wygasł.")}`);
+    if (!r.ok) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Kod wizyty nie znaleziono lub wygasł.")}`);
     const venue = await getVenue(venueId);
     const xy    = await countXY(venueId, r.userId);
     if (bot) {
@@ -3454,11 +3528,12 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     // P0.2: Show fox name + top badge in confirmation
     const foxQ = await pool.query(`SELECT username, founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [r.userId]);
     const foxName = foxQ.rows[0]?.username ? `@${foxQ.rows[0].username}` : `Fox #${String(r.userId).slice(-4)}`;
+    const isAdminConfirm = isAdmin(String(r.userId));
     const foxBadgesConfirm = await getTopFoxBadges();
-    const foxBadge = foxBadgesConfirm[String(r.userId)];
+    const foxBadge = isAdminConfirm ? null : (foxBadgesConfirm[String(r.userId)] || null);
     const badgeEmoji = foxBadge === "year" ? "🟠" : foxBadge === "month" ? "🔵" : foxBadge === "week" ? "🟢" : "";
-    const badgeText = foxBadge ? ` ${badgeEmoji} ${TOP_FOX_LABELS[foxBadge]}` : "";
-    const founderText = foxQ.rows[0]?.founder_number ? ` 👑#${foxQ.rows[0].founder_number}` : "";
+    const badgeText = isAdminConfirm ? " ⭐ Założyciel" : (foxBadge ? ` ${badgeEmoji} ${TOP_FOX_LABELS[foxBadge]}` : "");
+    const founderText = (!isAdminConfirm && foxQ.rows[0]?.founder_number) ? ` 👑#${foxQ.rows[0].founder_number}` : "";
     const label = r.debounce ? `Debounce ⚠️ · ${foxName}` : r.countedAdded ? `✅ ${foxName}${founderText}${badgeText} · X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅ · ${foxName}`;
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent(label)}`);
   } catch (e) {
@@ -3543,6 +3618,7 @@ app.get("/admin/login", (req, res) => {
 });
 
 app.post("/admin/login", (req, res) => {
+  if (!ADMIN_SECRET) return res.redirect(`/admin/login?msg=${encodeURIComponent("Admin panel disabled. Set ADMIN_SECRET.")}`);
   const secret = String(req.body.secret || "").trim();
   if (secret !== ADMIN_SECRET) { loginBad(getIp(req)); return res.redirect(`/admin/login?msg=${encodeURIComponent("Błędne hasło.")}`); }
   loginOk(getIp(req));
@@ -3584,7 +3660,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card">
       <div class="topbar"><h1>🛡️ Panel Admina</h1><a href="/admin/logout">Wyloguj</a></div>
       ${flash(req)}
-      <div class="muted" style="margin-top:8px">👑 Founder: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
+      <div class="muted" style="margin-top:8px">👑 Pionier Fox: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
     </div>
     <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
     <div class="card">
@@ -3625,7 +3701,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card">
       <h2>Fox (top 50)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Punkty</th><th>Zapr.</th><th>Miasto</th><th>Dzielnica</th><th>Streak</th><th>Founder</th></tr>${foxesHtml}
+        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Punkty</th><th>Zapr.</th><th>Miasto</th><th>Dzielnica</th><th>Streak</th><th>Pionier</th></tr>${foxesHtml}
       </table>
     </div>`, `table th,table td{padding:6px 8px;text-align:left;border-bottom:1px solid #1a1f35}`));
 });
@@ -3747,7 +3823,7 @@ app.post("/api/support/ticket", requireWebAppAuth, async (req, res) => {
         adminMsg += `\n💬 Wiadomość:\n${String(message).slice(0,1000)}\n`;
         adminMsg += `\n─── Kontekst ───\n📊 Rating: ${f.rating??'?'} | Wizyty: ${visits.rows[0]?.c??'?'}\n📍 Dzielnica: ${f.district||'?'}\n📅 Fox od: ${memberDate} (${daysAgo} dni)\n`;
         if (lc) {
-          adminMsg += `\n🔑 Ostatni check-in:\n  Lokal: ${lc.venue_id} | OTP: ${lc.otp}\n  Status: ${lc.confirmed_at?"✅":"⏳"}\n`;
+          adminMsg += `\n🔑 Ostatni check-in:\n  Lokal: ${lc.venue_id} | Kod wizyty: ${lc.otp}\n  Status: ${lc.confirmed_at?"✅":"⏳"}\n`;
         }
         adminMsg += `\n🕐 ${new Date().toLocaleString("pl-PL",{timeZone:"Europe/Warsaw"})}\n📱 Źródło: webapp`;
 
@@ -3834,7 +3910,7 @@ if (BOT_TOKEN) {
           const badge = founderBadge(founderNum);
           let msg = `🦊 Witaj ponownie w The FoxPot Club!\n\n`;
           msg += `Twoje konto zostało odtworzone od zera.\n`;
-          if (badge) msg += `\n${badge}\n(Twój status Founder Fox zachowany! 👑)\n`;
+          if (badge) msg += `\n${badge}\n(Twój status Pionier Fox zachowany! 👑)\n`;
           msg += `\nPunkty: 5\nZaproszenia: 3\n`;
           msg += `\n/settings — ustawienia\n/venues — lokale`;
           const webAppUrl = `${PUBLIC_URL}/webapp`;
@@ -3866,7 +3942,7 @@ if (BOT_TOKEN) {
         msg += `Wizyty: ${tot.rows[0].c}\n`;
         msg += `🔥 Streak: ${f.streak_current || 0} dni (rekord: ${f.streak_best || 0})\n`;
         msg += `🎰 Spin dziś: ${alreadySpun ? `✅ ${alreadySpun.prize_label}` : "❌ nie kręciłeś"}\n`;
-        if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Founder: ${spotsLeft}`;
+        if (!f.founder_number && spotsLeft > 0) msg += `\n⚡ Miejsc Pionier Fox: ${spotsLeft}`;
         msg += `\n\nKomendy:\n/checkin <venue_id>\n/invite\n/refer\n/spin\n/top\n/achievements\n/venues\n/stamps <venue_id>\n/streak\n/id\n/settings\n/pomoc\n/leave`;
 
         // Streak updates only on check-in, not on /start
@@ -3880,7 +3956,7 @@ if (BOT_TOKEN) {
       if (!codeOrInv) {
         const spotsLeft = await founderSpotsLeft();
         let msg = `🦊 THE FOXPOT CLUB\n\nAby się zarejestrować, potrzebujesz zaproszenia od Fox lub kodu lokalu.\n\nNapisz: /start <KOD>`;
-        if (spotsLeft > 0) msg += `\n\n👑 Pierwsze 1000 Fox otrzymuje status FOUNDER!\nPozostało miejsc: ${spotsLeft}`;
+        if (spotsLeft > 0) msg += `\n\n👑 Pierwsze 1000 Fox otrzymuje status Pionier Fox!\nPozostało miejsc: ${spotsLeft}`;
         return ctx.reply(msg);
       }
 
@@ -3899,7 +3975,7 @@ if (BOT_TOKEN) {
           );
           const founderNum = await assignFounderNumber(userId);
           let msg = `🦊 Witaj w The FoxPot Club.\n\nZrób pierwszy check-in w lokalu,\naby aktywować status Fox.`;
-          if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
+          if (founderNum) msg += `\n\n👑 Jesteś Pionier Fox #${founderNum}!`;
 
           const webAppUrl = `${PUBLIC_URL}/webapp`;
           await ctx.reply(msg, Markup.inlineKeyboard([
@@ -3922,7 +3998,7 @@ if (BOT_TOKEN) {
         );
         const founderNum = await assignFounderNumber(userId);
         let msg = `🦊 Witaj w The FoxPot Club.\n\nZrób pierwszy check-in w lokalu,\naby aktywować status Fox.`;
-        if (founderNum) msg += `\n\n👑 Jesteś FOUNDER FOX #${founderNum}!`;
+        if (founderNum) msg += `\n\n👑 Jesteś Pionier Fox #${founderNum}!`;
 
         const webAppUrl = `${PUBLIC_URL}/webapp`;
         await ctx.reply(msg, Markup.inlineKeyboard([
@@ -3938,7 +4014,7 @@ if (BOT_TOKEN) {
       await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,3,3,'Warsaw') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
       const founderNum = await assignFounderNumber(userId);
      let msg = `🦊 Zostałeś zaproszony do The FoxPot Club.\n\nTwój status Fox jest już aktywny.\nZrób pierwszy check-in w lokalu, aby zdobyć pierwszą wizytę i zwiększyć swój rating.`;
-      if (founderNum) msg += `\n\n👑 FOUNDER FOX #${founderNum}`;
+      if (founderNum) msg += `\n\n👑 Pionier Fox #${founderNum}`;
 
       const webAppUrl = `${PUBLIC_URL}/webapp`;
       await ctx.reply(msg, Markup.inlineKeyboard([
@@ -3995,7 +4071,7 @@ if (BOT_TOKEN) {
         `Utracisz:\n• Wszystkie wizyty\n• Punkty i rating\n• Osiągnięcia i streak\n• Zaproszenia\n\n` +
         `❗ Tej operacji nie można cofnąć.\n` +
         `Możesz dołączyć ponownie z nowym zaproszeniem — ale zaczniesz od zera.\n\n` +
-        `🦊 Founder Fox — Twój status pozostaje na zawsze.`,
+        `🦊 Pionier Fox — Twój status pozostaje na zawsze.`,
         Markup.inlineKeyboard([
           [Markup.button.callback("❌ Tak, opuszczam klub", "leave_club_confirm")],
           [Markup.button.callback("← Wróć", "leave_club_cancel")]
@@ -4015,7 +4091,7 @@ if (BOT_TOKEN) {
         `Utracisz:\n• Wszystkie wizyty\n• Punkty i rating\n• Osiągnięcia i streak\n• Zaproszenia\n\n` +
         `❗ Tej operacji nie można cofnąć.\n` +
         `Możesz dołączyć ponownie z nowym zaproszeniem — ale zaczniesz od zera.\n\n` +
-        `🦊 Founder Fox — Twój status pozostaje na zawsze.`,
+        `🦊 Pionier Fox — Twój status pozostaje na zawsze.`,
         Markup.inlineKeyboard([
           [Markup.button.callback("❌ Tak, opuszczam klub", "leave_club_confirm")],
           [Markup.button.callback("← Wróć", "leave_club_cancel")]
@@ -4063,7 +4139,7 @@ if (BOT_TOKEN) {
         `🚪 Opuściłeś The FoxPot Club.\n\n` +
         `Wszystkie Twoje dane zostały zresetowane.\n` +
         `Możesz wrócić w każdej chwili z nowym zaproszeniem — ale zaczniesz od zera.\n\n` +
-        `🦊 Jeśli byłeś Founder Fox — Twój status pozostaje na zawsze.\n\n` +
+        `🦊 Jeśli byłeś Pionier Fox — Twój status pozostaje na zawsze.\n\n` +
         `Do zobaczenia! 👋`
       );
     } catch (e) {
@@ -4129,7 +4205,7 @@ if (BOT_TOKEN) {
         repeatNote = '\nℹ️ Wizyta już zaliczona dziś. Zniżka nadal obowiązuje!';
       }
       const c = await createCheckin(venueId, userId);
-      await ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${v.name}${statusWarn}${repeatNote}\n🔐 OTP: ${c.otp}\n\nPokaż personelowi.\nPanel: ${PUBLIC_URL}/panel`);
+      await ctx.reply(`✅ Check-in (10 min)\n\n🏪 ${v.name}${statusWarn}${repeatNote}\n🔐 Kod wizyty: ${c.otp}\n\nPokaż personelowi.\nPanel: ${PUBLIC_URL}/panel`);
     } catch (e) { console.error("CHECKIN_ERR", e); await ctx.reply("Błąd check-inu."); }
   });
 
@@ -4206,9 +4282,11 @@ if (BOT_TOKEN) {
   bot.command("top", async (ctx) => {
     try {
       const userId = String(ctx.from.id);
-      const top = await pool.query(`SELECT user_id, username, rating, founder_number FROM fp1_foxes WHERE is_deleted=FALSE ORDER BY rating DESC LIMIT 10`);
+      const adminExcludeSQL = ADMIN_TG_ID ? ` AND user_id != $1` : '';
+      const top = await pool.query(`SELECT user_id, username, rating, founder_number FROM fp1_foxes WHERE is_deleted=FALSE${adminExcludeSQL} ORDER BY rating DESC LIMIT 10`, ADMIN_TG_ID ? [ADMIN_TG_ID] : []);
+      const adminExcludePos = ADMIN_TG_ID ? ` AND user_id != $2` : '';
       const myPos = await pool.query(
-        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE is_deleted=FALSE AND rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)`, [userId]
+        `SELECT COUNT(*)::int AS pos FROM fp1_foxes WHERE is_deleted=FALSE${adminExcludePos} AND rating > (SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1)`, ADMIN_TG_ID ? [userId, ADMIN_TG_ID] : [userId]
       );
       const myRating = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       const foxBadgesTop = await getTopFoxBadges();
@@ -4226,11 +4304,13 @@ if (BOT_TOKEN) {
         const me = isMe ? " ← Ty!" : "";
         msg += `${medal} ${nick}${founder}${badgeStr} — ${f.rating} pkt${me}\n`;
       }
-      const pos = (myPos.rows[0]?.pos || 0) + 1;
-      if (pos > 10 && myRating.rowCount > 0) {
-        const myBadge = foxBadgesTop[userId];
-        const myBadgeStr = myBadge ? ` ${badgeEmojis[myBadge]} ${TOP_FOX_LABELS[myBadge]}` : "";
-        msg += `\n...\n${pos}. Ty${myBadgeStr} — ${myRating.rows[0].rating} pkt`;
+      if (!isAdmin(userId)) {
+        const pos = (myPos.rows[0]?.pos || 0) + 1;
+        if (pos > 10 && myRating.rowCount > 0) {
+          const myBadge = foxBadgesTop[userId];
+          const myBadgeStr = myBadge ? ` ${badgeEmojis[myBadge]} ${TOP_FOX_LABELS[myBadge]}` : "";
+          msg += `\n...\n${pos}. Ty${myBadgeStr} — ${myRating.rows[0].rating} pkt`;
+        }
       }
       await ctx.reply(msg);
     } catch (e) { console.error("TOP_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }

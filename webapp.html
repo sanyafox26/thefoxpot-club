@@ -456,7 +456,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px">
         Utracisz wszystkie wizyty, punkty, osiągnięcia i zaproszenia.<br><br>
         Możesz wrócić z nowym zaproszeniem — ale zaczniesz <strong style="color:var(--text)">od zera</strong>.<br><br>
-        <span style="color:var(--fox)">🦊 Founder Fox — Twój status pozostaje na zawsze.</span>
+        <span style="color:var(--fox)">🦊 Pionier Fox — Twój status pozostaje na zawsze.</span>
       </div>
       <div style="display:flex;gap:10px">
         <button onclick="hideLeaveModal()" style="flex:1;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">← Zostań</button>
@@ -482,7 +482,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   <section class="screen" id="screen-checkin">
     <div class="checkin-hero">
       <div class="checkin-title">📍 Check-in</div>
-      <div class="checkin-sub">Pokaż kod OTP personelowi lokalu</div>
+      <div class="checkin-sub">Pokaż kod wizyty personelowi lokalu</div>
     </div>
     <div id="ciErr" class="err-banner"></div>
     <div id="ciOk" class="ok-banner"></div>
@@ -564,7 +564,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     </div>
     <label class="venue-lbl">Wybierz lokal</label>
     <select class="venue-select" id="venueSelect"><option value="">— wybierz lokal —</option></select>
-    <button class="checkin-btn" id="ciBtn" onclick="doCheckin()">Generuj OTP ✓</button>
+    <button class="checkin-btn" id="ciBtn" onclick="doCheckin()">Pokaż kod wizyty ✓</button>
     <div class="card">
       <div class="card-title">AKTYWNE LOKALE</div>
       <div id="venuesList"><div class="loading"><div class="spinner"></div></div></div>
@@ -696,7 +696,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div class="map-filter">
       <button class="map-filter-btn active" onclick="filterVenueMap('all',this)">Wszystkie</button>
       <button class="map-filter-btn" onclick="filterVenueMap('partner',this)">✅ Partnerzy</button>
-      <button class="map-filter-btn" onclick="filterVenueMap('trial',this)">🎟️ Trial</button>
+      <button class="map-filter-btn" onclick="filterVenueMap('trial',this)">🎟️ Testowe</button>
     </div>
     <div class="map-filter" style="margin-top:6px">
       <button class="map-filter-btn active" onclick="sortVenueMap('default',this)">Domyślne</button>
@@ -808,16 +808,22 @@ async function loadProfile(){
     S.profile=d; S.district=d.district;
     q('pName').textContent=TG_USER?(TG_USER.first_name||'')+' '+(TG_USER.last_name||''):(d.first_name||'Fox');
     q('pTag').textContent=TG_USER?(TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4)):(d.username?'@'+d.username:'Fox #'+String(d.user_id||'').slice(-4));
-    // P0.2: Color name by top badge
+    // P0.2: Color name by top badge / admin Założyciel
     q('pName').style.color=''; q('pTag').style.color='';
     const oldBadgeEl=document.getElementById('pTopBadge'); if(oldBadgeEl) oldBadgeEl.remove();
-    if(d.top_badge&&TOP_BADGE_COLORS[d.top_badge]){
+    if(d.is_admin){
+      q('pName').style.color='#FFD700';
+      q('pTag').style.color='#FFD700';
+      q('pTag').insertAdjacentHTML('afterend',`<div id="pTopBadge" style="font-size:11px;font-weight:700;color:#FFD700;margin-bottom:4px">⭐ Założyciel</div>`);
+    } else if(d.top_badge&&TOP_BADGE_COLORS[d.top_badge]){
       q('pName').style.color=TOP_BADGE_COLORS[d.top_badge];
       q('pTag').style.color=TOP_BADGE_COLORS[d.top_badge];
       q('pTag').insertAdjacentHTML('afterend',`<div id="pTopBadge" style="font-size:11px;font-weight:700;color:${TOP_BADGE_COLORS[d.top_badge]};margin-bottom:4px">${TOP_BADGE_LABELS[d.top_badge]}</div>`);
     }
     q('pTgId').textContent='ID: '+(TG_USER?TG_USER.id:(d.user_id||'\u2014'));
-    if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='FOUNDER FOX #'+d.founder_number}
+    if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='Pionier Fox #'+d.founder_number}
+    const oldPionierEl=document.getElementById('pPionierInfo');if(oldPionierEl)oldPionierEl.remove();
+    if(d.founder_number){q('pFounder').insertAdjacentHTML('afterend',`<div id="pPionierInfo" style="font-size:11px;color:var(--gold);margin-bottom:8px;opacity:.8">Jesteś wśród pierwszych 1000 uczestników klubu</div>`)}
     q('pRating').textContent=d.rating??0;
     q('pInvites').textContent=d.invites??0;
     q('pVisits').textContent=d.total_visits??0;
@@ -888,12 +894,9 @@ const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:f
 function renderSocialBonus(d) {
   const card = q('socialBonusCard');
   if (!card) return;
-  // If all claimed — show completed state
+  // If bonus already claimed — hide section entirely
   if (d.sub_bonus_claimed) {
-    card.style.display = 'block';
-    q('socialBonusList').style.display = 'none';
-    q('socialProgress').style.display = 'none';
-    q('socialComplete').style.display = 'block';
+    card.style.display = 'none';
     return;
   }
   const subs = {
@@ -1092,10 +1095,10 @@ async function doCheckin(){
     }
     TG?.HapticFeedback?.notificationOccurred('success');
   }catch(e){
-    if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='Generuj OTP ✓';return}
+    if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='Pokaż kod wizyty ✓';return}
     showErr('ciErr','Błąd: '+e.message);
   }
-  btn.disabled=false; btn.textContent='Generuj OTP ✓';
+  btn.disabled=false; btn.textContent='Pokaż kod wizyty ✓';
 }
   /* ═══ RECEIPT SYSTEM ═══ */
 /* ═══ RECEIPT SYSTEM ═══ */
@@ -1793,7 +1796,7 @@ function renderMapList() {
   }
   list.innerHTML = venues.map(v => {
     const badge = v.is_trial
-      ? '<span class="venue-map-badge badge-trial">Trial</span>'
+      ? '<span class="venue-map-badge badge-trial">Współpraca testowa</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const statusWarn = v.venue_status ? `<span style="font-size:10px;color:#EF4444;font-weight:700">${v.venue_status.type==='reserve'?'📍 Rezerwacja':'⚠️ '+(v.venue_status.reason||'Ograniczone')}</span>` : '';
     const demoTarget = S.isDemo ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Zrób pierwszy check-in!</span>` : '';
@@ -1870,14 +1873,14 @@ function buildJoinBlock(v) {
   // Check if this venue is blocked
   if (ts && ts.trial_blocked_venue_id === v.id && ts.trial_blocked_until && new Date(ts.trial_blocked_until) > new Date()) {
     return `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;text-align:center">
-      <div style="font-size:13px;color:#ef4444;font-weight:600">Dziś nie możesz aktywować trial w tym lokalu. Spróbuj jutro.</div>
+      <div style="font-size:13px;color:#ef4444;font-weight:600">Dziś nie możesz aktywować współpracy testowej w tym lokalu. Spróbuj jutro.</div>
     </div>`;
   }
   // Check if trial is active for another venue
   if (ts && ts.trial_active && ts.trial_origin_venue_id !== v.id) {
     const otherV = S_map.venues.find(x => x.id === ts.trial_origin_venue_id);
     return `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;text-align:center">
-      <div style="font-size:13px;color:var(--fox);font-weight:600">Masz aktywny trial w ${esc(otherV?.name || 'innym lokalu')}.</div>
+      <div style="font-size:13px;color:var(--fox);font-weight:600">Masz aktywną współpracę testową w ${esc(otherV?.name || 'innym lokalu')}.</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px">Zrób check-in tam lub poczekaj na wygaśnięcie.</div>
     </div>`;
   }
@@ -1885,7 +1888,7 @@ function buildJoinBlock(v) {
   if (ts && ts.trial_active && ts.trial_origin_venue_id === v.id) {
     return `<div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));border:2px solid var(--fox);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;text-align:center">
       <div style="font-size:22px;margin-bottom:6px">🦊</div>
-      <div style="font-size:14px;font-weight:800;color:var(--fox);margin-bottom:4px">Trial aktywny!</div>
+      <div style="font-size:14px;font-weight:800;color:var(--fox);margin-bottom:4px">Współpraca testowa aktywna!</div>
       <div style="font-size:12px;color:var(--muted);line-height:1.5">Zrób check-in w tym lokalu aby aktywować konto Fox.<br/>+3 pkt po aktywacji.</div>
     </div>`;
   }
@@ -1914,7 +1917,7 @@ async function startTrial(venueId) {
       openVenueDetail(venueId); // Re-render
     } else if (res.code === 'VENUE_TRIAL_BLOCKED') {
       TG?.HapticFeedback?.notificationOccurred('error');
-      alert('Dziś nie możesz aktywować trial w tym lokalu. Spróbuj jutro.');
+      alert('Dziś nie możesz aktywować współpracy testowej w tym lokalu. Spróbuj jutro.');
     } else {
       alert(res.error || 'Błąd');
     }
@@ -1939,7 +1942,7 @@ async function startTrial(venueId) {
   // Status badge
   let badge = '';
   if (v.is_trial) {
-    badge = `<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">⚠️ Trial</span>`;
+    badge = `<span style="display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--fox);font-weight:700">⚠️ Współpraca testowa</span>`;
   } else {
     badge = `<span style="display:inline-block;background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:700">🦊 Partner</span>`;
   }
@@ -1951,6 +1954,9 @@ async function startTrial(venueId) {
   if (v.is_top_month) topBadges += `<span style="display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#3B82F6;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
   if (v.is_top_week) topBadges += `<span style="display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#22C55E;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
 
+  // Pionier Lokal badge
+  if (v.pioneer_number) topBadges += `<span style="display:inline-block;background:rgba(255,215,0,.15);border:1px solid rgba(255,215,0,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--gold);font-weight:700;margin-left:4px">👑 Pionier Lokal #${v.pioneer_number}</span>`;
+
   // Vegan/Gluten-free badges
   const tagsList = (v.tags || '').split(',').map(t => t.trim()).filter(Boolean);
   let dietBadges = '';
@@ -1961,6 +1967,9 @@ async function startTrial(venueId) {
   const trialInfo = v.is_trial && v.trial_remaining !== null
     ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--fox);font-weight:600">📊 Pozostało: ${v.trial_remaining} wizyt w tym miesiącu</div>`
     : '';
+
+  // Pionier Lokal info block
+  const pionierInfo = v.pioneer_number ? `<div style="background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--gold);font-weight:600">👑 Pionier Lokal #${v.pioneer_number} — jeden z pierwszych 50 w Warszawie</div>` : '';
 
   // Recommendations
   const rec = v.recommended ? `<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
@@ -2073,7 +2082,7 @@ async function startTrial(venueId) {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>`}
-    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
+    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
@@ -2123,18 +2132,18 @@ const SUP_CATS = {
     emoji:"📍", label:"Check-in", intro:"Najczęstsze problemy z check-in:",
     problems: {
       cant_checkin:       { label:"Nie mogę zrobić check-in", answer:"🔹 Upewnij się, że jesteś w lokalu\n🔹 Sprawdź połączenie z internetem\n🔹 Spróbuj ponownie za chwilę", step2:"🔹 Zamknij aplikację i otwórz ponownie\n🔹 Sprawdź, czy lokal jest aktywny\n🔹 Upewnij się, że konto nie jest zablokowane", hasCheck:true, priority:"high" },
-      venue_not_confirmed:{ label:"Lokal nie potwierdził wizyty", answer:"🔹 Lokal powinien potwierdzić wizytę po OTP\n🔹 Poczekaj kilka minut\n🔹 Pokaż kod OTP personelowi ponownie", step2:"🔹 Poprosź personel o sprawdzenie panelu\n🔹 Upewnij się, że OTP nie wygasł (10 min)\n🔹 Jeśli nie ustąpi — zgłoś poniżej", hasCheck:true, priority:"high" },
+      venue_not_confirmed:{ label:"Lokal nie potwierdził wizyty", answer:"🔹 Lokal powinien potwierdzić wizytę po kodzie wizyty\n🔹 Poczekaj kilka minut\n🔹 Pokaż kod wizyty personelowi ponownie", step2:"🔹 Poprosź personel o sprawdzenie panelu\n🔹 Upewnij się, że kod nie wygasł (10 min)\n🔹 Jeśli nie ustąpi — zgłoś poniżej", hasCheck:true, priority:"high" },
       no_checkin_button:  { label:"Nie widzę przycisku check-in", answer:"🔹 Przycisk jest widoczny na stronie lokalu\n🔹 Otwórz kartę lokalu i spróbuj ponownie\n🔹 Upewnij się, że masz aktualną wersję", step2:"🔹 Zamknij i otwórz ponownie\n🔹 Wyczyść cache przeglądarki\n🔹 Wróć przez link w bocie: /start", hasCheck:false, priority:"medium" },
-      checkin_not_saved:  { label:"Check-in nie został zapisany", answer:"🔹 Check-in może pojawić się z opóźnieniem\n🔹 Sprawdź po chwili w profilu\n🔹 Upewnij się, że OTP potwierdzony przez lokal", step2:"🔹 Sprawdź osiągnięcia — tam widać wizyty\n🔹 Wizyta naliczana raz dziennie w lokalu\n🔹 Jeśli brak — zgłoś poniżej", hasCheck:true, priority:"high" },
+      checkin_not_saved:  { label:"Check-in nie został zapisany", answer:"🔹 Check-in może pojawić się z opóźnieniem\n🔹 Sprawdź po chwili w profilu\n🔹 Upewnij się, że kod wizyty potwierdzony przez lokal", step2:"🔹 Sprawdź osiągnięcia — tam widać wizyty\n🔹 Wizyta naliczana raz dziennie w lokalu\n🔹 Jeśli brak — zgłoś poniżej", hasCheck:true, priority:"high" },
     }
   },
   otp: {
-    emoji:"🔑", label:"Kod OTP", intro:"Najczęstsze problemy z kodem OTP:",
+    emoji:"🔑", label:"Kod wizyty", intro:"Najczęstsze problemy z kodem wizyty:",
     problems: {
-      otp_not_working:     { label:"Kod OTP nie działa", answer:"🔹 Upewnij się, że wpisujesz prawidłowy 6-cyfrowy kod\n🔹 Kod ważny 10 minut\n🔹 Sprawdź, czy nie ma literówki", step2:"🔹 Wygeneruj nowy check-in\n🔹 Pokaż nowy kod personelowi\n🔹 Jeśli nadal nie działa — zgłoś", hasCheck:true, priority:"high" },
+      otp_not_working:     { label:"Kod wizyty nie działa", answer:"🔹 Upewnij się, że wpisujesz prawidłowy 6-cyfrowy kod\n🔹 Kod ważny 10 minut\n🔹 Sprawdź, czy nie ma literówki", step2:"🔹 Wygeneruj nowy check-in\n🔹 Pokaż nowy kod personelowi\n🔹 Jeśli nadal nie działa — zgłoś", hasCheck:true, priority:"high" },
       no_otp_received:     { label:"Nie dostałem kodu", answer:"🔹 Kod wyświetla się w bocie po /checkin\n🔹 Sprawdź historię wiadomości w bocie\n🔹 Upewnij się o poprawne venue_id", step2:"🔹 Sprawdź listę lokali\n🔹 Użyj poprawnego ID lokalu\n🔹 Spróbuj ponownie lub zgłoś", hasCheck:true, priority:"medium" },
-      otp_expired:         { label:"Kod wygasł", answer:"🔹 Kod OTP ważny 10 minut\n🔹 Wygeneruj nowy check-in\n🔹 Pokaż nowy kod personelowi od razu", step2:"🔹 Zrób check-in tuż przed pokazaniem\n🔹 Poproś personel o szybszą weryfikację", hasCheck:true, priority:"low" },
-      otp_entered_nothing: { label:"Wpisałem kod, nic się nie stało", answer:"🔹 Kod wpisuje personel w panelu, nie Ty\n🔹 Pokaż kod OTP pracownikowi\n🔹 Poczekaj na potwierdzenie", step2:"🔹 Poproś personel o otwarcie panelu\n🔹 Jeśli lokal nie może potwierdzić — zgłoś", hasCheck:true, priority:"medium" },
+      otp_expired:         { label:"Kod wygasł", answer:"🔹 Kod wizyty ważny 10 minut\n🔹 Wygeneruj nowy check-in\n🔹 Pokaż nowy kod personelowi od razu", step2:"🔹 Zrób check-in tuż przed pokazaniem\n🔹 Poproś personel o szybszą weryfikację", hasCheck:true, priority:"low" },
+      otp_entered_nothing: { label:"Wpisałem kod, nic się nie stało", answer:"🔹 Kod wpisuje personel w panelu, nie Ty\n🔹 Pokaż kod wizyty pracownikowi\n🔹 Poczekaj na potwierdzenie", step2:"🔹 Poproś personel o otwarcie panelu\n🔹 Jeśli lokal nie może potwierdzić — zgłoś", hasCheck:true, priority:"medium" },
     }
   },
   discount: {
@@ -2142,7 +2151,7 @@ const SUP_CATS = {
     problems: {
       reservation_not_working: { label:"Nie działa rezerwacja", answer:"🔹 Rezerwacja dostępna tylko w wybranych lokalach\n🔹 Sprawdź, czy lokal ją obsługuje\n🔹 Rezerwacja wygasa po określonym czasie", step2:"🔹 Sprawdź status rezerwacji\n🔹 Upewnij się, że nie wygasła\n🔹 Spróbuj zarezerwować ponownie", hasCheck:true, priority:"high" },
       discount_not_activated:  { label:"Zniżka się nie aktywowała", answer:"🔹 Zniżka aktywuje się po poprawnym check-in\n🔹 Upewnij się, że wizyta potwierdzona\n🔹 Sprawdź status w profilu", step2:"🔹 Zniżka obowiązuje w dniu wizyty\n🔹 Pokaż personelowi ekran potwierdzenia\n🔹 Jeśli lokal nie daje zniżki — zgłoś", hasCheck:true, priority:"high" },
-      how_to_use_discount:     { label:"Nie wiem jak użyć zniżki", answer:"🔹 Zrób check-in w lokalu\n🔹 Pokaż personelowi kod OTP\n🔹 Po potwierdzeniu — zniżka aktywna\n🔹 Poinformuj kelnera przed zamówieniem", step2:"🔹 Zniżka wynosi domyślnie 10%\n🔹 Obowiązuje na cały rachunek\n🔹 Niektóre lokale mają indywidualną zniżkę", hasCheck:false, priority:"low" },
+      how_to_use_discount:     { label:"Nie wiem jak użyć zniżki", answer:"🔹 Zrób check-in w lokalu\n🔹 Pokaż personelowi kod wizyty\n🔹 Po potwierdzeniu — zniżka aktywna\n🔹 Poinformuj kelnera przed zamówieniem", step2:"🔹 Zniżka wynosi domyślnie 10%\n🔹 Obowiązuje na cały rachunek\n🔹 Niektóre lokale mają indywidualną zniżkę", hasCheck:false, priority:"low" },
       reservation_disappeared: { label:"Rezerwacja zniknęła", answer:"🔹 Rezerwacja wygasa po określonym czasie\n🔹 Sprawdź termin ważności\n🔹 Widoczna tylko do wykorzystania/wygaśnięcia", step2:"🔹 Jeśli wygasła — utwórz nową\n🔹 Pamiętaj o limicie czasu\n🔹 Jeśli to błąd — zgłoś poniżej", hasCheck:true, priority:"medium" },
     }
   },
