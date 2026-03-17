@@ -3455,7 +3455,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           <b>⚠️ Dziś ograniczone</b> <span class="muted">(${limitedUsed}/2 w tym tyg., do 3h)</span>
           <form method="POST" action="/panel/limited" style="margin-top:8px">
             <label>Powód</label>
-            <select name="reason"><option>FULL</option><option>PRIVATE EVENT</option><option>KITCHEN LIMIT</option></select>
+            <select name="reason"><option value="FULL">Brak miejsc</option><option value="PRIVATE EVENT">Wydarzenie prywatne</option><option value="KITCHEN LIMIT">Ograniczenie kuchni</option></select>
             <label>Czas trwania</label>
             <select name="hours"><option value="1">1 godz.</option><option value="2">2 godz.</option><option value="3" selected>3 godz.</option></select>
             <button type="submit" style="margin-top:10px;width:100%">Ustaw status</button>
@@ -3542,63 +3542,26 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         loadPhotos();
       </script>
     </div>
+    <!-- Top 3 dania removed — duplicates Co wybierają Foxy + Ustawienia recommended -->
     <div class="card">
-      <h2>🍽 Top 3 dania (promowane)</h2>
-      <p class="muted" style="margin-bottom:12px">Te dania zobaczą Foxy po check-inie. Wybierz swoje najlepsze!</p>
-      <div id="dishesForm">
-        <div id="dish1Row" class="grid2" style="margin-bottom:8px"><div><label>#1 Nazwa</label><input id="dish1name" maxlength="40" placeholder="np. Burger wołowy"/></div><div><label>Kategoria</label><select id="dish1cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
-        <div id="dish2Row" class="grid2" style="margin-bottom:8px"><div><label>#2 Nazwa</label><input id="dish2name" maxlength="40" placeholder="np. Latte"/></div><div><label>Kategoria</label><select id="dish2cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
-        <div id="dish3Row" class="grid2" style="margin-bottom:8px"><div><label>#3 Nazwa</label><input id="dish3name" maxlength="40" placeholder="np. Tiramisu"/></div><div><label>Kategoria</label><select id="dish3cat"><option value="main">🍽 Główne</option><option value="snack">🥗 Przystawka</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="soup">🍲 Zupa</option><option value="alcohol">🍺 Alkohol</option><option value="other">📦 Inne</option></select></div></div>
-        <button type="button" onclick="saveDishes()" style="width:100%;margin-top:6px">💾 Zapisz dania</button>
-        <div id="dishesMsg" style="margin-top:8px"></div>
-      </div>
-      <script>
-        async function loadDishes(){
-          try{
-            const r=await fetch('/panel/venue/dishes',{credentials:'same-origin'});
-            const d=await r.json();
-            if(d.dishes) d.dishes.forEach(dish=>{
-              const n=document.getElementById('dish'+dish.sort_order+'name');
-              const c=document.getElementById('dish'+dish.sort_order+'cat');
-              if(n) n.value=dish.name||'';
-              if(c) c.value=dish.category||'main';
-            });
-          }catch(e){console.error(e)}
-        }
-        async function saveDishes(){
-          const dishes=[];
-          for(let i=1;i<=3;i++){
-            const n=document.getElementById('dish'+i+'name').value.trim();
-            const c=document.getElementById('dish'+i+'cat').value;
-            if(n) dishes.push({sort_order:i,name:n,category:c,is_active:true});
-          }
-          if(dishes.length===0){document.getElementById('dishesMsg').innerHTML='<div class="err">Podaj co najmniej 1 danie</div>';return;}
-          try{
-            const r=await fetch('/panel/venue/dishes',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({dishes})});
-            const d=await r.json();
-            document.getElementById('dishesMsg').innerHTML=d.ok?'<div class="ok">✅ Zapisano!</div>':'<div class="err">'+d.error+'</div>';
-          }catch(e){document.getElementById('dishesMsg').innerHTML='<div class="err">Błąd: '+e.message+'</div>';}
-        }
-        loadDishes();
-      </script>
-    </div>
-    <div class="card">
-      <h2>Emoji-stemple</h2>
-      <form method="POST" action="/panel/stamps">
-        <div class="grid2">
-          <div><label>Telegram ID gościa <a href="/faq#lq34" target="_blank" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:400" title="Jak znaleźć ID?">(jak znaleźć?)</a></label><input name="user_id" type="number" required placeholder="np. 457874548"/></div>
-          <div><label>Emoji</label>
-            <select name="emoji"><option>⭐</option><option>🦊</option><option>🔥</option><option>🎁</option><option>💎</option><option>🏆</option><option>👑</option><option>❤️</option><option>🍕</option><option>🍔</option><option>🌭</option><option>🍟</option><option>🍣</option><option>🍱</option><option>🍜</option><option>🍝</option><option>🥩</option><option>🍗</option><option>🥗</option><option>🥪</option><option>🌮</option><option>🌯</option><option>🥐</option><option>🍰</option><option>🎂</option><option>🧁</option><option>🍩</option><option>🍪</option><option>🍦</option><option>🍫</option><option>🍺</option><option>🍻</option><option>🍷</option><option>🍸</option><option>☕</option><option>🧋</option><option>🥤</option><option>🍹</option></select>
+      <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">🎫 Program stempli ▾</button>
+      <div style="display:none;margin-top:12px">
+        <form method="POST" action="/panel/stamps">
+          <div class="grid2">
+            <div><label>Telegram ID gościa <a href="/faq#lq34" target="_blank" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:400" title="Jak znaleźć ID?">(jak znaleźć?)</a></label><input name="user_id" type="number" required placeholder="np. 457874548"/></div>
+            <div><label>Emoji</label>
+              <select name="emoji"><option>⭐</option><option>🦊</option><option>🔥</option><option>🎁</option><option>💎</option><option>🏆</option><option>👑</option><option>❤️</option><option>🍕</option><option>🍔</option><option>🌭</option><option>🍟</option><option>🍣</option><option>🍱</option><option>🍜</option><option>🍝</option><option>🥩</option><option>🍗</option><option>🥗</option><option>🥪</option><option>🌮</option><option>🌯</option><option>🥐</option><option>🍰</option><option>🎂</option><option>🧁</option><option>🍩</option><option>🍪</option><option>🍦</option><option>🍫</option><option>🍺</option><option>🍻</option><option>🍷</option><option>🍸</option><option>☕</option><option>🧋</option><option>🥤</option><option>🍹</option></select>
+            </div>
+            <div><label>Akcja</label><select name="delta"><option value="1">+1 (dodaj)</option><option value="-1">-1 (użyj)</option><option value="-10">-10 (gratis / nagroda)</option></select></div>
+            <div><label>Notatka (opcjonalnie)</label><input name="note" placeholder="np. darmowy deser"/></div>
           </div>
-          <div><label>Akcja</label><select name="delta"><option value="1">+1 (dodaj)</option><option value="-1">-1 (użyj)</option><option value="-10">-10 (gratis / nagroda)</option></select></div>
-          <div><label>Notatka (opcjonalnie)</label><input name="note" placeholder="np. darmowy deser"/></div>
-        </div>
-        <button type="submit" style="margin-top:10px">Zastosuj stempel</button>
-      </form>
+          <button type="submit" style="margin-top:10px">Zastosuj stempel</button>
+        </form>
+      </div>
     </div>
     <div class="card">
-      <h2>📊 Co wybierają Foxy</h2>
-      <div id="foxChoiceStats"><span class="muted">Ładowanie...</span></div>
+      <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">📊 Statystyki Foxów ▾</button>
+      <div id="foxChoiceStats" style="display:none;margin-top:12px"><span class="muted">Ładowanie...</span></div>
       <script>
         (async function(){
           try{
