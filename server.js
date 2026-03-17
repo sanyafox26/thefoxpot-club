@@ -4328,12 +4328,12 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <div style="font-size:13px;font-weight:700;margin-bottom:8px">➕ Nowa promocja</div>
         <form method="POST" action="/admin/promo/create">
           <div class="grid2" style="margin-bottom:6px">
-            <div><label>ID lokalu</label><input name="venue_id" type="number" required placeholder="np. 1"/></div>
-            <div><label>Pakiet</label><select name="package"><option value="start">START (3 dni)</option><option value="boost">BOOST (5 dni)</option><option value="premium">PREMIUM (7 dni)</option></select></div>
+            <div><label>Lokal</label><select name="venue_id" required>${venues.rows.map(v=>`<option value="${v.id}">${escapeHtml(v.name)} (ID:${v.id})</option>`).join("")}</select></div>
+            <div><label>Pakiet</label><select name="package" id="promoPackSel" onchange="var d={start:3,boost:5,premium:7};document.getElementById('promoEndDate').value=new Date(Date.now()+d[this.value]*86400000).toISOString().slice(0,10)"><option value="start">START (3 dni)</option><option value="boost">BOOST (5 dni)</option><option value="premium">PREMIUM (7 dni)</option></select></div>
           </div>
           <div class="grid2" style="margin-bottom:6px">
             <div><label>Od</label><input name="starts_at" type="date" required value="${new Date().toISOString().slice(0,10)}"/></div>
-            <div><label>Do</label><input name="ends_at" type="date" required value="${new Date(Date.now()+3*86400000).toISOString().slice(0,10)}"/></div>
+            <div><label>Do</label><input name="ends_at" id="promoEndDate" type="date" required value="${new Date(Date.now()+3*86400000).toISOString().slice(0,10)}"/></div>
           </div>
           <label>Tekst promocyjny (opcjonalnie)</label>
           <input name="promo_text" maxlength="200" placeholder="np. Nowe menu na lato!" style="margin-bottom:8px"/>
@@ -4551,8 +4551,20 @@ app.post("/admin/promo/:id/deactivate", requireAdminAuth, async (req, res) => {
 });
 
 app.post("/admin/promo-order/:id/confirm", requireAdminAuth, async (req, res) => {
-  await pool.query(`UPDATE fp1_promo_orders SET status='confirmed' WHERE id=$1`, [Number(req.params.id)]);
-  res.redirect(`/admin?ok=${encodeURIComponent("Zamówienie potwierdzone ✅")}`);
+  const orderId = Number(req.params.id);
+  const order = await pool.query(`SELECT venue_id, package FROM fp1_promo_orders WHERE id=$1 LIMIT 1`, [orderId]);
+  if (order.rowCount === 0) return res.redirect(`/admin?err=${encodeURIComponent("Nie znaleziono zamówienia")}`);
+  const o = order.rows[0];
+  const days = {start:3, boost:5, premium:7}[o.package] || 3;
+  const startsAt = new Date().toISOString().slice(0,10);
+  const endsAt = new Date(Date.now() + days * 86400000).toISOString().slice(0,10);
+  await pool.query(`UPDATE fp1_promo_orders SET status='confirmed' WHERE id=$1`, [orderId]);
+  await pool.query(
+    `INSERT INTO fp1_promotions(venue_id,package,promo_text,starts_at,ends_at,status) VALUES($1,$2,$3,$4,$5,'active')`,
+    [o.venue_id, o.package, '', startsAt, endsAt]
+  );
+  const venue = await getVenue(o.venue_id);
+  res.redirect(`/admin?ok=${encodeURIComponent(`Zamówienie potwierdzone ✅ Promocja ${o.package.toUpperCase()} dla ${venue?.name||o.venue_id} aktywna do ${endsAt}`)}`);
 });
 
 app.post("/admin/promo-order/:id/reject", requireAdminAuth, async (req, res) => {
