@@ -712,6 +712,16 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
    <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
 
+    <!-- Promo -->
+    <div id="promoSection" style="display:none;margin-bottom:12px">
+      <div style="background:linear-gradient(135deg,rgba(255,138,0,.12),rgba(139,92,246,.08));border:1px solid rgba(255,138,0,.25);border-radius:var(--radius);padding:14px;position:relative;overflow:hidden">
+        <div style="font-size:11px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">The FoxPot Club poleca</div>
+        <div id="promoName" style="font-size:16px;font-weight:800;margin-bottom:4px"></div>
+        <div id="promoText" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+        <button id="promoBtn" onclick="" style="padding:8px 20px;background:var(--fox);border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)">Zobacz lokal →</button>
+      </div>
+    </div>
+
     <!-- Recommendations -->
     <div id="recsSection" style="display:none;margin-bottom:12px">
       <div style="font-size:14px;font-weight:700;margin-bottom:8px">⭐ Polecane dla Ciebie</div>
@@ -2220,6 +2230,20 @@ async function loadVenueMenu(venueId, btn) {
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }
 
+async function loadPromo() {
+  try {
+    const r = await fetch(BASE + '/api/promo');
+    const d = await r.json();
+    const sec = q('promoSection');
+    if (!d.promo) { sec.style.display = 'none'; return; }
+    const p = d.promo;
+    q('promoName').textContent = p.venue_name;
+    q('promoText').textContent = p.promo_text || (p.city + (p.address ? ' · ' + p.address : '') + ' · zniżka ' + (parseFloat(p.discount_percent)||10) + '%');
+    q('promoBtn').onclick = function(){ openVenueDetail(p.venue_id); };
+    sec.style.display = '';
+  } catch(e) { q('promoSection').style.display = 'none'; }
+}
+
 function renderRecommendations() {
   const sec = q('recsSection');
   const list = q('recsList');
@@ -2296,6 +2320,7 @@ async function loadMap() {
     }
     renderMapList();
     renderRecommendations();
+    loadPromo();
   } catch(e) {
     q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;

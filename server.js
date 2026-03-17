@@ -470,6 +470,20 @@ async function migrate() {
     )
   `);
 
+  // Promotions
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_promotions (
+      id SERIAL PRIMARY KEY,
+      venue_id INT NOT NULL,
+      package TEXT NOT NULL DEFAULT 'start',
+      promo_text TEXT NOT NULL DEFAULT '',
+      starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ends_at TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
 
   // ── V27: NEW CHOICE SYSTEM (parallel to old category/reason) ──
@@ -3328,6 +3342,22 @@ app.post("/api/city-nominations/:id/vote", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
 });
 
+// GET /api/promo — active promotion for webapp
+app.get("/api/promo", async (_req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT p.id, p.venue_id, p.package, p.promo_text, p.ends_at,
+             v.name AS venue_name, v.city, v.address, v.discount_percent
+      FROM fp1_promotions p
+      JOIN fp1_venues v ON v.id = p.venue_id
+      WHERE p.status='active' AND p.starts_at <= NOW() AND p.ends_at > NOW()
+      ORDER BY CASE p.package WHEN 'premium' THEN 0 WHEN 'boost' THEN 1 ELSE 2 END, p.created_at ASC
+      LIMIT 1
+    `);
+    res.json({ promo: r.rows[0] || null });
+  } catch (e) { res.json({ promo: null }); }
+});
+
 /* ═══════════════════════════════════════════════════════════════
    GET /api/top
 ═══════════════════════════════════════════════════════════════ */
@@ -3698,9 +3728,26 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </script>
     </div>
     <div class="card" style="border:1px solid rgba(255,138,0,.3);background:rgba(255,138,0,.06)">
-      <h2>📣 Reklama w FoxPot</h2>
-      <p style="font-size:13px;color:rgba(255,255,255,.7);margin-bottom:12px">Chcesz więcej gości? Zamów promowanie lokalu w aplikacji FoxPot — wyróżnienie w mapie, powiadomienia dla Fox'ów w okolicy i więcej.</p>
-      <a href="https://t.me/thefoxpot" target="_blank" style="display:block;text-align:center;background:var(--fox);color:#000;font-weight:700;padding:12px;border-radius:var(--radius-sm);text-decoration:none;font-size:14px">📩 Zamów reklamę</a>
+      <h2>📣 Reklama w The FoxPot Club</h2>
+      <p style="font-size:13px;color:rgba(255,255,255,.7);margin-bottom:12px">Promuj swój lokal wśród Fox'ów. Twój lokal pojawi się jako polecany na mapie i w aplikacji.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+        <div style="padding:10px;border-radius:8px;border:1px solid rgba(255,138,0,.25);background:rgba(255,138,0,.06);text-align:center">
+          <div style="font-size:13px;font-weight:800;color:var(--fox)">START</div>
+          <div style="font-size:20px;font-weight:800;margin:4px 0">199 zł</div>
+          <div style="font-size:11px;color:var(--muted)">3 dni promocji</div>
+        </div>
+        <div style="padding:10px;border-radius:8px;border:1px solid rgba(59,130,246,.3);background:rgba(59,130,246,.06);text-align:center">
+          <div style="font-size:13px;font-weight:800;color:#3B82F6">BOOST</div>
+          <div style="font-size:20px;font-weight:800;margin:4px 0">499 zł</div>
+          <div style="font-size:11px;color:var(--muted)">5 dni promocji</div>
+        </div>
+        <div style="padding:10px;border-radius:8px;border:1px solid rgba(139,92,246,.3);background:rgba(139,92,246,.06);text-align:center">
+          <div style="font-size:13px;font-weight:800;color:#8B5CF6">PREMIUM</div>
+          <div style="font-size:20px;font-weight:800;margin:4px 0">799 zł</div>
+          <div style="font-size:11px;color:var(--muted)">7 dni + wideo</div>
+        </div>
+      </div>
+      <a href="https://t.me/thefoxpot" target="_blank" style="display:block;text-align:center;background:var(--fox);color:#000;font-weight:700;padding:12px;border-radius:var(--radius-sm);text-decoration:none;font-size:14px">📩 Zamów promocję</a>
     </div>
     <div class="card">
       <h2>⚙️ Ustawienia lokalu</h2>
@@ -4123,6 +4170,11 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       (SELECT COUNT(*)::int FROM fp1_city_votes v WHERE v.city_nomination_id=n.id AND v.is_member=FALSE) AS guest_votes
     FROM fp1_city_nominations n ORDER BY total_votes DESC
   `);
+  const promos = await pool.query(`
+    SELECT p.*, v.name AS venue_name FROM fp1_promotions p
+    JOIN fp1_venues v ON v.id=p.venue_id
+    ORDER BY p.status='active' DESC, p.ends_at DESC LIMIT 20
+  `);
   const spotsLeft = await founderSpotsLeft();
   const districtStats = await pool.query(`SELECT district,COUNT(*)::int AS cnt FROM fp1_foxes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC`);
   const achStats = await pool.query(`SELECT achievement_code,COUNT(*)::int AS cnt FROM fp1_achievements GROUP BY achievement_code ORDER BY cnt DESC LIMIT 10`);
@@ -4180,6 +4232,21 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       </form>
     </div>`;
   }).join("");
+  const promoStatusColors = {active:'#22C55E',ended:'#6B7280',cancelled:'#EF4444'};
+  const promoHtml = promos.rows.length === 0 ? '<div class="muted">Brak promocji</div>' : promos.rows.map(p => {
+    const isActive = p.status === 'active' && new Date(p.ends_at) > new Date();
+    const sc = isActive ? promoStatusColors.active : promoStatusColors[p.status] || '#6B7280';
+    const start = new Date(p.starts_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"});
+    const end = new Date(p.ends_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"});
+    return `<div style="padding:8px;margin:4px 0;border-radius:8px;border:1px solid ${sc}40;background:${sc}08">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b>${escapeHtml(p.venue_name)}</b> · <span style="color:${sc};font-weight:700;font-size:12px">${p.package.toUpperCase()}</span></div>
+        <span style="font-size:11px;color:${sc};font-weight:700">${isActive?'● Aktywna':'Zakończona'}</span>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${start} — ${end}${p.promo_text?' · '+escapeHtml(p.promo_text):''}</div>
+      ${isActive?`<form method="POST" action="/admin/promo/${p.id}/deactivate" style="margin-top:6px"><button type="submit" class="danger" style="font-size:11px;padding:3px 10px">Dezaktywuj</button></form>`:''}
+    </div>`;
+  }).join("");
   const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
 
   res.send(pageShell("Admin — FoxPot", `
@@ -4191,6 +4258,26 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
     <div class="card"><h2>🗳️ Głosowanie na lokale (${noms.rows.length})</h2>${nomsHtml}</div>
     <div class="card"><h2>🏙️ Głosowanie na miasta (${cityNoms.rows.length})</h2>${cityNomsHtml}</div>
+    <div class="card">
+      <h2>📣 Promocje lokali (${promos.rows.length})</h2>
+      ${promoHtml}
+      <div style="margin-top:12px;padding:10px;border:1px dashed rgba(255,138,0,.3);border-radius:8px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">➕ Nowa promocja</div>
+        <form method="POST" action="/admin/promo/create">
+          <div class="grid2" style="margin-bottom:6px">
+            <div><label>ID lokalu</label><input name="venue_id" type="number" required placeholder="np. 1"/></div>
+            <div><label>Pakiet</label><select name="package"><option value="start">START (3 dni)</option><option value="boost">BOOST (5 dni)</option><option value="premium">PREMIUM (7 dni)</option></select></div>
+          </div>
+          <div class="grid2" style="margin-bottom:6px">
+            <div><label>Od</label><input name="starts_at" type="date" required value="${new Date().toISOString().slice(0,10)}"/></div>
+            <div><label>Do</label><input name="ends_at" type="date" required value="${new Date(Date.now()+3*86400000).toISOString().slice(0,10)}"/></div>
+          </div>
+          <label>Tekst promocyjny (opcjonalnie)</label>
+          <input name="promo_text" maxlength="200" placeholder="np. Nowe menu na lato!" style="margin-bottom:8px"/>
+          <button type="submit" style="width:100%">📣 Aktywuj promocję</button>
+        </form>
+      </div>
+    </div>
     <div class="card">
       <h2>🚀 Ranking wzrostu</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -4375,6 +4462,25 @@ app.post("/admin/city-nominations/:id/status", requireAdminAuth, async (req, res
   if (!CITY_NOM_STATUSES.includes(status)) return res.redirect(`/admin?err=${encodeURIComponent("Nieprawidłowy status")}`);
   await pool.query(`UPDATE fp1_city_nominations SET status=$1, updated_at=NOW() WHERE id=$2`, [status, cityId]);
   res.redirect(`/admin?ok=${encodeURIComponent(`Status miasta zmieniony na: ${CITY_NOM_LABELS[status]}`)}`);
+});
+
+app.post("/admin/promo/create", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.body.venue_id);
+  const pkg = ["start","boost","premium"].includes(req.body.package) ? req.body.package : "start";
+  const text = String(req.body.promo_text || "").trim().slice(0, 200);
+  const startsAt = req.body.starts_at || new Date().toISOString().slice(0,10);
+  const endsAt = req.body.ends_at;
+  if (!venueId || !endsAt) return res.redirect(`/admin?err=${encodeURIComponent("Brak danych")}`);
+  await pool.query(
+    `INSERT INTO fp1_promotions(venue_id,package,promo_text,starts_at,ends_at,status) VALUES($1,$2,$3,$4,$5,'active')`,
+    [venueId, pkg, text, startsAt, endsAt]
+  );
+  res.redirect(`/admin?ok=${encodeURIComponent(`Promocja ${pkg.toUpperCase()} aktywowana ✅`)}`);
+});
+
+app.post("/admin/promo/:id/deactivate", requireAdminAuth, async (req, res) => {
+  await pool.query(`UPDATE fp1_promotions SET status='cancelled' WHERE id=$1`, [Number(req.params.id)]);
+  res.redirect(`/admin?ok=${encodeURIComponent("Promocja dezaktywowana")}`);
 });
 
 app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
