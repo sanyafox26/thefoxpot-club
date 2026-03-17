@@ -387,7 +387,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="card">
         <div class="card-title">📍 Informacje</div>
         <div class="info-grid">
-          <div class="info-cell"><div class="info-lbl">Miasto</div><div class="info-val" id="pCity">Warsaw</div></div>
+          <div class="info-cell"><div class="info-lbl">Miasto</div><div class="info-val" id="pCity">Warszawa</div></div>
           <div class="info-cell">
             <div class="info-lbl">Dzielnica</div>
             <div class="info-val">
@@ -838,7 +838,7 @@ async function loadProfile(){
     else{pct=100;lbl='🏆 Maksymalny!'}
     q('pStreakBar').style.width=Math.min(100,pct)+'%';
     q('pStreakLbl').textContent=lbl;
-    q('pCity').textContent=d.city||'Warsaw';
+    q('pCity').textContent=d.city||'Warszawa';
     q('pDistrict').textContent=d.district||'—';
     q('pFreeze').textContent=d.streak_freeze_available??0;
     q('pSpinToday').textContent=d.spun_today?'✅ '+(d.spin_prize||'kręcono'):'❌ nie kręcono';

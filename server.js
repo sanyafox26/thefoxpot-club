@@ -225,7 +225,7 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS fp1_venues (
       id           BIGSERIAL PRIMARY KEY,
       name         TEXT        NOT NULL DEFAULT 'Venue',
-      city         TEXT        NOT NULL DEFAULT 'Warsaw',
+      city         TEXT        NOT NULL DEFAULT 'Warszawa',
       address      TEXT        NOT NULL DEFAULT '',
       pin_hash     TEXT,
       pin_salt     TEXT,
@@ -243,7 +243,7 @@ async function migrate() {
       rating               INT         NOT NULL DEFAULT 1,
       invites              INT         NOT NULL DEFAULT 3,
       invites_from_5visits INT         NOT NULL DEFAULT 0,
-      city                 TEXT        NOT NULL DEFAULT 'Warsaw',
+      city                 TEXT        NOT NULL DEFAULT 'Warszawa',
       invited_by_user_id   BIGINT,
       invite_code_used     TEXT,
       invite_used_at       TIMESTAMPTZ,
@@ -515,7 +515,7 @@ async function migrate() {
     WITH ranked AS (
       SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
       FROM fp1_venues
-      WHERE pioneer_number IS NULL AND approved=TRUE AND LOWER(city)='warsaw'
+      WHERE pioneer_number IS NULL AND approved=TRUE AND LOWER(city) IN ('warsaw','warszawa')
     )
     UPDATE fp1_venues SET pioneer_number=ranked.rn
     FROM ranked WHERE fp1_venues.id=ranked.id AND ranked.rn <= 50
@@ -562,11 +562,11 @@ async function migrate() {
     const hash = pinHash("123456", salt);
     // Demo venues with real Warsaw coordinates
     const demoVenues = [
-     { name: "Fox Pub Centrum",    city: "Warsaw", address: "ul. Nowy Świat 22",       lat: 52.2319, lng: 21.0222, is_trial: false, discount: 10 },
-      { name: "Złoty Kebab",        city: "Warsaw", address: "ul. Chmielna 15",          lat: 52.2297, lng: 21.0122, is_trial: true,  discount: 10 },
-      { name: "Craft Beer Corner",  city: "Warsaw", address: "ul. Mokotowska 48",        lat: 52.2180, lng: 21.0180, is_trial: false, discount: 10 },
-      { name: "Praga Street Food",  city: "Warsaw", address: "ul. Ząbkowska 6",          lat: 52.2506, lng: 21.0444, is_trial: true,  discount: 10 },
-      { name: "Bistro Żoliborz",    city: "Warsaw", address: "pl. Wilsona 2",            lat: 52.2680, lng: 20.9934, is_trial: false, discount: 10 },
+     { name: "Fox Pub Centrum",    city: "Warszawa", address: "ul. Nowy Świat 22",       lat: 52.2319, lng: 21.0222, is_trial: false, discount: 10 },
+      { name: "Złoty Kebab",        city: "Warszawa", address: "ul. Chmielna 15",          lat: 52.2297, lng: 21.0122, is_trial: true,  discount: 10 },
+      { name: "Craft Beer Corner",  city: "Warszawa", address: "ul. Mokotowska 48",        lat: 52.2180, lng: 21.0180, is_trial: false, discount: 10 },
+      { name: "Praga Street Food",  city: "Warszawa", address: "ul. Ząbkowska 6",          lat: 52.2506, lng: 21.0444, is_trial: true,  discount: 10 },
+      { name: "Bistro Żoliborz",    city: "Warszawa", address: "pl. Wilsona 2",            lat: 52.2680, lng: 20.9934, is_trial: false, discount: 10 },
     ];
     for (const v of demoVenues) {
       await pool.query(
@@ -1036,7 +1036,7 @@ async function upsertFox(ctx) {
   const tgId = String(ctx.from.id);
   const username = tgDisplayName(ctx.from);
   await pool.query(
-    `INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,1,3,'Warsaw')
+    `INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,1,3,'Warszawa')
      ON CONFLICT(user_id) DO UPDATE SET username=COALESCE(EXCLUDED.username,fp1_foxes.username)`,
     [tgId, username]
   );
@@ -2614,7 +2614,7 @@ async function applyViolation(client, user_id, obligation_id, new_violation_coun
     try {
       const msg = new_violation_count >= 3
         ? `⛔ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБан: 7 днів\n\nЛічильник скинеться після відбуття бану.`
-        : `⚠️ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБлок до ранку (Warsaw time)`;
+        : `⚠️ Порушення #${new_violation_count}!\n\n${penaltyPoints} балів\nБлок do rana (czas warszawski)`;
       await bot.telegram.sendMessage(Number(user_id), msg);
     } catch {}
   }
@@ -2928,7 +2928,7 @@ app.post("/api/venue/:venue_id/start-trial", requireWebAppAuth, async (req, res)
       const username = tgDisplayName(req.tgUser);
       await pool.query(
         `INSERT INTO fp1_foxes(user_id, username, rating, invites, city, trial_active, trial_origin_venue_id, trial_expires_at)
-         VALUES($1, $2, 0, 0, 'Warsaw', TRUE, $3, NOW() + INTERVAL '60 minutes')
+         VALUES($1, $2, 0, 0, 'Warszawa', TRUE, $3, NOW() + INTERVAL '60 minutes')
          ON CONFLICT(user_id) DO NOTHING`,
         [userId, username, venueId]
       );
@@ -3703,7 +3703,120 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Punkty</th><th>Zapr.</th><th>Miasto</th><th>Dzielnica</th><th>Streak</th><th>Pionier</th></tr>${foxesHtml}
       </table>
+    </div>
+    <div class="card" style="border:1px solid rgba(124,92,252,.3);background:rgba(124,92,252,.06)">
+      <h2>📥 Eksport CSV</h2>
+      <p class="muted" style="margin-bottom:12px">Pobierz dane check-inów, wizyt, straw i aktywności Fox'ów.</p>
+      <form id="csvForm" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>Od</label><input type="date" id="csvFrom" value="${new Date(Date.now()-30*86400000).toISOString().slice(0,10)}"/></div>
+        <div><label>Do</label><input type="date" id="csvTo" value="${new Date().toISOString().slice(0,10)}"/></div>
+        <div><label>Dzielnica</label><select id="csvDistrict"><option value="">— wszystkie —</option>${districtStats.rows.map(d=>`<option value="${escapeHtml(d.district)}">${escapeHtml(d.district)} (${d.cnt})</option>`).join("")}</select></div>
+        <div><label>Lokal</label><select id="csvVenue"><option value="">— wszystkie —</option>${venues.rows.map(v=>`<option value="${v.id}">${escapeHtml(v.name)}</option>`).join("")}</select></div>
+      </form>
+      <button type="button" onclick="downloadCsv()" style="width:100%;margin-top:12px;background:rgba(124,92,252,.8)">📥 Pobierz CSV</button>
+      <script>
+        function downloadCsv(){
+          const f=document.getElementById('csvFrom').value;
+          const t=document.getElementById('csvTo').value;
+          const d=document.getElementById('csvDistrict').value;
+          const v=document.getElementById('csvVenue').value;
+          let url='/admin/export-csv?from='+f+'&to='+t;
+          if(d) url+='&district='+encodeURIComponent(d);
+          if(v) url+='&venue_id='+v;
+          window.location.href=url;
+        }
+      </script>
     </div>`, `table th,table td{padding:6px 8px;text-align:left;border-bottom:1px solid #1a1f35}`));
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN CSV EXPORT
+═══════════════════════════════════════════════════════════════ */
+app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
+  try {
+    const { from, to, district, venue_id } = req.query;
+    const dateFrom = from || "2020-01-01";
+    const dateTo = to || "2099-12-31";
+
+    let filters = `WHERE cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')`;
+    const params = [dateFrom, dateTo];
+    let pi = 3;
+
+    if (district) {
+      filters += ` AND f.district = $${pi}`;
+      params.push(district);
+      pi++;
+    }
+    if (venue_id) {
+      filters += ` AND cv.venue_id = $${pi}`;
+      params.push(Number(venue_id));
+      pi++;
+    }
+
+    const rows = await pool.query(`
+      SELECT
+        cv.created_at,
+        cv.user_id,
+        f.username,
+        f.rating,
+        f.district,
+        f.founder_number,
+        f.streak_current,
+        cv.venue_id,
+        v.name AS venue_name,
+        v.city,
+        v.venue_type,
+        v.cuisine,
+        ch.dish_name,
+        ch.agg_category,
+        r.amount,
+        r.discount_saved
+      FROM fp1_counted_visits cv
+      LEFT JOIN fp1_foxes f ON f.user_id = cv.user_id
+      LEFT JOIN fp1_venues v ON v.id = cv.venue_id
+      LEFT JOIN fp1_checkin_choices ch ON ch.checkin_id = (
+        SELECT c.id FROM fp1_checkins c WHERE c.user_id = cv.user_id AND c.venue_id = cv.venue_id
+        AND c.confirmed_at IS NOT NULL AND c.created_at::date = cv.created_at::date
+        ORDER BY c.created_at DESC LIMIT 1
+      )
+      LEFT JOIN fp1_receipts r ON r.user_id = cv.user_id AND r.venue_id = cv.venue_id
+        AND r.created_at::date = cv.created_at::date
+      ${filters}
+      ORDER BY cv.created_at DESC
+      LIMIT 10000
+    `, params);
+
+    const header = "data,user_id,nick,rating,dzielnica,pionier_nr,streak,venue_id,lokal,miasto,typ,kuchnia,danie,kategoria,rachunek,zniżka\n";
+    const csvRows = rows.rows.map(r => {
+      const date = new Date(r.created_at).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+      return [
+        date,
+        r.user_id,
+        r.username || "",
+        r.rating || 0,
+        r.district || "",
+        r.founder_number || "",
+        r.streak_current || 0,
+        r.venue_id,
+        (r.venue_name || "").replace(/[,"\n]/g, " "),
+        r.city || "",
+        r.venue_type || "",
+        (r.cuisine || "").replace(/[,"\n]/g, " "),
+        (r.dish_name || "").replace(/[,"\n]/g, " "),
+        r.agg_category || "",
+        r.amount || "",
+        r.discount_saved || ""
+      ].join(",");
+    }).join("\n");
+
+    const filename = `foxpot_export_${dateFrom}_${dateTo}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send("\uFEFF" + header + csvRows);
+  } catch (e) {
+    console.error("CSV_EXPORT_ERR", e);
+    res.status(500).send("Błąd eksportu: " + String(e?.message || e).slice(0, 200));
+  }
 });
 
 app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
@@ -3714,7 +3827,7 @@ app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
     const foxRow = await pool.query(`SELECT user_id,city FROM fp1_foxes WHERE username=$1 LIMIT 1`, [v.fox_nick.replace(/^@/,"")]);
     if (foxRow.rowCount > 0) {
       const fox = foxRow.rows[0];
-      const sameCity = (fox.city||"Warsaw").toLowerCase() === (v.city||"Warsaw").toLowerCase();
+      const sameCity = (fox.city||"Warszawa").toLowerCase() === (v.city||"Warszawa").toLowerCase();
       const invBonus = sameCity ? 5 : 10, ratBonus = sameCity ? 1 : 2;
       await pool.query(`UPDATE fp1_foxes SET invites=invites+$1,rating=rating+$2 WHERE user_id=$3`, [invBonus, ratBonus, fox.user_id]);
       if (bot) { try { await bot.telegram.sendMessage(Number(fox.user_id), `🎉 Lokal "${v.name}" został zatwierdzony!\n+${invBonus} zaproszeń, +${ratBonus} punktów`); } catch {} }
@@ -3970,7 +4083,7 @@ if (BOT_TOKEN) {
 
           await pool.query(
             `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source)
-             VALUES($1,$2,0,0,'Warsaw',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
+             VALUES($1,$2,0,0,'Warszawa',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
             [userId, username, v.id]
           );
           const founderNum = await assignFounderNumber(userId);
@@ -3993,7 +4106,7 @@ if (BOT_TOKEN) {
         // Must do check-in to activate full Fox.
         await pool.query(
           `INSERT INTO fp1_foxes(user_id,username,rating,invites,city,is_demo,demo_venue_id,join_source)
-           VALUES($1,$2,0,0,'Warsaw',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
+           VALUES($1,$2,0,0,'Warszawa',TRUE,$3,'venue') ON CONFLICT(user_id) DO NOTHING`,
           [userId, username, v.id]
         );
         const founderNum = await assignFounderNumber(userId);
@@ -4011,7 +4124,7 @@ if (BOT_TOKEN) {
       const result = await redeemInviteCode(userId, codeOrInv);
       if (!result.ok) return ctx.reply("❌ Nieprawidłowy kod. Potrzebujesz zaproszenia od Fox lub kodu lokalu.");
 
-      await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,3,3,'Warsaw') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
+      await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,3,3,'Warszawa') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
       const founderNum = await assignFounderNumber(userId);
      let msg = `🦊 Zostałeś zaproszony do The FoxPot Club.\n\nTwój status Fox jest już aktywny.\nZrób pierwszy check-in w lokalu, aby zdobyć pierwszą wizytę i zwiększyć swój rating.`;
       if (founderNum) msg += `\n\n👑 Pionier Fox #${founderNum}`;
@@ -4053,7 +4166,7 @@ if (BOT_TOKEN) {
       const fox = await pool.query(`SELECT district,city,is_deleted FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const f = fox.rows[0];
-      await ctx.reply(`⚙️ Ustawienia\n\n📍 Dzielnica: ${f.district||"nie podano"}\n🏙️ Miasto: ${f.city||"Warsaw"}`,
+      await ctx.reply(`⚙️ Ustawienia\n\n📍 Dzielnica: ${f.district||"nie podano"}\n🏙️ Miasto: ${f.city||"Warszawa"}`,
         Markup.inlineKeyboard([
           [Markup.button.callback("📍 Zmień dzielnicę", "change_district")],
           [Markup.button.callback("🚪 Opuść klub", "leave_club_ask")]
@@ -4226,7 +4339,7 @@ if (BOT_TOKEN) {
 
   bot.command("addvenue", async (ctx) => {
     await upsertFox(ctx);
-    await ctx.reply(`Aby dodać lokal, wyślij dane w formacie:\n\n/newvenue Nazwa | Miasto | Adres | PIN (6 cyfr)\n\nPrzykład:\n/newvenue Pizza Roma | Warsaw | ul. Nowy Świat 5 | 654321\n\nLokal będzie aktywny po zatwierdzeniu przez admina.`);
+    await ctx.reply(`Aby dodać lokal, wyślij dane w formacie:\n\n/newvenue Nazwa | Miasto | Adres | PIN (6 cyfr)\n\nPrzykład:\n/newvenue Pizza Roma | Warszawa | ul. Nowy Świat 5 | 654321\n\nLokal będzie aktywny po zatwierdzeniu przez admina.`);
   });
 
   bot.command("newvenue", async (ctx) => {
