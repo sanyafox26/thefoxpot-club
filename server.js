@@ -2988,6 +2988,28 @@ setInterval(async () => {
   }
 }, 10 * 60 * 1000); // кожні 10 хвилин
 
+// CRON: Weekly backup — sends SQL backup to admin via Telegram (Sunday 03:00 Warsaw)
+let lastBackupDay = null;
+setInterval(async () => {
+  try {
+    if (!bot || !ADMIN_TG_ID) return;
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const day = now.toISOString().slice(0, 10);
+    if (now.getDay() !== 0 || now.getHours() !== 3 || lastBackupDay === day) return;
+    lastBackupDay = day;
+    console.log("[BackupCron] Starting weekly backup...");
+    const sql = await createBackupSQL();
+    const buf = Buffer.from(sql, "utf-8");
+    await bot.telegram.sendDocument(Number(ADMIN_TG_ID), {
+      source: buf,
+      filename: `foxpot_backup_${day}.sql`
+    }, { caption: `💾 Automatyczny backup bazy\n📅 ${day}\n📊 ${(buf.length/1024).toFixed(0)} KB` });
+    console.log(`[BackupCron] Backup sent to admin (${(buf.length/1024).toFixed(0)} KB)`);
+  } catch (e) {
+    console.error("[BackupCron] ERR", e?.message || e);
+  }
+}, 5 * 60 * 1000);
+
 // Demo no-show cron removed — no penalties for venue join. Demo Fox stays until first check-in.
 
 /* ═══════════════════════════════════════════════════════════════
@@ -4317,6 +4339,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       <div class="topbar"><h1>🛡️ Panel Admina</h1><a href="/admin/logout">Wyloguj</a></div>
       ${flash(req)}
       <div class="muted" style="margin-top:8px">👑 Pionier Fox: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
+      <a href="/admin/backup" style="display:inline-block;margin-top:8px;padding:8px 16px;background:rgba(124,92,252,.15);border:1px solid rgba(124,92,252,.3);border-radius:8px;color:#7c5cfc;font-size:12px;font-weight:700;text-decoration:none">💾 Pobierz backup bazy</a>
     </div>
     <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
     <div class="card"><h2>🗳️ Głosowanie na lokale (${noms.rows.length})</h2>${nomsHtml}</div>
@@ -4521,6 +4544,45 @@ app.post("/admin/nominations/:id/status", requireAdminAuth, async (req, res) => 
   if (!NOM_STATUSES.includes(status)) return res.redirect(`/admin?err=${encodeURIComponent("Nieprawidłowy status")}`);
   await pool.query(`UPDATE fp1_nominations SET status=$1, updated_at=NOW() WHERE id=$2`, [status, nomId]);
   res.redirect(`/admin?ok=${encodeURIComponent(`Status zmieniony na: ${NOM_STATUS_LABELS[status]}`)}`);
+});
+
+// ── DATABASE BACKUP ──
+async function createBackupSQL() {
+  const tables = await pool.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'fp1_%' ORDER BY tablename`);
+  let sql = `-- FoxPot Club Database Backup\n-- ${new Date().toISOString()}\n\n`;
+  for (const t of tables.rows) {
+    const name = t.tablename;
+    // Schema
+    const cols = await pool.query(`SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=$1 ORDER BY ordinal_position`, [name]);
+    sql += `-- Table: ${name} (${cols.rows.length} columns)\n`;
+    // Data
+    const data = await pool.query(`SELECT * FROM ${name}`);
+    for (const row of data.rows) {
+      const vals = cols.rows.map(c => {
+        const v = row[c.column_name];
+        if (v === null || v === undefined) return 'NULL';
+        if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+        if (v instanceof Date) return `'${v.toISOString()}'`;
+        return `'${String(v).replace(/'/g, "''")}'`;
+      });
+      sql += `INSERT INTO ${name}(${cols.rows.map(c=>c.column_name).join(',')}) VALUES(${vals.join(',')}) ON CONFLICT DO NOTHING;\n`;
+    }
+    sql += `\n`;
+  }
+  return sql;
+}
+
+app.get("/admin/backup", requireAdminAuth, async (req, res) => {
+  try {
+    const sql = await createBackupSQL();
+    const date = new Date().toISOString().slice(0,10);
+    res.setHeader("Content-Type", "application/sql");
+    res.setHeader("Content-Disposition", `attachment; filename="foxpot_backup_${date}.sql"`);
+    res.send(sql);
+  } catch (e) {
+    console.error("BACKUP_ERR", e);
+    res.status(500).send("Błąd backupu: " + String(e?.message || e).slice(0, 200));
+  }
 });
 
 app.post("/admin/city-nominations/:id/status", requireAdminAuth, async (req, res) => {
