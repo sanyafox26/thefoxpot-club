@@ -715,41 +715,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
     <div id="mapList"></div>
 
-    <!-- Nominations -->
-    <div class="card" style="margin-top:12px">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>🗳️ Zaproponuj lokal</span>
-        <button onclick="toggleNomForm()" style="background:rgba(255,138,0,.15);border:1px solid rgba(255,138,0,.3);border-radius:8px;padding:4px 12px;color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">+ Dodaj</button>
-      </div>
-      <div id="nomForm" style="display:none;margin:10px 0">
-        <input id="nomName" type="text" maxlength="100" placeholder="Nazwa lokalu" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:6px;font-family:var(--font)"/>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
-          <input id="nomCity" type="text" maxlength="60" placeholder="Miasto" value="Warszawa" style="padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px;font-family:var(--font)"/>
-          <input id="nomAddr" type="text" maxlength="200" placeholder="Adres (opcjonalnie)" style="padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px;font-family:var(--font)"/>
-        </div>
-        <button onclick="submitNomination()" style="width:100%;padding:10px;background:var(--fox);border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)">🗳️ Zaproponuj</button>
-        <div id="nomMsg" style="font-size:12px;margin-top:4px"></div>
-      </div>
-      <div id="nomList" style="margin-top:8px"><div class="muted" style="font-size:12px">Ładowanie...</div></div>
-    </div>
-
-    <!-- City voting -->
-    <div class="card" style="margin-top:12px">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>🏙️ Głosuj na miasto</span>
-        <button onclick="toggleCityNomForm()" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:4px 12px;color:#3B82F6;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">+ Dodaj</button>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin:4px 0 8px">W jakim mieście chcesz widzieć FoxPot? Głosuj raz na 30 dni.</div>
-      <div id="cityNomForm" style="display:none;margin:8px 0">
-        <input id="cityNomSearch" type="text" maxlength="100" placeholder="Wpisz nazwę miasta..." style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:6px;font-family:var(--font)" oninput="filterCityNomSuggestions()"/>
-        <div id="cityNomSuggestions" style="margin-bottom:6px"></div>
-        <div id="cityNomCustom" style="display:none">
-          <div style="font-size:12px;color:var(--fox);margin-bottom:6px">Nie ma Twojego miasta? Dodaj je!</div>
-          <button onclick="submitCityNom()" style="width:100%;padding:10px;background:#3B82F6;border:none;border-radius:var(--radius-sm);color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)">🏙️ Dodaj miasto</button>
-        </div>
-        <div id="cityNomMsg" style="font-size:12px;margin-top:4px"></div>
-      </div>
-      <div id="cityNomList" style="margin-top:4px"><div class="muted" style="font-size:12px">Ładowanie...</div></div>
+    <!-- Link to voting page -->
+    <div class="card" style="margin-top:12px;text-align:center">
+      <a href="/voting.html" style="display:block;padding:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:var(--radius-sm);color:#3B82F6;font-weight:700;font-size:14px;text-decoration:none">🗳️ Głosuj na lokale i miasta →</a>
     </div>
   </section>
 
@@ -2212,140 +2180,12 @@ async function loadMap() {
       document.head.appendChild(sc);
     }
     renderMapList();
-    loadNominations();
-    loadCityNominations();
   } catch(e) {
     q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
   } finally {
     q('mapLoading').style.display = 'none';
   }
-}
-
-// ── Nominations ──
-const NOM_STATUS_COLORS={voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',contact:'#8B5CF6',talking:'#EC4899'};
-function getFingerprint(){return (TG_USER?'tg_'+TG_USER.id:'fp_'+navigator.userAgent.slice(0,60)).slice(0,200)}
-function toggleNomForm(){const f=q('nomForm');f.style.display=f.style.display==='none'?'block':'none'}
-async function submitNomination(){
-  const name=q('nomName').value.trim();
-  const city=q('nomCity').value.trim()||'Warszawa';
-  const address=q('nomAddr').value.trim();
-  if(!name||name.length<2){q('nomMsg').innerHTML='<span style="color:var(--red)">Podaj nazwę (min. 2 znaki)</span>';return}
-  try{
-    const r=await fetch(BASE+'/api/nominations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,city,address,fp:getFingerprint()})});
-    const d=await r.json();
-    if(d.error){q('nomMsg').innerHTML=`<span style="color:var(--red)">${esc(d.error)}</span>`;return}
-    q('nomMsg').innerHTML='<span style="color:var(--green)">✅ Dodano!</span>';
-    q('nomName').value='';q('nomAddr').value='';
-    loadNominations();
-  }catch(e){q('nomMsg').innerHTML=`<span style="color:var(--red)">Błąd</span>`}
-}
-async function voteNomination(id){
-  try{
-    const h={'Content-Type':'application/json'};
-    if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
-    const r=await fetch(BASE+'/api/nominations/'+id+'/vote',{method:'POST',headers:h,body:JSON.stringify({fp:getFingerprint()})});
-    const d=await r.json();
-    if(d.error){alert(d.error);return}
-    loadNominations();
-  }catch(e){alert('Błąd')}
-}
-async function loadNominations(){
-  try{
-    const h={};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
-    const r=await fetch(BASE+'/api/nominations?fp='+encodeURIComponent(getFingerprint()),{headers:h});
-    const d=await r.json();
-    const list=d.nominations||[];
-    if(list.length===0){q('nomList').innerHTML='<div class="muted" style="font-size:12px">Brak propozycji — bądź pierwszy!</div>';return}
-    q('nomList').innerHTML=list.map(n=>{
-      const sc=NOM_STATUS_COLORS[n.status]||'#888';
-      const pct=Math.min(100,Math.round(n.votes/n.vote_threshold*100));
-      return `<div style="padding:8px;margin:4px 0;border-radius:8px;border:1px solid ${sc}30;background:${sc}08">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:13px"><b>${esc(n.name)}</b> · <span class="muted">${esc(n.city)}</span></div>
-          <span style="font-size:10px;color:${sc};font-weight:700">${esc(n.status_label)}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
-          <div style="flex:1;height:4px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${sc};border-radius:2px"></div></div>
-          <span style="font-size:11px;color:var(--muted)">${n.votes}/${n.vote_threshold}</span>
-          ${n.my_vote?'<span style="font-size:11px;color:var(--green)">✅</span>'
-            :`<button onclick="voteNomination(${n.id})" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:6px;padding:2px 10px;color:#3B82F6;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font)">👍 Głosuj</button>`}
-        </div>
-      </div>`;
-    }).join('');
-  }catch(e){q('nomList').innerHTML='<div class="muted">Błąd</div>'}
-}
-
-// ── City Nominations ──
-const KNOWN_PL_CITIES=["Warszawa","Kraków","Wrocław","Gdańsk","Poznań","Łódź","Szczecin","Bydgoszcz","Lublin","Białystok","Katowice","Gdynia","Częstochowa","Radom","Toruń","Kielce","Rzeszów","Olsztyn","Opole","Gliwice","Zabrze","Sosnowiec","Zielona Góra","Bytom","Rybnik","Tychy","Legnica","Tarnów","Płock","Elbląg","Siedlce","Zamość","Nowy Sącz","Piła"];
-let cityNomCooldown=null;
-function toggleCityNomForm(){const f=q('cityNomForm');f.style.display=f.style.display==='none'?'block':'none';if(f.style.display==='block')filterCityNomSuggestions()}
-function filterCityNomSuggestions(){
-  const v=q('cityNomSearch').value.trim().toLowerCase();
-  const sg=q('cityNomSuggestions');
-  const custom=q('cityNomCustom');
-  if(!v){sg.innerHTML='';custom.style.display='none';return}
-  const matches=KNOWN_PL_CITIES.filter(c=>c.toLowerCase().includes(v)).slice(0,6);
-  if(matches.length>0){
-    sg.innerHTML=matches.map(c=>`<button onclick="submitCityNomByName('${c.replace(/'/g,"\\'")}')" style="display:inline-block;margin:2px;padding:6px 12px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);border-radius:8px;color:#3B82F6;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)">${esc(c)}</button>`).join('');
-    custom.style.display=matches.some(c=>c.toLowerCase()===v)?'none':'block';
-  } else {
-    sg.innerHTML='';custom.style.display='block';
-  }
-}
-async function submitCityNomByName(name){
-  try{
-    const r=await fetch(BASE+'/api/city-nominations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,fp:getFingerprint()})});
-    const d=await r.json();
-    if(d.error&&d.city_id){voteCity(d.city_id);return}
-    if(d.error){q('cityNomMsg').innerHTML=`<span style="color:var(--red)">${esc(d.error)}</span>`;return}
-    // Auto-vote on created city
-    voteCity(d.city_id);
-  }catch(e){q('cityNomMsg').innerHTML='<span style="color:var(--red)">Błąd</span>'}
-}
-async function submitCityNom(){
-  const name=q('cityNomSearch').value.trim();
-  if(!name||name.length<2){q('cityNomMsg').innerHTML='<span style="color:var(--red)">Min. 2 znaki</span>';return}
-  submitCityNomByName(name);
-}
-async function voteCity(id){
-  try{
-    const h={'Content-Type':'application/json'};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
-    const r=await fetch(BASE+'/api/city-nominations/'+id+'/vote',{method:'POST',headers:h,body:JSON.stringify({fp:getFingerprint()})});
-    const d=await r.json();
-    if(d.error){q('cityNomMsg').innerHTML=`<span style="color:var(--fox)">${esc(d.error)}</span>`;loadCityNominations();return}
-    q('cityNomMsg').innerHTML='<span style="color:var(--green)">✅ Zagłosowano!</span>';
-    q('cityNomSearch').value='';q('cityNomSuggestions').innerHTML='';q('cityNomCustom').style.display='none';
-    loadCityNominations();
-  }catch(e){q('cityNomMsg').innerHTML='<span style="color:var(--red)">Błąd</span>'}
-}
-async function loadCityNominations(){
-  try{
-    const h={};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
-    const r=await fetch(BASE+'/api/city-nominations?fp='+encodeURIComponent(getFingerprint()),{headers:h});
-    const d=await r.json();
-    const list=(d.cities||[]).slice(0,10);
-    cityNomCooldown=d.can_vote_after;
-    if(list.length===0){q('cityNomList').innerHTML='<div class="muted" style="font-size:12px">Brak głosów — zaproponuj miasto!</div>';return}
-    const sc={voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',planned:'#8B5CF6',not_now:'#EF4444'};
-    q('cityNomList').innerHTML=list.map(n=>{
-      const c=sc[n.status]||'#888';
-      const pct=Math.min(100,Math.round(n.votes/n.vote_threshold*100));
-      const cooldownActive=cityNomCooldown&&new Date(cityNomCooldown)>new Date();
-      return `<div style="padding:6px 8px;margin:3px 0;border-radius:6px;border:1px solid ${c}25;background:${c}06;display:flex;align-items:center;gap:8px">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.name)}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
-            <div style="flex:1;height:3px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${c};border-radius:2px"></div></div>
-            <span style="font-size:10px;color:var(--muted);white-space:nowrap">${n.votes}/${n.vote_threshold}</span>
-          </div>
-        </div>
-        <span style="font-size:9px;color:${c};font-weight:700;white-space:nowrap">${esc(n.status_label)}</span>
-        ${n.my_vote?'<span style="font-size:11px">✅</span>'
-          :(cooldownActive?'':`<button onclick="voteCity(${n.id})" style="background:${c}18;border:1px solid ${c}30;border-radius:5px;padding:2px 8px;color:${c};font-size:10px;font-weight:700;cursor:pointer;font-family:var(--font);white-space:nowrap">👍</button>`)}
-      </div>`;
-    }).join('');
-  }catch(e){q('cityNomList').innerHTML='<div class="muted">Błąd</div>'}
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="theme-color" content="#0a0b14"/>
+<title>Głosuj i dodawaj — The FoxPot Club</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#0a0b14;--bg2:#10121f;--bg3:#161829;--text:#e8e6f0;--muted:rgba(255,255,255,.45);--fox:#FF8A00;--green:#2ecc71;--red:#ef4444;--gold:#FFD700;--border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.12);--radius:16px;--radius-sm:12px;--font:'Outfit',sans-serif;--card-bg:#12142280;--card-border:rgba(255,255,255,.06)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;padding:16px;padding-bottom:80px}
+.card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card-title{font-size:15px;font-weight:800;margin-bottom:10px}
+.muted{color:var(--muted);font-size:12px}
+.d-btn{display:inline-block;margin:2px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);border:1px solid var(--border2);background:var(--bg3);color:var(--text)}
+.d-btn:hover{border-color:var(--fox)}
+input,select{width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;font-family:var(--font);outline:none}
+button{font-family:var(--font);cursor:pointer;border:none}
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;text-decoration:none;margin-bottom:12px}
+.back-link:hover{color:var(--text)}
+.tab-bar{display:flex;gap:4px;margin-bottom:12px}
+.tab-btn{flex:1;padding:10px;text-align:center;border-radius:var(--radius-sm);font-size:13px;font-weight:700;background:var(--bg3);color:var(--muted);border:1px solid var(--border2);cursor:pointer}
+.tab-btn.active{background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.3);color:#3B82F6}
+.place-item{padding:8px;margin:3px 0;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-size:13px}
+.place-item:hover{border-color:var(--fox)}
+.place-item .addr{font-size:11px;color:var(--muted);margin-top:2px}
+</style>
+</head>
+<body>
+<a href="/webapp.html" class="back-link">⬅️ Wróć do aplikacji</a>
+<h1 style="font-size:20px;font-weight:800;margin-bottom:4px">🗳️ Głosuj i dodawaj</h1>
+<p class="muted" style="margin-bottom:14px">Zaproponuj lokal lub miasto dla FoxPot Club</p>
+
+<div class="tab-bar">
+  <button class="tab-btn active" id="tabVenue" onclick="switchTab('venue')">🍽 Lokale</button>
+  <button class="tab-btn" id="tabCity" onclick="switchTab('city')">🏙️ Miasta</button>
+</div>
+
+<!-- VENUE TAB -->
+<div id="venueTab">
+  <div class="card">
+    <div class="card-title">🔍 Znajdź lokal</div>
+    <div style="margin-bottom:8px">
+      <select id="venueCity" style="margin-bottom:6px" onchange="clearPlaceResults()">
+        <option value="Warszawa">Warszawa</option>
+        <option value="Kraków">Kraków</option>
+        <option value="Wrocław">Wrocław</option>
+        <option value="Gdańsk">Gdańsk</option>
+        <option value="Poznań">Poznań</option>
+        <option value="Łódź">Łódź</option>
+        <option value="">Inne miasto</option>
+      </select>
+      <input id="venueSearch" type="text" placeholder="Wpisz nazwę lokalu..." oninput="searchPlaces()" autocomplete="off"/>
+    </div>
+    <div id="placeResults"></div>
+    <div id="manualFallback" style="display:none;margin-top:10px;padding:10px;border-radius:var(--radius-sm);border:1px solid rgba(255,138,0,.2);background:rgba(255,138,0,.06)">
+      <div style="font-size:12px;color:var(--fox);font-weight:700;margin-bottom:8px">Nie ma tego lokalu? Dodaj go!</div>
+      <input id="manualName" type="text" maxlength="100" placeholder="Nazwa lokalu" style="margin-bottom:6px"/>
+      <input id="manualCity" type="text" maxlength="60" placeholder="Miasto" style="margin-bottom:6px"/>
+      <input id="manualAddr" type="text" maxlength="200" placeholder="Adres (opcjonalnie)" style="margin-bottom:6px"/>
+      <button onclick="submitManualNom()" style="width:100%;padding:10px;background:var(--fox);border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:13px">🗳️ Zaproponuj lokal</button>
+    </div>
+    <div id="venueMsg" style="font-size:12px;margin-top:6px"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📊 Głosowanie na lokale</div>
+    <div id="nomList"><div class="muted">Ładowanie...</div></div>
+  </div>
+</div>
+
+<!-- CITY TAB -->
+<div id="cityTab" style="display:none">
+  <div class="card">
+    <div class="card-title">🏙️ Zaproponuj miasto</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">W jakim mieście chcesz widzieć FoxPot? Głosuj raz na 30 dni.</div>
+    <input id="cityNomSearch" type="text" maxlength="100" placeholder="Wpisz nazwę miasta..." oninput="filterCitySuggestions()" autocomplete="off"/>
+    <div id="citySuggestions" style="margin-top:6px"></div>
+    <div id="cityCustom" style="display:none;margin-top:6px">
+      <div style="font-size:12px;color:var(--fox);margin-bottom:6px">Nie ma Twojego miasta? Dodaj je!</div>
+      <button onclick="submitCustomCity()" style="width:100%;padding:10px;background:#3B82F6;border-radius:var(--radius-sm);color:#fff;font-weight:700;font-size:13px">🏙️ Dodaj miasto</button>
+    </div>
+    <div id="cityMsg" style="font-size:12px;margin-top:6px"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📊 TOP miasta</div>
+    <div id="cityNomList"><div class="muted">Ładowanie...</div></div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+const TG = window.Telegram?.WebApp;
+if(TG){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor('#0a0b14')}
+const TG_USER = TG?.initDataUnsafe?.user || null;
+const INIT_DATA = TG?.initData || '';
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function q(id){return document.getElementById(id)}
+function getFingerprint(){return (TG_USER?'tg_'+TG_USER.id:'fp_'+navigator.userAgent.slice(0,60)).slice(0,200)}
+
+// ── Tabs ──
+function switchTab(t){
+  q('venueTab').style.display=t==='venue'?'':'none';
+  q('cityTab').style.display=t==='city'?'':'none';
+  q('tabVenue').className='tab-btn'+(t==='venue'?' active':'');
+  q('tabCity').className='tab-btn'+(t==='city'?' active':'');
+}
+
+// ── Venue nomination with Google Places ──
+let searchTimer=null;
+function clearPlaceResults(){q('placeResults').innerHTML='';q('manualFallback').style.display='none'}
+function searchPlaces(){
+  clearTimeout(searchTimer);
+  const input=q('venueSearch').value.trim();
+  if(input.length<2){q('placeResults').innerHTML='';q('manualFallback').style.display='none';return}
+  searchTimer=setTimeout(async()=>{
+    try{
+      const city=q('venueCity').value;
+      const r=await fetch(BASE+'/api/places-autocomplete?input='+encodeURIComponent(input)+'&city='+encodeURIComponent(city));
+      const d=await r.json();
+      const preds=d.predictions||[];
+      if(preds.length===0){
+        q('placeResults').innerHTML='<div class="muted" style="padding:8px">Brak wyników</div>';
+        q('manualFallback').style.display='block';
+        q('manualName').value=input;
+        q('manualCity').value=city||'';
+        return;
+      }
+      q('placeResults').innerHTML=preds.map(p=>
+        `<div class="place-item" onclick="selectPlace(${esc(JSON.stringify(p).replace(/"/g,'&quot;'))})">
+          <div style="font-weight:600">${esc(p.name)}</div>
+          <div class="addr">${esc(p.address)}</div>
+        </div>`
+      ).join('');
+      q('manualFallback').style.display='block';
+      q('manualName').value=input;
+      q('manualCity').value=city||'';
+    }catch(e){q('placeResults').innerHTML='<div class="muted">Błąd wyszukiwania</div>';q('manualFallback').style.display='block'}
+  },400);
+}
+async function selectPlace(p){
+  const city=q('venueCity').value||p.address.split(',').pop()?.trim()||'Warszawa';
+  try{
+    const r=await fetch(BASE+'/api/nominations',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:p.name,city:city,address:p.address,place_id:p.place_id,fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error&&d.nomination_id){
+      q('venueMsg').innerHTML=`<span style="color:var(--fox)">${esc(d.error)} — zagłosuj!</span>`;
+      voteVenue(d.nomination_id);return;
+    }
+    if(d.error){q('venueMsg').innerHTML=`<span style="color:var(--red)">${esc(d.error)}</span>`;return}
+    q('venueMsg').innerHTML='<span style="color:var(--green)">✅ Dodano! Zagłosuj poniżej.</span>';
+    q('venueSearch').value='';clearPlaceResults();
+    loadNominations();
+  }catch(e){q('venueMsg').innerHTML='<span style="color:var(--red)">Błąd</span>'}
+}
+async function submitManualNom(){
+  const name=q('manualName').value.trim();
+  const city=q('manualCity').value.trim()||'Warszawa';
+  const addr=q('manualAddr').value.trim();
+  if(!name||name.length<2){q('venueMsg').innerHTML='<span style="color:var(--red)">Min. 2 znaki</span>';return}
+  try{
+    const r=await fetch(BASE+'/api/nominations',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,city,address:addr,fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error&&d.nomination_id){voteVenue(d.nomination_id);q('venueMsg').innerHTML=`<span style="color:var(--fox)">${esc(d.error)}</span>`;return}
+    if(d.error){q('venueMsg').innerHTML=`<span style="color:var(--red)">${esc(d.error)}</span>`;return}
+    q('venueMsg').innerHTML='<span style="color:var(--green)">✅ Dodano!</span>';
+    q('manualName').value='';q('manualAddr').value='';q('manualFallback').style.display='none';
+    loadNominations();
+  }catch(e){q('venueMsg').innerHTML='<span style="color:var(--red)">Błąd</span>'}
+}
+async function voteVenue(id){
+  try{
+    const h={'Content-Type':'application/json'};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
+    const r=await fetch(BASE+'/api/nominations/'+id+'/vote',{method:'POST',headers:h,body:JSON.stringify({fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error){q('venueMsg').innerHTML=`<span style="color:var(--fox)">${esc(d.error)}</span>`}
+    loadNominations();
+  }catch(e){}
+}
+const NOM_SC={voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',contact:'#8B5CF6',talking:'#EC4899'};
+async function loadNominations(){
+  try{
+    const h={};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
+    const r=await fetch(BASE+'/api/nominations?fp='+encodeURIComponent(getFingerprint()),{headers:h});
+    const d=await r.json();
+    const list=d.nominations||[];
+    if(!list.length){q('nomList').innerHTML='<div class="muted">Brak propozycji — wyszukaj lokal powyżej!</div>';return}
+    q('nomList').innerHTML=list.map(n=>{
+      const c=NOM_SC[n.status]||'#888';
+      const pct=Math.min(100,Math.round(n.votes/n.vote_threshold*100));
+      return `<div style="padding:8px;margin:4px 0;border-radius:8px;border:1px solid ${c}30;background:${c}08">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px"><b>${esc(n.name)}</b> · <span class="muted">${esc(n.city)}</span></div>
+          <span style="font-size:10px;color:${c};font-weight:700">${esc(n.status_label)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <div style="flex:1;height:4px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${c};border-radius:2px"></div></div>
+          <span style="font-size:11px;color:var(--muted)">${n.votes}/${n.vote_threshold}</span>
+          ${n.my_vote?'<span style="font-size:11px;color:var(--green)">✅</span>'
+            :`<button onclick="voteVenue(${n.id})" style="background:${c}15;border:1px solid ${c}30;border-radius:6px;padding:2px 10px;color:${c};font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font)">👍 Głosuj</button>`}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){q('nomList').innerHTML='<div class="muted">Błąd</div>'}
+}
+
+// ── City voting ──
+const KNOWN_PL=["Warszawa","Kraków","Wrocław","Gdańsk","Poznań","Łódź","Szczecin","Bydgoszcz","Lublin","Białystok","Katowice","Gdynia","Częstochowa","Radom","Toruń","Kielce","Rzeszów","Olsztyn","Opole","Gliwice","Zabrze","Sosnowiec","Zielona Góra","Bytom","Rybnik","Tychy","Legnica","Tarnów","Płock","Elbląg","Siedlce","Zamość","Nowy Sącz","Piła"];
+let cityCooldown=null;
+function filterCitySuggestions(){
+  const v=q('cityNomSearch').value.trim().toLowerCase();
+  if(!v){q('citySuggestions').innerHTML='';q('cityCustom').style.display='none';return}
+  const m=KNOWN_PL.filter(c=>c.toLowerCase().includes(v)).slice(0,6);
+  if(m.length>0){
+    q('citySuggestions').innerHTML=m.map(c=>`<button class="d-btn" onclick="submitCityByName('${c.replace(/'/g,"\\'")}')">${esc(c)}</button>`).join('');
+    q('cityCustom').style.display=m.some(c=>c.toLowerCase()===v)?'none':'block';
+  } else {
+    q('citySuggestions').innerHTML='';q('cityCustom').style.display='block';
+  }
+}
+async function submitCityByName(name){
+  try{
+    const r=await fetch(BASE+'/api/city-nominations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error&&d.city_id){voteCity(d.city_id);return}
+    if(d.error){q('cityMsg').innerHTML=`<span style="color:var(--red)">${esc(d.error)}</span>`;return}
+    voteCity(d.city_id);
+  }catch(e){q('cityMsg').innerHTML='<span style="color:var(--red)">Błąd</span>'}
+}
+function submitCustomCity(){
+  const name=q('cityNomSearch').value.trim();
+  if(!name||name.length<2){q('cityMsg').innerHTML='<span style="color:var(--red)">Min. 2 znaki</span>';return}
+  submitCityByName(name);
+}
+async function voteCity(id){
+  try{
+    const h={'Content-Type':'application/json'};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
+    const r=await fetch(BASE+'/api/city-nominations/'+id+'/vote',{method:'POST',headers:h,body:JSON.stringify({fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error){q('cityMsg').innerHTML=`<span style="color:var(--fox)">${esc(d.error)}</span>`;loadCityNoms();return}
+    q('cityMsg').innerHTML='<span style="color:var(--green)">✅ Zagłosowano!</span>';
+    q('cityNomSearch').value='';q('citySuggestions').innerHTML='';q('cityCustom').style.display='none';
+    loadCityNoms();
+  }catch(e){q('cityMsg').innerHTML='<span style="color:var(--red)">Błąd</span>'}
+}
+const CITY_SC={voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',planned:'#8B5CF6',not_now:'#EF4444'};
+async function loadCityNoms(){
+  try{
+    const h={};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
+    const r=await fetch(BASE+'/api/city-nominations?fp='+encodeURIComponent(getFingerprint()),{headers:h});
+    const d=await r.json();
+    const list=(d.cities||[]).slice(0,10);
+    cityCooldown=d.can_vote_after;
+    if(!list.length){q('cityNomList').innerHTML='<div class="muted">Brak głosów — zaproponuj miasto!</div>';return}
+    q('cityNomList').innerHTML=list.map(n=>{
+      const c=CITY_SC[n.status]||'#888';
+      const pct=Math.min(100,Math.round(n.votes/n.vote_threshold*100));
+      const cd=cityCooldown&&new Date(cityCooldown)>new Date();
+      return `<div style="padding:6px 8px;margin:3px 0;border-radius:6px;border:1px solid ${c}25;background:${c}06;display:flex;align-items:center;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.name)}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+            <div style="flex:1;height:3px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${c};border-radius:2px"></div></div>
+            <span style="font-size:10px;color:var(--muted);white-space:nowrap">${n.votes}/${n.vote_threshold}</span>
+          </div>
+        </div>
+        <span style="font-size:9px;color:${c};font-weight:700;white-space:nowrap">${esc(n.status_label)}</span>
+        ${n.my_vote?'<span style="font-size:11px">✅</span>'
+          :(cd?'':`<button onclick="voteCity(${n.id})" style="background:${c}18;border:1px solid ${c}30;border-radius:5px;padding:2px 8px;color:${c};font-size:10px;font-weight:700;cursor:pointer;font-family:var(--font);white-space:nowrap">👍</button>`)}
+      </div>`;
+    }).join('');
+  }catch(e){q('cityNomList').innerHTML='<div class="muted">Błąd</div>'}
+}
+
+// Init
+loadNominations();
+loadCityNoms();
+</script>
+</body>
+</html>

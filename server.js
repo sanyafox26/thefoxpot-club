@@ -490,6 +490,7 @@ async function migrate() {
       name TEXT NOT NULL,
       city TEXT NOT NULL DEFAULT 'Warszawa',
       address TEXT NOT NULL DEFAULT '',
+      place_id TEXT,
       status TEXT NOT NULL DEFAULT 'voting',
       vote_threshold INT NOT NULL DEFAULT 10,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1725,6 +1726,30 @@ app.get("/api/maps-key", requireWebAppAuth, (_req, res) => {
   const key = process.env.GOOGLE_MAPS_KEY || "";
   if (!key) return res.status(503).json({ error: "Maps key not configured" });
   res.json({ key });
+});
+
+// GET /api/places-autocomplete — proxy for Google Places (no key exposure)
+app.get("/api/places-autocomplete", async (req, res) => {
+  try {
+    const key = process.env.GOOGLE_MAPS_KEY || "";
+    if (!key) return res.json({ predictions: [] });
+    const input = String(req.query.input || "").trim();
+    const city = String(req.query.city || "").trim();
+    if (!input || input.length < 2) return res.json({ predictions: [] });
+    if (rateLimit(`places:${req.ip}`, 30, 60*1000)) return res.status(429).json({ predictions: [] });
+    const location = city ? `&locationbias=circle:30000@${encodeURIComponent(city)}` : "";
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&types=establishment&components=country:pl&language=pl&key=${key}${location}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    res.json({
+      predictions: (data.predictions || []).slice(0, 5).map(p => ({
+        place_id: p.place_id,
+        name: p.structured_formatting?.main_text || p.description,
+        address: p.structured_formatting?.secondary_text || "",
+        description: p.description
+      }))
+    });
+  } catch (e) { res.json({ predictions: [] }); }
 });
 
 // GET /api/venues
@@ -3106,12 +3131,18 @@ app.post("/api/nominations", async (req, res) => {
     const name = String(req.body.name || "").trim().slice(0, 100);
     const city = String(req.body.city || "Warszawa").trim().slice(0, 60);
     const address = String(req.body.address || "").trim().slice(0, 200);
+    const place_id = req.body.place_id ? String(req.body.place_id).trim().slice(0, 200) : null;
     if (!name || name.length < 2) return res.status(400).json({ error: "Podaj nazwę lokalu (min. 2 znaki)" });
     const fp = req.body.fp || req.ip || "anon";
     if (rateLimit(`nom_create:${fp}`, 3, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele propozycji. Spróbuj za godzinę." });
+    // Dedup by place_id or name+city
+    if (place_id) {
+      const dupP = await pool.query(`SELECT id FROM fp1_nominations WHERE place_id=$1 AND status NOT IN ('rejected') LIMIT 1`, [place_id]);
+      if (dupP.rowCount > 0) return res.status(409).json({ error: "Ten lokal już został zaproponowany", nomination_id: dupP.rows[0].id });
+    }
     const dup = await pool.query(`SELECT id FROM fp1_nominations WHERE LOWER(name)=LOWER($1) AND LOWER(city)=LOWER($2) AND status NOT IN ('rejected') LIMIT 1`, [name, city]);
     if (dup.rowCount > 0) return res.status(409).json({ error: "Ten lokal już został zaproponowany", nomination_id: dup.rows[0].id });
-    const r = await pool.query(`INSERT INTO fp1_nominations(name,city,address) VALUES($1,$2,$3) RETURNING id`, [name, city, address]);
+    const r = await pool.query(`INSERT INTO fp1_nominations(name,city,address,place_id) VALUES($1,$2,$3,$4) RETURNING id`, [name, city, address, place_id]);
     res.json({ ok: true, nomination_id: r.rows[0].id });
   } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
 });
