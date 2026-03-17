@@ -1885,7 +1885,7 @@ function renderMapList() {
     const isTopVenue = v.is_top_alltime||v.is_top_year||v.is_top_month||v.is_top_week;
     const iconBg = v.is_top_alltime?'rgba(139,92,246,.2)':v.is_top_year?'rgba(255,138,0,.2)':v.is_top_month?'rgba(59,130,246,.2)':v.is_top_week?'rgba(34,197,94,.2)':'rgba(107,114,128,.1)';
     const iconBorder = v.is_top_alltime?'rgba(139,92,246,.4)':v.is_top_year?'rgba(255,138,0,.4)':v.is_top_month?'rgba(59,130,246,.4)':v.is_top_week?'rgba(34,197,94,.4)':'rgba(107,114,128,.2)';
-    const icon = v.is_top_alltime?'⭐':v.is_top_year?'🏆':v.is_top_month?'👑':v.is_top_week?'🔥':'🏪';
+    const icon = v.is_top_alltime?'⭐':isTopVenue?'🏆':'🏪';
     return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon" style="background:${iconBg};border-color:${iconBorder}">${icon}</div>
       <div class="venue-map-info" style="flex:1">
