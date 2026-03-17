@@ -712,6 +712,12 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
    <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
 
+    <!-- Recommendations -->
+    <div id="recsSection" style="display:none;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px">⭐ Polecane dla Ciebie</div>
+      <div id="recsList"></div>
+    </div>
+
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
     <div id="mapList"></div>
 
@@ -2171,6 +2177,65 @@ async function startTrial(venueId) {
   TG?.HapticFeedback?.selectionChanged();
   initVenuePhotos(v.id);
 }
+function renderRecommendations() {
+  const sec = q('recsSection');
+  const list = q('recsList');
+  if (!sec || !S_map.isFox || !S_map.venues.length) { if(sec) sec.style.display='none'; return; }
+
+  const myDistrict = S.district || S.profile?.district || null;
+  const visited = new Set(S_map.venues.filter(v => v.my_visits > 0).map(v => v.id));
+
+  // Find venues Fox visited to get preferred types
+  const visitedVenues = S_map.venues.filter(v => v.my_visits > 0);
+  const typeCounts = {};
+  visitedVenues.forEach(v => { if(v.venue_type) typeCounts[v.venue_type] = (typeCounts[v.venue_type]||0) + v.my_visits; });
+  const prefType = Object.entries(typeCounts).sort((a,b) => b[1]-a[1])[0]?.[0] || null;
+
+  // Candidates: not visited, approved
+  const candidates = S_map.venues.filter(v => !visited.has(v.id));
+  if (!candidates.length) { sec.style.display='none'; return; }
+
+  // Score each candidate
+  candidates.forEach(v => {
+    let score = 0;
+    // Same district bonus (highest priority)
+    if (myDistrict && v.address && v.address.toLowerCase().includes(myDistrict.toLowerCase())) score += 100;
+    if (myDistrict && v.city && v.city.toLowerCase().includes(myDistrict.toLowerCase())) score += 50;
+    // Same venue type
+    if (prefType && v.venue_type === prefType) score += 30;
+    // Popularity
+    score += Math.min(50, (v.total_visits || 0) / 2);
+    // TOP venue bonus
+    if (v.is_top_week) score += 10;
+    if (v.is_top_month) score += 20;
+    if (v.is_top_year) score += 30;
+    // Has photos bonus
+    if (v.has_photos) score += 5;
+    // Pioneer bonus
+    if (v.pioneer_number) score += 5;
+    v._recScore = score;
+  });
+
+  const top3 = candidates.sort((a,b) => b._recScore - a._recScore).slice(0, 3);
+  if (!top3.length) { sec.style.display='none'; return; }
+
+  const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
+
+  list.innerHTML = top3.map(v => {
+    const typeLabel = typeMap[v.venue_type] || '';
+    const visits = v.total_visits || 0;
+    return `<div onclick="openVenueDetail(${v.id})" style="padding:10px;margin:4px 0;border-radius:10px;border:1px solid rgba(255,138,0,.2);background:rgba(255,138,0,.04);cursor:pointer;display:flex;align-items:center;gap:10px">
+      <div style="font-size:24px;width:36px;text-align:center">${v.has_photos?'📸':'🏪'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.name)}</div>
+        <div style="font-size:11px;color:var(--muted)">${typeLabel}${typeLabel && v.cuisine ? ' · ' : ''}${esc(v.cuisine||'')}${visits ? ' · '+visits+' wizyt' : ''}</div>
+      </div>
+      <div style="font-size:12px;color:var(--fox);font-weight:700">${v.discount_percent||10}%</div>
+    </div>`;
+  }).join('');
+  sec.style.display = '';
+}
+
 async function loadMap() {
   if (S_map.loaded) return;
   S_map.loaded = true;
@@ -2187,6 +2252,7 @@ async function loadMap() {
       document.head.appendChild(sc);
     }
     renderMapList();
+    renderRecommendations();
   } catch(e) {
     q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
