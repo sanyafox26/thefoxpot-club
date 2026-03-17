@@ -2247,74 +2247,67 @@ async function loadVenueMenu(venueId, btn) {
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }
 
-// ── Recommendation scoring engine ──
-function scoreVenues(venues) {
-  const myDistrict = S.district || S.profile?.district || null;
-  const visited = new Set(venues.filter(v => v.my_visits > 0).map(v => v.id));
-  const visitedVenues = venues.filter(v => v.my_visits > 0);
-  const typeCounts = {};
-  visitedVenues.forEach(v => { if(v.venue_type) typeCounts[v.venue_type] = (typeCounts[v.venue_type]||0) + v.my_visits; });
-  const prefType = Object.entries(typeCounts).sort((a,b) => b[1]-a[1])[0]?.[0] || null;
-  const candidates = venues.filter(v => !visited.has(v.id));
-  candidates.forEach(v => {
-    let s = 0;
-    if (myDistrict && v.address && v.address.toLowerCase().includes(myDistrict.toLowerCase())) s += 100;
-    if (prefType && v.venue_type === prefType) s += 30;
-    s += Math.min(50, (v.total_visits || 0) / 2);
-    if (v.is_top_week) s += 10; if (v.is_top_month) s += 20; if (v.is_top_year) s += 30;
-    if (v.has_photos) s += 5; if (v.pioneer_number) s += 5;
-    v._recScore = s;
-  });
-  return candidates.sort((a,b) => b._recScore - a._recScore);
+// ── Recommendation slots — never empty ──
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function generateSlotContent(v) {
+  // Generate interesting text from real venue data
+  const templates = [];
+  if (v.top_dish_name) templates.push({ label: 'Czy wiesz, że...', sub: `Najczęściej wybieranym daniem w ${v.name} jest ${v.top_dish_name}!` });
+  if (v.recommended) templates.push({ label: `${v.name} poleca dziś`, sub: v.recommended.split('\n')[0].slice(0,80) });
+  if (v.total_visits > 5) templates.push({ label: 'Popularne wśród Foxów', sub: `${v.name} — już ${v.total_visits} wizyt. Sprawdź dlaczego!` });
+  if (v.my_visits === 0 || v.my_visits === undefined) templates.push({ label: 'Jeszcze tu nie byłeś', sub: `Sprawdź ${v.name}${v.cuisine ? ' · '+v.cuisine : ''}!` });
+  if (v.is_top_week) templates.push({ label: '🔥 Top tygodnia', sub: `${v.name} — najczęściej odwiedzany lokal tego tygodnia!` });
+  if (v.is_top_month) templates.push({ label: '👑 Top miesiąca', sub: `${v.name} — lider wśród lokali w tym miesiącu!` });
+  if (v.discount_percent > 10) templates.push({ label: 'Większa zniżka', sub: `${v.name} oferuje ${v.discount_percent}% zniżki dla Fox'ów!` });
+  if (v.pioneer_number) templates.push({ label: 'Pionier Lokal', sub: `${v.name} — jeden z pierwszych 50 lokali w FoxPot!` });
+  // Fallback
+  const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
+  templates.push({ label: 'Polecane dla Ciebie', sub: (typeMap[v.venue_type]||'') + (v.cuisine ? ' · '+v.cuisine : '') + (v.total_visits ? ' · '+v.total_visits+' wizyt' : '') });
+  return pickRandom(templates);
 }
 
-function fillSlot(slotId, labelId, nameId, subId, discountId, v, label) {
+function fillSlot(slotId, labelId, nameId, subId, discountId, venueOrPromo, labelText, subText) {
   const slot = q(slotId);
-  if (!v) { slot.style.display = 'none'; return; }
-  q(labelId).textContent = label;
-  q(nameId).textContent = v.name || v.venue_name || '';
-  const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
-  const sub = v.promo_text || ((typeMap[v.venue_type]||'') + (v.cuisine ? ' · '+v.cuisine : '') + (v.total_visits ? ' · '+v.total_visits+' wizyt' : ''));
-  q(subId).textContent = sub;
-  q(discountId).textContent = (parseFloat(v.discount_percent)||10) + '%';
-  q(slotId.replace('Slot','RecContent')).onclick = function(){ openVenueDetail(v.venue_id || v.id); };
+  q(labelId).textContent = labelText;
+  q(nameId).textContent = venueOrPromo.name || venueOrPromo.venue_name || '';
+  q(subId).textContent = subText || '';
+  q(discountId).textContent = (parseFloat(venueOrPromo.discount_percent)||10) + '%';
+  q(slotId.replace('Slot','RecContent')).onclick = function(){ openVenueDetail(venueOrPromo.venue_id || venueOrPromo.id); };
   slot.style.display = '';
 }
 
-// SLOT 1 — Profile: nearest/unvisited venue
+// SLOT 1 — Profile
 function renderProfileSlot() {
-  if (!S_map.venues?.length || !S_map.isFox) { q('profileRecSlot').style.display='none'; return; }
-  const ranked = scoreVenues(S_map.venues);
-  const best = ranked[0];
-  if (!best) { q('profileRecSlot').style.display='none'; return; }
-  const myDistrict = S.district || S.profile?.district || null;
-  const isNearby = myDistrict && best.address && best.address.toLowerCase().includes(myDistrict.toLowerCase());
-  const label = isNearby ? 'Partner FoxPot blisko Ciebie' : 'Jeszcze tu nie byłeś';
-  fillSlot('profileRecSlot','profileRecLabel','profileRecName','profileRecSub','profileRecDiscount', best, label);
+  const venues = S_map.venues;
+  if (!venues?.length) { q('profileRecSlot').style.display='none'; return; }
+  const v = pickRandom(venues);
+  const content = generateSlotContent(v);
+  fillSlot('profileRecSlot','profileRecLabel','profileRecName','profileRecSub','profileRecDiscount', v, content.label, content.sub);
 }
 
-// SLOT 2 — Map: promo or system recommendation
+// SLOT 2 — Map: promo priority, then random rotation
 let _promoData = null;
 async function loadMapSlot() {
   // Try promo first
   try {
     const r = await fetch(BASE + '/api/promo');
     const d = await r.json();
-    if (d.promo) { _promoData = d.promo; }
+    if (d.promo) _promoData = d.promo;
   } catch(e) {}
 
   if (_promoData) {
-    fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', _promoData, 'The FoxPot Club poleca');
+    const sub = _promoData.promo_text || (_promoData.city + (_promoData.address ? ' · '+_promoData.address : ''));
+    fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', _promoData, 'The FoxPot Club poleca', sub);
     return;
   }
 
-  // Fallback: system recommendation (different from SLOT 1)
-  if (!S_map.venues?.length || !S_map.isFox) { q('mapRecSlot').style.display='none'; return; }
-  const ranked = scoreVenues(S_map.venues);
-  // Skip first (used in SLOT 1), take second
-  const best = ranked[1] || ranked[0];
-  if (!best) { q('mapRecSlot').style.display='none'; return; }
-  fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', best, 'Polecane dla Ciebie');
+  // No promo — random venue with interesting content
+  const venues = S_map.venues;
+  if (!venues?.length) { q('mapRecSlot').style.display='none'; return; }
+  const v = pickRandom(venues);
+  const content = generateSlotContent(v);
+  fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', v, content.label, content.sub);
 }
 
 async function loadMap() {
