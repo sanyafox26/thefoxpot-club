@@ -1820,7 +1820,7 @@ function updateMapMarkers(venues) {
     const xy = `${v.my_visits||0}/${v.total_visits||0}`;
     const isTop = v.is_top_alltime || v.is_top_year || v.is_top_month || v.is_top_week;
     const markerColor = v.is_top_alltime ? '#8B5CF6' : v.is_top_year ? '#FF8A00' : v.is_top_month ? '#3B82F6' : v.is_top_week ? '#22C55E' : '#6B7280';
-    const markerBorder = v.is_top_alltime ? '#FF8A00' : isTop ? '#FFFFFF' : 'none';
+    const markerBorder = v.is_top_alltime ? '#FF8A00' : 'none';
     const textColor = isTop ? '#FFFFFF' : '#FFFFFF';
     const markerSize = isTop ? 28 : 24;
     const charW = isTop ? 8.5 : 7.5, pad = isTop ? 24 : 20;
