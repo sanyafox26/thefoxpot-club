@@ -483,6 +483,15 @@ async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_promo_orders (
+      id SERIAL PRIMARY KEY,
+      venue_id INT NOT NULL,
+      package TEXT NOT NULL DEFAULT 'start',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
 
@@ -3730,24 +3739,45 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
     <div class="card" style="border:1px solid rgba(255,138,0,.3);background:rgba(255,138,0,.06)">
       <h2>📣 Reklama w The FoxPot Club</h2>
       <p style="font-size:13px;color:rgba(255,255,255,.7);margin-bottom:12px">Promuj swój lokal wśród Fox'ów. Twój lokal pojawi się jako polecany w aplikacji The FoxPot Club.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
-        <div style="padding:10px;border-radius:8px;border:1px solid rgba(255,138,0,.25);background:rgba(255,138,0,.06);text-align:center">
-          <div style="font-size:13px;font-weight:800;color:var(--fox)">START</div>
-          <div style="font-size:20px;font-weight:800;margin:4px 0">199 zł</div>
-          <div style="font-size:11px;color:var(--muted)">3 dni promocji</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <div>
+          <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,138,0,.25);background:rgba(255,138,0,.06);cursor:pointer;text-align:left;color:var(--text);font-family:var(--font)">
+            <span style="font-weight:800;color:var(--fox)">START</span> · <span style="font-weight:800">199 zł</span> · <span style="color:var(--muted);font-size:12px">3 dni</span>
+          </button>
+          <div style="display:none;padding:10px;font-size:12px;color:var(--muted);line-height:1.6">
+            <div>✅ Wyróżnienie lokalu w sekcji „Polecane"</div>
+            <div>✅ Widoczność na górze listy lokali przez 3 dni</div>
+            <div>✅ Etykieta „Polecany" na kartce lokalu</div>
+            <form method="POST" action="/panel/promo-order" style="margin-top:8px"><input type="hidden" name="package" value="start"/><button type="submit" style="width:100%;padding:10px;background:var(--fox);border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:13px;cursor:pointer">📩 Zamów START</button></form>
+          </div>
         </div>
-        <div style="padding:10px;border-radius:8px;border:1px solid rgba(59,130,246,.3);background:rgba(59,130,246,.06);text-align:center">
-          <div style="font-size:13px;font-weight:800;color:#3B82F6">BOOST</div>
-          <div style="font-size:20px;font-weight:800;margin:4px 0">499 zł</div>
-          <div style="font-size:11px;color:var(--muted)">5 dni promocji</div>
+        <div>
+          <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(59,130,246,.3);background:rgba(59,130,246,.06);cursor:pointer;text-align:left;color:var(--text);font-family:var(--font)">
+            <span style="font-weight:800;color:#3B82F6">BOOST</span> · <span style="font-weight:800">499 zł</span> · <span style="color:var(--muted);font-size:12px">5 dni</span>
+          </button>
+          <div style="display:none;padding:10px;font-size:12px;color:var(--muted);line-height:1.6">
+            <div>✅ Wszystko z pakietu START</div>
+            <div>✅ Promocja przez 5 dni</div>
+            <div>✅ Wyróżniony kolor na mapie</div>
+            <div>✅ Post na kanale Telegram FoxPot</div>
+            <form method="POST" action="/panel/promo-order" style="margin-top:8px"><input type="hidden" name="package" value="boost"/><button type="submit" style="width:100%;padding:10px;background:#3B82F6;border:none;border-radius:var(--radius-sm);color:#fff;font-weight:700;font-size:13px;cursor:pointer">📩 Zamów BOOST</button></form>
+          </div>
         </div>
-        <div style="padding:10px;border-radius:8px;border:1px solid rgba(139,92,246,.3);background:rgba(139,92,246,.06);text-align:center">
-          <div style="font-size:13px;font-weight:800;color:#8B5CF6">PREMIUM</div>
-          <div style="font-size:20px;font-weight:800;margin:4px 0">799 zł</div>
-          <div style="font-size:11px;color:var(--muted)">7 dni + wideo</div>
+        <div>
+          <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(139,92,246,.3);background:rgba(139,92,246,.06);cursor:pointer;text-align:left;color:var(--text);font-family:var(--font)">
+            <span style="font-weight:800;color:#8B5CF6">PREMIUM</span> · <span style="font-weight:800">799 zł</span> · <span style="color:var(--muted);font-size:12px">7 dni + wideo</span>
+          </button>
+          <div style="display:none;padding:10px;font-size:12px;color:var(--muted);line-height:1.6">
+            <div>✅ Wszystko z pakietu BOOST</div>
+            <div>✅ Promocja przez 7 dni</div>
+            <div>✅ Profesjonalny materiał wideo (reels/TikTok)</div>
+            <div>✅ Publikacja na Instagram, TikTok, YouTube FoxPot</div>
+            <div>✅ Priorytetowe wsparcie</div>
+            <form method="POST" action="/panel/promo-order" style="margin-top:8px"><input type="hidden" name="package" value="premium"/><button type="submit" style="width:100%;padding:10px;background:#8B5CF6;border:none;border-radius:var(--radius-sm);color:#fff;font-weight:700;font-size:13px;cursor:pointer">📩 Zamów PREMIUM</button></form>
+          </div>
         </div>
       </div>
-      <a href="https://t.me/thefoxpot" target="_blank" style="display:block;text-align:center;background:var(--fox);color:#000;font-weight:700;padding:12px;border-radius:var(--radius-sm);text-decoration:none;font-size:14px">📩 Zamów promocję</a>
+      <div id="promoOrderMsg"></div>
     </div>
     <div class="card">
       <h2>⚙️ Ustawienia lokalu</h2>
@@ -4121,6 +4151,23 @@ app.post("/panel/discount", requirePanelAuth, async (req, res) => {
   res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Zniżka ${pct}% dla Fox #${userId.slice(-4)} ${temp ? "(dziś)" : "(stała)"} ✅`)}`);
 });
 
+// POST /panel/promo-order — venue orders a promotion package
+app.post("/panel/promo-order", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const pkg = ["start","boost","premium"].includes(req.body.package) ? req.body.package : "start";
+  const venue = await getVenue(venueId);
+  await pool.query(`INSERT INTO fp1_promo_orders(venue_id,package) VALUES($1,$2)`, [venueId, pkg]);
+  // Notify admin via Telegram
+  if (bot && ADMIN_TG_ID) {
+    try {
+      await bot.telegram.sendMessage(Number(ADMIN_TG_ID),
+        `📣 Nowe zamówienie promocji!\n\n🏪 ${venue?.name || venueId} (ID: ${venueId})\n📦 Pakiet: ${pkg.toUpperCase()}\n🕐 ${new Date().toLocaleString("pl-PL",{timeZone:"Europe/Warsaw"})}`
+      );
+    } catch (e) { console.error("PROMO_ORDER_TG_ERR", e?.message); }
+  }
+  res.redirect(`/panel/dashboard?ok=${encodeURIComponent(`Zamówienie ${pkg.toUpperCase()} wysłane! Skontaktujemy się wkrótce. ✅`)}`);
+});
+
 /* ═══════════════════════════════════════════════════════════════
    ROUTES — ADMIN
 ═══════════════════════════════════════════════════════════════ */
@@ -4174,6 +4221,11 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     SELECT p.*, v.name AS venue_name FROM fp1_promotions p
     JOIN fp1_venues v ON v.id=p.venue_id
     ORDER BY p.status='active' DESC, p.ends_at DESC LIMIT 20
+  `);
+  const promoOrders = await pool.query(`
+    SELECT o.*, v.name AS venue_name FROM fp1_promo_orders o
+    JOIN fp1_venues v ON v.id=o.venue_id
+    ORDER BY o.created_at DESC LIMIT 20
   `);
   const spotsLeft = await founderSpotsLeft();
   const districtStats = await pool.query(`SELECT district,COUNT(*)::int AS cnt FROM fp1_foxes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC`);
@@ -4247,6 +4299,17 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       ${isActive?`<form method="POST" action="/admin/promo/${p.id}/deactivate" style="margin-top:6px"><button type="submit" class="danger" style="font-size:11px;padding:3px 10px">Dezaktywuj</button></form>`:''}
     </div>`;
   }).join("");
+  const orderStatusColors = {pending:'#FF8A00',confirmed:'#22C55E',rejected:'#EF4444'};
+  const promoOrdersHtml = promoOrders.rows.length === 0 ? '<div class="muted">Brak zamówień</div>' : promoOrders.rows.map(o => {
+    const sc = orderStatusColors[o.status] || '#6B7280';
+    const date = new Date(o.created_at).toLocaleString("pl-PL",{timeZone:"Europe/Warsaw"});
+    return `<div style="padding:6px;margin:3px 0;border-radius:6px;border:1px solid ${sc}30;background:${sc}06;display:flex;justify-content:space-between;align-items:center">
+      <div><b>${escapeHtml(o.venue_name)}</b> · <span style="color:${sc};font-weight:700;font-size:12px">${o.package.toUpperCase()}</span> · <span class="muted" style="font-size:11px">${date}</span></div>
+      <div style="display:flex;gap:4px">
+        ${o.status==='pending'?`<form method="POST" action="/admin/promo-order/${o.id}/confirm" style="margin:0"><button type="submit" style="font-size:10px;padding:2px 8px;background:rgba(34,197,94,.2);border:1px solid rgba(34,197,94,.4);color:#22C55E;border-radius:4px;cursor:pointer">✅</button></form><form method="POST" action="/admin/promo-order/${o.id}/reject" style="margin:0"><button type="submit" style="font-size:10px;padding:2px 8px;background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.4);color:#ef4444;border-radius:4px;cursor:pointer">❌</button></form>`:`<span style="font-size:11px;color:${sc};font-weight:700">${o.status==='confirmed'?'Potwierdzone':'Odrzucone'}</span>`}
+      </div>
+    </div>`;
+  }).join("");
   const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
 
   res.send(pageShell("Admin — FoxPot", `
@@ -4277,6 +4340,10 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
           <button type="submit" style="width:100%">📣 Aktywuj promocję</button>
         </form>
       </div>
+    </div>
+    <div class="card">
+      <h2>📋 Zamówienia promocji (${promoOrders.rows.length})</h2>
+      ${promoOrdersHtml}
     </div>
     <div class="card">
       <h2>🚀 Ranking wzrostu</h2>
@@ -4481,6 +4548,16 @@ app.post("/admin/promo/create", requireAdminAuth, async (req, res) => {
 app.post("/admin/promo/:id/deactivate", requireAdminAuth, async (req, res) => {
   await pool.query(`UPDATE fp1_promotions SET status='cancelled' WHERE id=$1`, [Number(req.params.id)]);
   res.redirect(`/admin?ok=${encodeURIComponent("Promocja dezaktywowana")}`);
+});
+
+app.post("/admin/promo-order/:id/confirm", requireAdminAuth, async (req, res) => {
+  await pool.query(`UPDATE fp1_promo_orders SET status='confirmed' WHERE id=$1`, [Number(req.params.id)]);
+  res.redirect(`/admin?ok=${encodeURIComponent("Zamówienie potwierdzone ✅")}`);
+});
+
+app.post("/admin/promo-order/:id/reject", requireAdminAuth, async (req, res) => {
+  await pool.query(`UPDATE fp1_promo_orders SET status='rejected' WHERE id=$1`, [Number(req.params.id)]);
+  res.redirect(`/admin?ok=${encodeURIComponent("Zamówienie odrzucone")}`);
 });
 
 app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
