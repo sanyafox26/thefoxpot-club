@@ -490,13 +490,13 @@ async function migrate() {
       name TEXT NOT NULL,
       city TEXT NOT NULL DEFAULT 'Warszawa',
       address TEXT NOT NULL DEFAULT '',
-      place_id TEXT,
       status TEXT NOT NULL DEFAULT 'voting',
       vote_threshold INT NOT NULL DEFAULT 10,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await ensureColumn("fp1_nominations", "place_id", "TEXT");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_nomination_votes (
       id SERIAL PRIMARY KEY,
