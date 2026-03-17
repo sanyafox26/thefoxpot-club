@@ -2061,6 +2061,12 @@ async function startTrial(venueId) {
     <div style="font-size:13px;color:var(--muted);line-height:1.5">${esc(v.recommended)}</div>
   </div>` : '';
 
+  // Menu button
+  const menuBlock = `<div style="margin-bottom:14px">
+    <button onclick="loadVenueMenu(${v.id},this)" style="width:100%;padding:10px;background:rgba(255,138,0,.1);border:1px solid rgba(255,138,0,.25);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">🍽 Menu lokalu ▾</button>
+    <div id="venueMenu_${v.id}" style="display:none"></div>
+  </div>`;
+
   // Opening hours
   const hoursBlock = v.opening_hours ? `<div style="background:rgba(255,255,255,.04);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">&#128339; Godziny otwarcia</div>
@@ -2166,7 +2172,7 @@ async function startTrial(venueId) {
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
     </div>`}
-    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
+    ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${menuBlock}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
@@ -2184,6 +2190,36 @@ async function startTrial(venueId) {
   TG?.HapticFeedback?.selectionChanged();
   initVenuePhotos(v.id);
 }
+async function loadVenueMenu(venueId, btn) {
+  const el = q('venueMenu_' + venueId);
+  if (!el) return;
+  if (el.style.display === 'block') { el.style.display = 'none'; return; }
+  el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Ładowanie...</div>';
+  el.style.display = 'block';
+  try {
+    const r = await fetch(BASE + '/api/venue/' + venueId + '/menu');
+    const d = await r.json();
+    const items = d.items || [];
+    if (!items.length) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Menu jeszcze nie dodane</div>'; return; }
+    const catNames = {main:'🍽 Dania główne',snack:'🥗 Przystawki',soup:'🍲 Zupy',dessert:'🍰 Desery',drink:'☕ Napoje',alcohol:'🍺 Alkohol'};
+    const catOrder = ['main','snack','soup','dessert','drink','alcohol'];
+    const grouped = {};
+    items.forEach(m => { if (!grouped[m.category]) grouped[m.category] = []; grouped[m.category].push(m); });
+    let html = '';
+    catOrder.forEach(cat => {
+      if (!grouped[cat]) return;
+      html += '<div style="font-size:12px;font-weight:700;color:var(--fox);margin:10px 0 4px">' + (catNames[cat]||cat) + '</div>';
+      html += grouped[cat].map(m =>
+        '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.04)">' +
+        '<span>' + esc(m.name) + '</span>' +
+        (m.price ? '<span style="font-weight:700;color:var(--text)">' + parseFloat(m.price).toFixed(0) + ' zł</span>' : '') +
+        '</div>'
+      ).join('');
+    });
+    el.innerHTML = html;
+  } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
+}
+
 function renderRecommendations() {
   const sec = q('recsSection');
   const list = q('recsList');

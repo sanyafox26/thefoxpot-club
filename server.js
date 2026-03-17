@@ -457,6 +457,19 @@ async function migrate() {
       UNIQUE(venue_id, sort_order)
     )
   `);
+  // Venue menu items
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_menu_items (
+      id SERIAL PRIMARY KEY,
+      venue_id INT NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'main',
+      price NUMERIC(8,2),
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await ensureColumn("fp1_receipts",       "reason",                "TEXT");
 
   // ── V27: NEW CHOICE SYSTEM (parallel to old category/reason) ──
@@ -3573,6 +3586,59 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </script>
     </div>
     <div class="card">
+      <h2>🍽 Menu lokalu</h2>
+      <p class="muted" style="margin-bottom:10px">Dodaj pozycje z menu — Fox'owie zobaczą je na kartce lokalu.</p>
+      <div id="menuList"></div>
+      <div style="margin-top:10px;padding:10px;border:1px dashed rgba(255,255,255,.15);border-radius:8px">
+        <div class="grid2" style="margin-bottom:6px">
+          <div><input id="menuName" maxlength="80" placeholder="Nazwa dania"/></div>
+          <div><select id="menuCat"><option value="main">🍽 Danie główne</option><option value="snack">🥗 Przystawka</option><option value="soup">🍲 Zupa</option><option value="dessert">🍰 Deser</option><option value="drink">☕ Napój</option><option value="alcohol">🍺 Alkohol</option></select></div>
+        </div>
+        <div class="grid2">
+          <div><input id="menuPrice" type="number" min="0" step="0.5" placeholder="Cena (zł)"/></div>
+          <div><button type="button" onclick="addMenuItem()" style="width:100%;margin:0">+ Dodaj</button></div>
+        </div>
+        <div id="menuMsg" style="font-size:12px;margin-top:6px"></div>
+      </div>
+      <script>
+        let menuItems=[];
+        const menuCatNames={main:'🍽 Danie główne',snack:'🥗 Przystawka',soup:'🍲 Zupa',dessert:'🍰 Deser',drink:'☕ Napój',alcohol:'🍺 Alkohol'};
+        async function loadMenu(){
+          try{const r=await fetch('/panel/venue/menu',{credentials:'same-origin'});const d=await r.json();menuItems=d.items||[];renderMenu();}catch(e){console.error(e)}
+        }
+        function renderMenu(){
+          const el=document.getElementById('menuList');
+          if(!menuItems.length){el.innerHTML='<div class="muted">Brak pozycji w menu</div>';return}
+          el.innerHTML=menuItems.map(m=>
+            \`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+              <div style="flex:1;font-size:13px"><b>\${m.name}</b> <span class="muted" style="font-size:11px">\${menuCatNames[m.category]||m.category}</span></div>
+              \${m.price?'<div style="font-size:13px;font-weight:700;color:var(--fox)">'+parseFloat(m.price).toFixed(0)+' zł</div>':''}
+              <button onclick="deleteMenuItem(\${m.id})" style="background:transparent;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;padding:2px 8px;cursor:pointer">✕</button>
+            </div>\`
+          ).join('');
+        }
+        async function addMenuItem(){
+          const name=document.getElementById('menuName').value.trim();
+          const cat=document.getElementById('menuCat').value;
+          const price=document.getElementById('menuPrice').value;
+          if(!name){document.getElementById('menuMsg').innerHTML='<span style="color:#ef4444">Podaj nazwę</span>';return}
+          try{
+            const r=await fetch('/panel/venue/menu',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,category:cat,price:price||null})});
+            const d=await r.json();
+            if(d.error){document.getElementById('menuMsg').innerHTML='<span style="color:#ef4444">'+d.error+'</span>';return}
+            document.getElementById('menuMsg').innerHTML='<span style="color:#2ecc71">✅ Dodano</span>';
+            document.getElementById('menuName').value='';document.getElementById('menuPrice').value='';
+            loadMenu();
+          }catch(e){document.getElementById('menuMsg').innerHTML='<span style="color:#ef4444">Błąd</span>'}
+        }
+        async function deleteMenuItem(id){
+          if(!confirm('Usunąć pozycję?')) return;
+          try{await fetch('/panel/venue/menu/'+id,{method:'DELETE',credentials:'same-origin'});loadMenu();}catch(e){}
+        }
+        loadMenu();
+      </script>
+    </div>
+    <div class="card">
       <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">🎟️ Indywidualna zniżka dla Fox'a ▾</button>
       <div style="display:none;margin-top:12px">
         <p class="muted" style="margin-bottom:8px">Ustaw większą zniżkę dla konkretnego Fox'a. Minimum: ${parseFloat(venue.discount_percent)||10}% (domyślna).</p>
@@ -3807,6 +3873,51 @@ app.get("/panel/venue/choice-stats", requirePanelAuth, async (req, res) => {
     );
     res.json({ stats: stats.rows, top_dishes: topDishes.rows });
   } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// ── PANEL: Menu items CRUD ──
+app.get("/panel/venue/menu", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const items = await pool.query(`SELECT id,name,category,price,sort_order FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [venueId]);
+  res.json({ items: items.rows });
+});
+
+app.post("/panel/venue/menu", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const name = String(req.body.name || "").trim().slice(0, 80);
+  const category = ["main","snack","soup","dessert","drink","alcohol"].includes(req.body.category) ? req.body.category : "main";
+  const price = parseFloat(req.body.price) || null;
+  if (!name || name.length < 1) return res.json({ error: "Podaj nazwę" });
+  const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_menu_items WHERE venue_id=$1`, [venueId]);
+  if (cnt.rows[0].c >= 100) return res.json({ error: "Limit 100 pozycji" });
+  const sort = cnt.rows[0].c + 1;
+  const r = await pool.query(`INSERT INTO fp1_menu_items(venue_id,name,category,price,sort_order) VALUES($1,$2,$3,$4,$5) RETURNING id`, [venueId, name, category, price, sort]);
+  res.json({ ok: true, id: r.rows[0].id });
+});
+
+app.put("/panel/venue/menu/:id", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const itemId = Number(req.params.id);
+  const name = String(req.body.name || "").trim().slice(0, 80);
+  const category = ["main","snack","soup","dessert","drink","alcohol"].includes(req.body.category) ? req.body.category : "main";
+  const price = parseFloat(req.body.price) || null;
+  if (!name) return res.json({ error: "Podaj nazwę" });
+  await pool.query(`UPDATE fp1_menu_items SET name=$1,category=$2,price=$3 WHERE id=$4 AND venue_id=$5`, [name, category, price, itemId, venueId]);
+  res.json({ ok: true });
+});
+
+app.delete("/panel/venue/menu/:id", requirePanelAuth, async (req, res) => {
+  const venueId = String(req.panel.venue_id);
+  const itemId = Number(req.params.id);
+  await pool.query(`DELETE FROM fp1_menu_items WHERE id=$1 AND venue_id=$2`, [itemId, venueId]);
+  res.json({ ok: true });
+});
+
+// Public: get menu for venue
+app.get("/api/venue/:id/menu", async (req, res) => {
+  const venueId = Number(req.params.id);
+  const items = await pool.query(`SELECT name,category,price FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [venueId]);
+  res.json({ items: items.rows });
 });
 
 // ── PANEL: Save venue settings ──
