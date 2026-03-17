@@ -80,21 +80,69 @@ async function dbNow() {
 /* ═══════════════════════════════════════════════════════════════
    РАЙОНИ ВАРШАВИ
 ═══════════════════════════════════════════════════════════════ */
-const WARSAW_DISTRICTS = [
-  "Śródmieście", "Praga-Południe", "Mokotów", "Żoliborz",
-  "Wola", "Ursynów", "Praga-Północ", "Targówek",
-  "Bielany", "Bemowo", "Białołęka", "Wilanów", "Inna dzielnica",
+// ── Cities & Districts for registration ──
+const CITY_DISTRICTS = {
+  "Warszawa": ["Śródmieście","Praga-Południe","Mokotów","Żoliborz","Wola","Ursynów","Praga-Północ","Targówek","Bielany","Bemowo","Białołęka","Wilanów"],
+  "Kraków": ["Stare Miasto","Grzegórzki","Prądnik Czerwony","Prądnik Biały","Krowodrza","Bronowice","Zwierzyniec","Dębniki","Podgórze","Nowa Huta"],
+  "Wrocław": ["Stare Miasto","Śródmieście","Krzyki","Fabryczna","Psie Pole"],
+  "Gdańsk": ["Śródmieście","Wrzeszcz","Oliwa","Przymorze","Zaspa","Chełm","Letnica"],
+  "Poznań": ["Stare Miasto","Nowe Miasto","Grunwald","Jeżyce","Wilda"],
+  "Łódź": ["Śródmieście","Bałuty","Górna","Polesie","Widzew"],
+};
+const BIG_CITIES = Object.keys(CITY_DISTRICTS);
+const POLISH_CITIES = [
+  ...BIG_CITIES,
+  "Szczecin","Bydgoszcz","Lublin","Białystok","Katowice","Gdynia",
+  "Częstochowa","Radom","Toruń","Kielce","Rzeszów","Olsztyn",
+  "Opole","Gliwice","Zabrze","Sosnowiec","Zielona Góra","Bytom",
 ];
+// Backward compat
+const WARSAW_DISTRICTS = [...CITY_DISTRICTS["Warszawa"], "Inna dzielnica"];
+const ALL_DISTRICTS = Object.values(CITY_DISTRICTS).flat();
 
-async function sendDistrictKeyboard(ctx, mode = "register") {
+function getAllValidDistricts() {
+  return [...ALL_DISTRICTS, "Inna dzielnica"];
+}
+
+async function sendCityKeyboard(ctx, mode = "register") {
   const text = mode === "register"
-    ? `📍 Ostatni krok!\n\nW jakiej dzielnicy Warszawy mieszkasz?\n\n(Pomaga nam znaleźć lokale w pobliżu)`
-    : `📍 Wybierz swoją dzielnicę:`;
+    ? `🏙️ W jakim mieście mieszkasz?\n\n(Pomaga nam znaleźć lokale w pobliżu)`
+    : `🏙️ Wybierz swoje miasto:`;
   const buttons = [];
-  const main = WARSAW_DISTRICTS.slice(0, -1);
-  for (let i = 0; i < main.length; i += 2) {
-    const row = [Markup.button.callback(main[i], `district_${main[i]}`)];
-    if (main[i + 1]) row.push(Markup.button.callback(main[i + 1], `district_${main[i + 1]}`));
+  // Big cities first (2 per row)
+  for (let i = 0; i < BIG_CITIES.length; i += 2) {
+    const row = [Markup.button.callback(BIG_CITIES[i], `city_${BIG_CITIES[i]}`)];
+    if (BIG_CITIES[i + 1]) row.push(Markup.button.callback(BIG_CITIES[i + 1], `city_${BIG_CITIES[i + 1]}`));
+    buttons.push(row);
+  }
+  buttons.push([Markup.button.callback("📋 Inne miasto →", "city_other_list")]);
+  await ctx.reply(text, Markup.inlineKeyboard(buttons));
+}
+
+async function sendOtherCitiesKeyboard(ctx) {
+  const others = POLISH_CITIES.filter(c => !BIG_CITIES.includes(c));
+  const buttons = [];
+  for (let i = 0; i < others.length; i += 3) {
+    const row = [];
+    for (let j = 0; j < 3 && i + j < others.length; j++) {
+      row.push(Markup.button.callback(others[i + j], `city_${others[i + j]}`));
+    }
+    buttons.push(row);
+  }
+  buttons.push([Markup.button.callback("⬅️ Wróć", "city_back_main")]);
+  await ctx.editMessageText("🏙️ Wybierz swoje miasto:", Markup.inlineKeyboard(buttons));
+}
+
+async function sendDistrictKeyboard(ctx, city, mode = "register") {
+  const districts = CITY_DISTRICTS[city];
+  if (!districts) return; // no districts for this city
+  const text = mode === "register"
+    ? `📍 Ostatni krok!\n\nW jakiej dzielnicy (${city}) mieszkasz?`
+    : `📍 Wybierz dzielnicę (${city}):`;
+  const buttons = [];
+  for (let i = 0; i < districts.length; i += 2) {
+    const row = [Markup.button.callback(districts[i], `district_${districts[i]}`)];
+    if (districts[i + 1]) row.push(Markup.button.callback(districts[i + 1], `district_${districts[i + 1]}`));
     buttons.push(row);
   }
   buttons.push([Markup.button.callback("🗺️ Inna dzielnica", `district_Inna dzielnica`)]);
@@ -439,6 +487,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
   await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "district",              "TEXT");
+  await ensureColumn("fp1_foxes",          "country",               "TEXT NOT NULL DEFAULT 'Polska'");
   await ensureColumn("fp1_foxes",          "streak_current",        "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "streak_last_date",      "DATE");
   await ensureColumn("fp1_foxes",          "streak_freeze_available","INT NOT NULL DEFAULT 0");
@@ -1584,6 +1633,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       invites:                  f.invites,
       city:                     f.city,
       district:                 f.district,
+      country:                  f.country || "Polska",
       founder_number:           f.founder_number,
       streak_current:           f.streak_current || 0,
       streak_best:              f.streak_best    || 0,
@@ -2183,18 +2233,28 @@ app.get("/api/achievements", requireWebAppAuth, async (req, res) => {
   }
 });
 
-// POST /api/district
+// POST /api/district — update city and/or district
 app.post("/api/district", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
-    const district = String(req.body.district || "").trim();
-    const valid = [
-      "Śródmieście","Praga-Południe","Mokotów","Żoliborz","Wola","Ursynów",
-      "Praga-Północ","Targówek","Bielany","Bemowo","Białołęka","Wilanów","Inna dzielnica"
-    ];
-    if (!valid.includes(district)) return res.status(400).json({ error: "Nieprawidłowa dzielnica" });
-    await pool.query("UPDATE fp1_foxes SET district=$1 WHERE user_id=$2", [district, userId]);
-    res.json({ ok: true, district });
+    const city = req.body.city ? String(req.body.city).trim() : null;
+    const district = req.body.district ? String(req.body.district).trim() : null;
+
+    if (city) {
+      if (!POLISH_CITIES.includes(city)) return res.status(400).json({ error: "Nieprawidłowe miasto" });
+      await pool.query("UPDATE fp1_foxes SET city=$1 WHERE user_id=$2", [city, userId]);
+    }
+    if (district) {
+      if (!getAllValidDistricts().includes(district)) return res.status(400).json({ error: "Nieprawidłowa dzielnica" });
+      await pool.query("UPDATE fp1_foxes SET district=$1 WHERE user_id=$2", [district, userId]);
+    }
+    // If city changed to non-big-city, clear district
+    if (city && !CITY_DISTRICTS[city]) {
+      await pool.query("UPDATE fp1_foxes SET district=NULL WHERE user_id=$1", [userId]);
+    }
+
+    const fox = await pool.query("SELECT city, district FROM fp1_foxes WHERE user_id=$1 LIMIT 1", [userId]);
+    res.json({ ok: true, city: fox.rows[0]?.city, district: fox.rows[0]?.district });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
@@ -3705,22 +3765,43 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       </table>
     </div>
     <div class="card" style="border:1px solid rgba(124,92,252,.3);background:rgba(124,92,252,.06)">
-      <h2>📥 Eksport CSV</h2>
-      <p class="muted" style="margin-bottom:12px">Pobierz dane check-inów, wizyt, straw i aktywności Fox'ów.</p>
-      <form id="csvForm" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>Od</label><input type="date" id="csvFrom" value="${new Date(Date.now()-30*86400000).toISOString().slice(0,10)}"/></div>
-        <div><label>Do</label><input type="date" id="csvTo" value="${new Date().toISOString().slice(0,10)}"/></div>
+      <h2>📥 Eksport danych</h2>
+      <p class="muted" style="margin-bottom:12px">Pobierz dane w formacie CSV (gotowe do Excel).</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div><label>Okres</label><select id="csvPeriod" onchange="updateCsvDates()">
+          <option value="7">Ostatnie 7 dni</option><option value="30" selected>Ostatnie 30 dni</option><option value="month">Ten miesiąc</option><option value="year">Ten rok</option><option value="custom">Własny zakres</option>
+        </select></div>
         <div><label>Dzielnica</label><select id="csvDistrict"><option value="">— wszystkie —</option>${districtStats.rows.map(d=>`<option value="${escapeHtml(d.district)}">${escapeHtml(d.district)} (${d.cnt})</option>`).join("")}</select></div>
+        <div id="csvFromWrap" style="display:none"><label>Od</label><input type="date" id="csvFrom" value="${new Date(Date.now()-30*86400000).toISOString().slice(0,10)}"/></div>
+        <div id="csvToWrap" style="display:none"><label>Do</label><input type="date" id="csvTo" value="${new Date().toISOString().slice(0,10)}"/></div>
         <div><label>Lokal</label><select id="csvVenue"><option value="">— wszystkie —</option>${venues.rows.map(v=>`<option value="${v.id}">${escapeHtml(v.name)}</option>`).join("")}</select></div>
-      </form>
-      <button type="button" onclick="downloadCsv()" style="width:100%;margin-top:12px;background:rgba(124,92,252,.8)">📥 Pobierz CSV</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <button type="button" onclick="downloadCsv('visits')" style="background:rgba(124,92,252,.8);font-size:12px;padding:10px">📊 Wizyty CSV</button>
+        <button type="button" onclick="downloadCsv('dishes')" style="background:rgba(46,204,113,.7);font-size:12px;padding:10px">🍽 Dania CSV</button>
+        <button type="button" onclick="downloadCsv('foxes')" style="background:rgba(255,138,0,.7);font-size:12px;padding:10px">🦊 Foxy CSV</button>
+      </div>
       <script>
-        function downloadCsv(){
-          const f=document.getElementById('csvFrom').value;
-          const t=document.getElementById('csvTo').value;
+        function updateCsvDates(){
+          const p=document.getElementById('csvPeriod').value;
+          const show=p==='custom';
+          document.getElementById('csvFromWrap').style.display=show?'':'none';
+          document.getElementById('csvToWrap').style.display=show?'':'none';
+        }
+        function getCsvDates(){
+          const p=document.getElementById('csvPeriod').value;
+          const today=new Date().toISOString().slice(0,10);
+          if(p==='custom') return {from:document.getElementById('csvFrom').value,to:document.getElementById('csvTo').value};
+          if(p==='month'){const d=new Date();return{from:d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-01',to:today};}
+          if(p==='year') return{from:new Date().getFullYear()+'-01-01',to:today};
+          const days=parseInt(p)||30;
+          return{from:new Date(Date.now()-days*86400000).toISOString().slice(0,10),to:today};
+        }
+        function downloadCsv(type){
+          const dt=getCsvDates();
           const d=document.getElementById('csvDistrict').value;
           const v=document.getElementById('csvVenue').value;
-          let url='/admin/export-csv?from='+f+'&to='+t;
+          let url='/admin/export-csv?type='+type+'&from='+dt.from+'&to='+dt.to;
           if(d) url+='&district='+encodeURIComponent(d);
           if(v) url+='&venue_id='+v;
           window.location.href=url;
@@ -3734,82 +3815,75 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
 ═══════════════════════════════════════════════════════════════ */
 app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
   try {
-    const { from, to, district, venue_id } = req.query;
+    const { type, from, to, district, venue_id } = req.query;
     const dateFrom = from || "2020-01-01";
     const dateTo = to || "2099-12-31";
+    const esc_csv = (s) => String(s ?? "").replace(/[,"\n\r]/g, " ");
+    const fmtDate = (d) => new Date(d).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
 
-    let filters = `WHERE cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')`;
-    const params = [dateFrom, dateTo];
+    // Build shared filter params
     let pi = 3;
+    const params = [dateFrom, dateTo];
+    let distFilter = "", venueFilter = "";
+    if (district) { distFilter = ` AND f.district = $${pi}`; params.push(district); pi++; }
+    if (venue_id) { venueFilter = ` AND cv.venue_id = $${pi}`; params.push(Number(venue_id)); pi++; }
 
-    if (district) {
-      filters += ` AND f.district = $${pi}`;
-      params.push(district);
-      pi++;
+    let header, csvRows, filename;
+
+    if (type === "dishes") {
+      // ── Dania CSV ──
+      const dp = [dateFrom, dateTo]; let dpi = 3; let df = "", vf = "";
+      if (district) { df = ` AND f.district = $${dpi}`; dp.push(district); dpi++; }
+      if (venue_id) { vf = ` AND ch.venue_id = $${dpi}`; dp.push(Number(venue_id)); dpi++; }
+      const rows = await pool.query(`
+        SELECT ch.created_at, ch.dish_name, ch.agg_category, ch.is_custom_dish,
+               v.name AS venue_name, v.city, f.district
+        FROM fp1_checkin_choices ch
+        LEFT JOIN fp1_checkins c ON c.id = ch.checkin_id
+        LEFT JOIN fp1_venues v ON v.id = ch.venue_id
+        LEFT JOIN fp1_foxes f ON f.user_id = c.user_id
+        WHERE ch.created_at >= $1 AND ch.created_at < ($2::date + INTERVAL '1 day')${df}${vf}
+        ORDER BY ch.created_at DESC LIMIT 10000
+      `, dp);
+      header = "data,danie,kategoria,custom,lokal,miasto,dzielnica_fox\n";
+      csvRows = rows.rows.map(r => [fmtDate(r.created_at),esc_csv(r.dish_name),r.agg_category||"",r.is_custom_dish?"tak":"nie",esc_csv(r.venue_name),r.city||"",r.district||""].join(",")).join("\n");
+      filename = `foxpot_dania_${dateFrom}_${dateTo}.csv`;
+
+    } else if (type === "foxes") {
+      // ── Aktywność Fox'ów CSV ──
+      const fp = [dateFrom, dateTo]; let fpi = 3; let fdf = "";
+      if (district) { fdf = ` AND f.district = $${fpi}`; fp.push(district); fpi++; }
+      const rows = await pool.query(`
+        SELECT f.user_id, f.username, f.city, f.district, f.rating, f.invites,
+               f.founder_number, f.streak_current, f.streak_best, f.created_at,
+               (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')) AS visits_period,
+               (SELECT COUNT(*)::int FROM fp1_counted_visits cv2 WHERE cv2.user_id=f.user_id) AS visits_total
+        FROM fp1_foxes f
+        WHERE f.is_deleted=FALSE${fdf}
+        ORDER BY f.rating DESC LIMIT 5000
+      `, fp);
+      header = "user_id,nick,miasto,dzielnica,rating,zaproszenia,pionier_nr,streak,streak_best,rejestracja,wizyty_okres,wizyty_total\n";
+      csvRows = rows.rows.map(r => [r.user_id,esc_csv(r.username),r.city||"",r.district||"",r.rating,r.invites,r.founder_number||"",r.streak_current||0,r.streak_best||0,fmtDate(r.created_at),r.visits_period,r.visits_total].join(",")).join("\n");
+      filename = `foxpot_foxy_${dateFrom}_${dateTo}.csv`;
+
+    } else {
+      // ── Wizyty CSV (default) ──
+      const rows = await pool.query(`
+        SELECT cv.created_at, cv.user_id, f.username, f.rating, f.district, f.founder_number,
+               cv.venue_id, v.name AS venue_name, v.city, v.venue_type, v.cuisine,
+               r.amount, r.discount_saved
+        FROM fp1_counted_visits cv
+        LEFT JOIN fp1_foxes f ON f.user_id = cv.user_id
+        LEFT JOIN fp1_venues v ON v.id = cv.venue_id
+        LEFT JOIN fp1_receipts r ON r.user_id = cv.user_id AND r.venue_id = cv.venue_id AND r.created_at::date = cv.created_at::date
+        WHERE cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')${distFilter}${venueFilter}
+        ORDER BY cv.created_at DESC LIMIT 10000
+      `, params);
+      header = "data,user_id,nick,rating,dzielnica,pionier_nr,venue_id,lokal,miasto,typ,kuchnia,rachunek,zniżka\n";
+      csvRows = rows.rows.map(r => [fmtDate(r.created_at),r.user_id,esc_csv(r.username),r.rating||0,r.district||"",r.founder_number||"",r.venue_id,esc_csv(r.venue_name),r.city||"",r.venue_type||"",esc_csv(r.cuisine),r.amount||"",r.discount_saved||""].join(",")).join("\n");
+      filename = `foxpot_wizyty_${dateFrom}_${dateTo}.csv`;
     }
-    if (venue_id) {
-      filters += ` AND cv.venue_id = $${pi}`;
-      params.push(Number(venue_id));
-      pi++;
-    }
 
-    const rows = await pool.query(`
-      SELECT
-        cv.created_at,
-        cv.user_id,
-        f.username,
-        f.rating,
-        f.district,
-        f.founder_number,
-        f.streak_current,
-        cv.venue_id,
-        v.name AS venue_name,
-        v.city,
-        v.venue_type,
-        v.cuisine,
-        ch.dish_name,
-        ch.agg_category,
-        r.amount,
-        r.discount_saved
-      FROM fp1_counted_visits cv
-      LEFT JOIN fp1_foxes f ON f.user_id = cv.user_id
-      LEFT JOIN fp1_venues v ON v.id = cv.venue_id
-      LEFT JOIN fp1_checkin_choices ch ON ch.checkin_id = (
-        SELECT c.id FROM fp1_checkins c WHERE c.user_id = cv.user_id AND c.venue_id = cv.venue_id
-        AND c.confirmed_at IS NOT NULL AND c.created_at::date = cv.created_at::date
-        ORDER BY c.created_at DESC LIMIT 1
-      )
-      LEFT JOIN fp1_receipts r ON r.user_id = cv.user_id AND r.venue_id = cv.venue_id
-        AND r.created_at::date = cv.created_at::date
-      ${filters}
-      ORDER BY cv.created_at DESC
-      LIMIT 10000
-    `, params);
-
-    const header = "data,user_id,nick,rating,dzielnica,pionier_nr,streak,venue_id,lokal,miasto,typ,kuchnia,danie,kategoria,rachunek,zniżka\n";
-    const csvRows = rows.rows.map(r => {
-      const date = new Date(r.created_at).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
-      return [
-        date,
-        r.user_id,
-        r.username || "",
-        r.rating || 0,
-        r.district || "",
-        r.founder_number || "",
-        r.streak_current || 0,
-        r.venue_id,
-        (r.venue_name || "").replace(/[,"\n]/g, " "),
-        r.city || "",
-        r.venue_type || "",
-        (r.cuisine || "").replace(/[,"\n]/g, " "),
-        (r.dish_name || "").replace(/[,"\n]/g, " "),
-        r.agg_category || "",
-        r.amount || "",
-        r.discount_saved || ""
-      ].join(",");
-    }).join("\n");
-
-    const filename = `foxpot_export_${dateFrom}_${dateTo}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send("\uFEFF" + header + csvRows);
@@ -4094,7 +4168,7 @@ if (BOT_TOKEN) {
           await ctx.reply(msg, Markup.inlineKeyboard([
             [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
           ]));
-          await sendDistrictKeyboard(ctx, "register");
+          await sendCityKeyboard(ctx, "register");
           return;
         }
       }
@@ -4117,7 +4191,7 @@ if (BOT_TOKEN) {
         await ctx.reply(msg, Markup.inlineKeyboard([
           [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
         ]));
-        await sendDistrictKeyboard(ctx, "register");
+        await sendCityKeyboard(ctx, "register");
         return;
       }
 
@@ -4133,7 +4207,7 @@ if (BOT_TOKEN) {
       await ctx.reply(msg, Markup.inlineKeyboard([
         [Markup.button.webApp("🦊 Otwórz FoxPot App", webAppUrl)]
       ]));
-      await sendDistrictKeyboard(ctx, "register");
+      await sendCityKeyboard(ctx, "register");
     } catch (e) { console.error("START_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
   });
 
@@ -4166,9 +4240,9 @@ if (BOT_TOKEN) {
       const fox = await pool.query(`SELECT district,city,is_deleted FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const f = fox.rows[0];
-      await ctx.reply(`⚙️ Ustawienia\n\n📍 Dzielnica: ${f.district||"nie podano"}\n🏙️ Miasto: ${f.city||"Warszawa"}`,
+      await ctx.reply(`⚙️ Ustawienia\n\n🏙️ Miasto: ${f.city||"Warszawa"}\n📍 Dzielnica: ${f.district||"nie podano"}`,
         Markup.inlineKeyboard([
-          [Markup.button.callback("📍 Zmień dzielnicę", "change_district")],
+          [Markup.button.callback("🏙️ Zmień miasto", "change_city"), Markup.button.callback("📍 Zmień dzielnicę", "change_district")],
           [Markup.button.callback("🚪 Opuść klub", "leave_club_ask")]
         ]));
     } catch (e) { console.error("SETTINGS_ERR", e); await ctx.reply("Błąd. Spróbuj ponownie."); }
@@ -4473,15 +4547,52 @@ if (BOT_TOKEN) {
       await ctx.answerCbQuery("❌ Błąd. Spróbuj ponownie.");
     }
   });
-   bot.action("change_district", async (ctx) => {
-    try { await ctx.answerCbQuery(); await sendDistrictKeyboard(ctx, "change"); }
+   // ── City selection ──
+  bot.action(/^city_(.+)$/, async (ctx) => {
+    try {
+      const city = ctx.match[1];
+      if (city === "other_list") { await ctx.answerCbQuery(); return sendOtherCitiesKeyboard(ctx); }
+      if (city === "back_main") { await ctx.answerCbQuery(); const text = "🏙️ Wybierz swoje miasto:"; const buttons = []; for (let i=0;i<BIG_CITIES.length;i+=2){const row=[Markup.button.callback(BIG_CITIES[i],`city_${BIG_CITIES[i]}`)];if(BIG_CITIES[i+1])row.push(Markup.button.callback(BIG_CITIES[i+1],`city_${BIG_CITIES[i+1]}`));buttons.push(row);}buttons.push([Markup.button.callback("📋 Inne miasto →","city_other_list")]);return ctx.editMessageText(text,Markup.inlineKeyboard(buttons)); }
+      if (!POLISH_CITIES.includes(city)) { await ctx.answerCbQuery("❌ Nieprawidłowe miasto"); return; }
+      const userId = String(ctx.from.id);
+      await pool.query(`UPDATE fp1_foxes SET city=$1 WHERE user_id=$2`, [city, userId]);
+      await ctx.answerCbQuery(`✅ ${city}`);
+      // If big city — ask district
+      if (CITY_DISTRICTS[city]) {
+        try { await ctx.editMessageText(`✅ Miasto: ${city}`); } catch {}
+        await sendDistrictKeyboard(ctx, city, "register");
+      } else {
+        try { await ctx.editMessageText(`✅ Miasto: ${city}\n\nZmień: /settings`); }
+        catch { await ctx.reply(`✅ Miasto: ${city}\n\nZmień: /settings`); }
+      }
+    } catch (e) { console.error("CITY_ACTION_ERR", e); await ctx.answerCbQuery("❌ Błąd."); }
+  });
+
+  // ── Change city/district from /settings ──
+  bot.action("change_city", async (ctx) => {
+    try { await ctx.answerCbQuery(); await sendCityKeyboard(ctx, "change"); }
+    catch (e) { console.error("CHANGE_CITY_ERR", e); }
+  });
+
+  bot.action("change_district", async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+      const userId = String(ctx.from.id);
+      const fox = await pool.query(`SELECT city FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      const city = fox.rows[0]?.city || "Warszawa";
+      if (CITY_DISTRICTS[city]) {
+        await sendDistrictKeyboard(ctx, city, "change");
+      } else {
+        await ctx.reply("📍 Dzielnice dostępne tylko dla dużych miast.\nZmień miasto: /settings");
+      }
+    }
     catch (e) { console.error("CHANGE_DISTRICT_ERR", e); }
   });
 
   bot.action(/^district_(.+)$/, async (ctx) => {
     try {
       const district = ctx.match[1];
-      if (!WARSAW_DISTRICTS.includes(district)) { await ctx.answerCbQuery("❌ Nieprawidłowa dzielnica"); return; }
+      if (!getAllValidDistricts().includes(district)) { await ctx.answerCbQuery("❌ Nieprawidłowa dzielnica"); return; }
       const userId = String(ctx.from.id);
       await pool.query(`UPDATE fp1_foxes SET district=$1 WHERE user_id=$2`, [district, userId]);
       await ctx.answerCbQuery(`✅ Zapisano: ${district}`);
