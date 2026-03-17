@@ -365,17 +365,15 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
       
       <!-- SLOT 1: Profile venue recommendation -->
-      <div id="profileRecSlot" style="display:none;margin-bottom:12px">
-        <div id="profileRecContent" onclick="" style="padding:12px;background:linear-gradient(135deg,rgba(255,138,0,.08),rgba(139,92,246,.06));border:1px solid rgba(255,138,0,.2);border-radius:var(--radius);cursor:pointer">
-          <div id="profileRecLabel" style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px"></div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="font-size:24px">🏪</div>
-            <div style="flex:1;min-width:0">
-              <div id="profileRecName" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-              <div id="profileRecSub" style="font-size:11px;color:var(--muted)"></div>
-            </div>
-            <div id="profileRecDiscount" style="font-size:14px;font-weight:800;color:var(--fox)"></div>
-          </div>
+      <div id="profileRecSlot" style="display:none;margin-bottom:12px;padding:16px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:16px">🦊</span>
+          <span style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px">The FoxPot Club poleca</span>
+        </div>
+        <div class="rec-venue-name" style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="rec-venue-text" style="font-size:12px;color:var(--muted);line-height:1.4;flex:1;min-width:0"></div>
+          <div class="rec-venue-discount" style="font-size:14px;font-weight:800;color:var(--fox);margin-left:10px;white-space:nowrap"></div>
         </div>
       </div>
 
@@ -729,21 +727,16 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
    <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
 
-    <!-- SLOT 2: Map venue recommendation (promo or system) -->
-    <div id="mapRecSlot" style="display:none;margin-bottom:12px">
-      <div id="mapRecContent" onclick="" style="padding:14px;background:linear-gradient(135deg,rgba(255,138,0,.1),rgba(139,92,246,.06));border:1px solid rgba(255,138,0,.2);border-radius:var(--radius);cursor:pointer">
-        <div id="mapRecLabel" style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px"></div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="font-size:28px">🏪</div>
-          <div style="flex:1;min-width:0">
-            <div id="mapRecName" style="font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-            <div id="mapRecSub" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
-          </div>
-          <div style="text-align:right">
-            <div id="mapRecDiscount" style="font-size:15px;font-weight:800;color:var(--fox)"></div>
-            <div style="font-size:10px;color:var(--muted)">zniżka</div>
-          </div>
-        </div>
+    <!-- SLOT 2: Map venue recommendation -->
+    <div id="mapRecSlot" style="display:none;margin-bottom:12px;padding:16px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <span style="font-size:16px">🦊</span>
+        <span style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px">The FoxPot Club poleca</span>
+      </div>
+      <div class="rec-venue-name" style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="rec-venue-text" style="font-size:12px;color:var(--muted);line-height:1.4;flex:1;min-width:0"></div>
+        <div class="rec-venue-discount" style="font-size:14px;font-weight:800;color:var(--fox);margin-left:10px;white-space:nowrap"></div>
       </div>
     </div>
 
@@ -852,6 +845,8 @@ function go(name){
   if(name==='top'&&!S.topLoaded)               loadTop();
   if(name==='invites'&&!S.invLoaded)           loadInvites();
   if(name==='map'&&!S_map.loaded)               loadMap();
+  if(name==='profile')                           renderProfileSlot();
+  if(name==='map'&&S_map.loaded)                 loadMapSlot();
   if(name==='support')                           { supState={step:'menu'}; supRender(); }
 }
 
@@ -2249,67 +2244,45 @@ async function loadVenueMenu(venueId, btn) {
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }
 
-// ── Recommendation slots — never empty ──
-function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+// ── Recommendation slots — never empty, powered by /api/recommendation ──
+let _slot1VenueId = null;
 
-function generateSlotContent(v) {
-  // Generate interesting text from real venue data
-  const templates = [];
-  if (v.top_dish_name) templates.push({ label: 'Czy wiesz, że...', sub: `Najczęściej wybieranym daniem w ${v.name} jest ${v.top_dish_name}!` });
-  if (v.recommended) templates.push({ label: `${v.name} poleca dziś`, sub: v.recommended.split('\n')[0].slice(0,80) });
-  if (v.total_visits > 5) templates.push({ label: 'Popularne wśród Foxów', sub: `${v.name} — już ${v.total_visits} wizyt. Sprawdź dlaczego!` });
-  if (v.my_visits === 0 || v.my_visits === undefined) templates.push({ label: 'Jeszcze tu nie byłeś', sub: `Sprawdź ${v.name}${v.cuisine ? ' · '+v.cuisine : ''}!` });
-  if (v.is_top_week) templates.push({ label: '🔥 Top tygodnia', sub: `${v.name} — najczęściej odwiedzany lokal tego tygodnia!` });
-  if (v.is_top_month) templates.push({ label: '👑 Top miesiąca', sub: `${v.name} — lider wśród lokali w tym miesiącu!` });
-  if (v.discount_percent > 10) templates.push({ label: 'Większa zniżka', sub: `${v.name} oferuje ${v.discount_percent}% zniżki dla Fox'ów!` });
-  if (v.pioneer_number) templates.push({ label: 'Pionier Lokal', sub: `${v.name} — jeden z pierwszych 50 lokali w FoxPot!` });
-  // Fallback
-  const typeMap = {'fastfood':'🍔 Fast food','restauracja':'🍝 Restauracja','kawiarnia':'☕ Kawiarnia','bar':'🍺 Bar','streetfood':'🥡 Street food','inne':'➕ Inne'};
-  templates.push({ label: 'Polecane dla Ciebie', sub: (typeMap[v.venue_type]||'') + (v.cuisine ? ' · '+v.cuisine : '') + (v.total_visits ? ' · '+v.total_visits+' wizyt' : '') });
-  return pickRandom(templates);
+function fillRecSlot(containerId, data) {
+  const el = q(containerId);
+  if (!el) return;
+  const nameEl = el.querySelector('.rec-venue-name');
+  const textEl = el.querySelector('.rec-venue-text');
+  const discEl = el.querySelector('.rec-venue-discount');
+  if (nameEl) nameEl.textContent = data.venue_name || '';
+  if (textEl) textEl.textContent = data.text || '';
+  if (discEl) discEl.textContent = data.discount ? data.discount + '%' : '';
+  el.onclick = data.venue_id ? function(){ openVenueDetail(data.venue_id); } : null;
+  el.style.cursor = data.venue_id ? 'pointer' : 'default';
+  el.style.display = '';
 }
 
-function fillSlot(slotId, labelId, nameId, subId, discountId, venueOrPromo, labelText, subText) {
-  const slot = q(slotId);
-  q(labelId).textContent = labelText;
-  q(nameId).textContent = venueOrPromo.name || venueOrPromo.venue_name || '';
-  q(subId).textContent = subText || '';
-  q(discountId).textContent = (parseFloat(venueOrPromo.discount_percent)||10) + '%';
-  q(slotId.replace('Slot','RecContent')).onclick = function(){ openVenueDetail(venueOrPromo.venue_id || venueOrPromo.id); };
-  slot.style.display = '';
+const _recFallback = { venue_id: null, venue_name: '', text: '🦊 Odkrywaj lokale z FoxPot Club!', discount: null };
+
+async function fetchRec(exclude) {
+  try {
+    const url = BASE + '/api/recommendation' + (exclude ? '?exclude=' + exclude : '');
+    const r = await fetch(url, { headers: { 'X-Telegram-Init-Data': INIT_DATA || '' } });
+    const d = await r.json();
+    return d.venue_id ? d : _recFallback;
+  } catch(e) { return _recFallback; }
 }
 
 // SLOT 1 — Profile
-function renderProfileSlot() {
-  const venues = S_map.venues;
-  if (!venues?.length) { q('profileRecSlot').style.display='none'; return; }
-  const v = pickRandom(venues);
-  const content = generateSlotContent(v);
-  fillSlot('profileRecSlot','profileRecLabel','profileRecName','profileRecSub','profileRecDiscount', v, content.label, content.sub);
+async function renderProfileSlot() {
+  const data = await fetchRec(null);
+  _slot1VenueId = data.venue_id;
+  fillRecSlot('profileRecSlot', data);
 }
 
-// SLOT 2 — Map: promo priority, then random rotation
-let _promoData = null;
+// SLOT 2 — Map (excludes slot 1 venue)
 async function loadMapSlot() {
-  // Try promo first
-  try {
-    const r = await fetch(BASE + '/api/promo');
-    const d = await r.json();
-    if (d.promo) _promoData = d.promo;
-  } catch(e) {}
-
-  if (_promoData) {
-    const sub = _promoData.promo_text || (_promoData.city + (_promoData.address ? ' · '+_promoData.address : ''));
-    fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', _promoData, 'The FoxPot Club poleca', sub);
-    return;
-  }
-
-  // No promo — random venue with interesting content
-  const venues = S_map.venues;
-  if (!venues?.length) { q('mapRecSlot').style.display='none'; return; }
-  const v = pickRandom(venues);
-  const content = generateSlotContent(v);
-  fillSlot('mapRecSlot','mapRecLabel','mapRecName','mapRecSub','mapRecDiscount', v, content.label, content.sub);
+  const data = await fetchRec(_slot1VenueId);
+  fillRecSlot('mapRecSlot', data);
 }
 
 async function loadMap() {
@@ -2329,7 +2302,6 @@ async function loadMap() {
     }
     renderMapList();
     loadMapSlot();
-    renderProfileSlot();
   } catch(e) {
     q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
@@ -2556,6 +2528,7 @@ async function supSendTicket() {
 }
 
 loadProfile();
+renderProfileSlot();
 if(!TG) console.warn('[FoxPot] Nie w Telegram WebApp');
 
 /* ── PWA Service Worker ── */
