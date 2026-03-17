@@ -714,6 +714,24 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
     <div id="mapList"></div>
+
+    <!-- Nominations -->
+    <div class="card" style="margin-top:12px">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>🗳️ Zaproponuj lokal</span>
+        <button onclick="toggleNomForm()" style="background:rgba(255,138,0,.15);border:1px solid rgba(255,138,0,.3);border-radius:8px;padding:4px 12px;color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">+ Dodaj</button>
+      </div>
+      <div id="nomForm" style="display:none;margin:10px 0">
+        <input id="nomName" type="text" maxlength="100" placeholder="Nazwa lokalu" style="width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:14px;margin-bottom:6px;font-family:var(--font)"/>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+          <input id="nomCity" type="text" maxlength="60" placeholder="Miasto" value="Warszawa" style="padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px;font-family:var(--font)"/>
+          <input id="nomAddr" type="text" maxlength="200" placeholder="Adres (opcjonalnie)" style="padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px;font-family:var(--font)"/>
+        </div>
+        <button onclick="submitNomination()" style="width:100%;padding:10px;background:var(--fox);border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)">🗳️ Zaproponuj</button>
+        <div id="nomMsg" style="font-size:12px;margin-top:4px"></div>
+      </div>
+      <div id="nomList" style="margin-top:8px"><div class="muted" style="font-size:12px">Ładowanie...</div></div>
+    </div>
   </section>
 
   <!-- VENUE DETAIL MODAL -->
@@ -2175,12 +2193,67 @@ async function loadMap() {
       document.head.appendChild(sc);
     }
     renderMapList();
+    loadNominations();
   } catch(e) {
     q('mapContainer').innerHTML = '';
     q('mapList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd: ${esc(e.message)}</div></div>`;
   } finally {
     q('mapLoading').style.display = 'none';
   }
+}
+
+// ── Nominations ──
+const NOM_STATUS_COLORS={voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',contact:'#8B5CF6',talking:'#EC4899'};
+function getFingerprint(){return (TG_USER?'tg_'+TG_USER.id:'fp_'+navigator.userAgent.slice(0,60)).slice(0,200)}
+function toggleNomForm(){const f=q('nomForm');f.style.display=f.style.display==='none'?'block':'none'}
+async function submitNomination(){
+  const name=q('nomName').value.trim();
+  const city=q('nomCity').value.trim()||'Warszawa';
+  const address=q('nomAddr').value.trim();
+  if(!name||name.length<2){q('nomMsg').innerHTML='<span style="color:var(--red)">Podaj nazwę (min. 2 znaki)</span>';return}
+  try{
+    const r=await fetch(BASE+'/api/nominations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,city,address,fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error){q('nomMsg').innerHTML=`<span style="color:var(--red)">${esc(d.error)}</span>`;return}
+    q('nomMsg').innerHTML='<span style="color:var(--green)">✅ Dodano!</span>';
+    q('nomName').value='';q('nomAddr').value='';
+    loadNominations();
+  }catch(e){q('nomMsg').innerHTML=`<span style="color:var(--red)">Błąd</span>`}
+}
+async function voteNomination(id){
+  try{
+    const h={'Content-Type':'application/json'};
+    if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
+    const r=await fetch(BASE+'/api/nominations/'+id+'/vote',{method:'POST',headers:h,body:JSON.stringify({fp:getFingerprint()})});
+    const d=await r.json();
+    if(d.error){alert(d.error);return}
+    loadNominations();
+  }catch(e){alert('Błąd')}
+}
+async function loadNominations(){
+  try{
+    const h={};if(INIT_DATA)h['x-telegram-init-data']=INIT_DATA;
+    const r=await fetch(BASE+'/api/nominations?fp='+encodeURIComponent(getFingerprint()),{headers:h});
+    const d=await r.json();
+    const list=d.nominations||[];
+    if(list.length===0){q('nomList').innerHTML='<div class="muted" style="font-size:12px">Brak propozycji — bądź pierwszy!</div>';return}
+    q('nomList').innerHTML=list.map(n=>{
+      const sc=NOM_STATUS_COLORS[n.status]||'#888';
+      const pct=Math.min(100,Math.round(n.votes/n.vote_threshold*100));
+      return `<div style="padding:8px;margin:4px 0;border-radius:8px;border:1px solid ${sc}30;background:${sc}08">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px"><b>${esc(n.name)}</b> · <span class="muted">${esc(n.city)}</span></div>
+          <span style="font-size:10px;color:${sc};font-weight:700">${esc(n.status_label)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <div style="flex:1;height:4px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${sc};border-radius:2px"></div></div>
+          <span style="font-size:11px;color:var(--muted)">${n.votes}/${n.vote_threshold}</span>
+          ${n.my_vote?'<span style="font-size:11px;color:var(--green)">✅</span>'
+            :`<button onclick="voteNomination(${n.id})" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:6px;padding:2px 10px;color:#3B82F6;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font)">👍 Głosuj</button>`}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){q('nomList').innerHTML='<div class="muted">Błąd</div>'}
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -483,6 +483,31 @@ async function migrate() {
       UNIQUE(venue_id, sort_order)
     )
   `);
+  // Venue nominations & votes
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_nominations (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      city TEXT NOT NULL DEFAULT 'Warszawa',
+      address TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'voting',
+      vote_threshold INT NOT NULL DEFAULT 10,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_nomination_votes (
+      id SERIAL PRIMARY KEY,
+      nomination_id INT NOT NULL REFERENCES fp1_nominations(id) ON DELETE CASCADE,
+      fingerprint TEXT NOT NULL,
+      tg_user_id TEXT,
+      is_member BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(nomination_id, fingerprint)
+    )
+  `);
+
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
   await ensureColumn("fp1_foxes",          "founder_registered_at", "TIMESTAMPTZ");
@@ -3017,6 +3042,80 @@ app.post("/api/venue/:venue_id/start-trial", requireWebAppAuth, async (req, res)
 });
 
 /* ═══════════════════════════════════════════════════════════════
+   NOMINATIONS — Venue voting system
+═══════════════════════════════════════════════════════════════ */
+const NOM_STATUSES = ["voting","threshold","review","contact","talking","added","rejected"];
+const NOM_STATUS_LABELS = {
+  voting:"Zbieranie głosów", threshold:"Próg osiągnięty", review:"Weryfikacja FoxPot",
+  contact:"Kontakt z lokalem", talking:"W rozmowie", added:"Dodano", rejected:"Odrzucono"
+};
+
+app.get("/api/nominations", async (req, res) => {
+  try {
+    const initData = req.headers["x-telegram-init-data"] || "";
+    const tgUser = verifyTelegramInitData(initData);
+    const userId = tgUser ? String(tgUser.id) : null;
+    const fp = req.query.fp || req.ip || "anon";
+
+    const rows = await pool.query(`
+      SELECT n.id, n.name, n.city, n.address, n.status, n.vote_threshold, n.created_at,
+        (SELECT COUNT(*)::int FROM fp1_nomination_votes v WHERE v.nomination_id=n.id) AS votes
+      FROM fp1_nominations n WHERE n.status NOT IN ('added','rejected')
+      ORDER BY votes DESC, n.created_at ASC
+    `);
+
+    const myVotes = new Set();
+    if (userId || fp) {
+      const mv = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
+      mv.rows.forEach(r => myVotes.add(r.nomination_id));
+    }
+
+    res.json({
+      nominations: rows.rows.map(n => ({
+        ...n, status_label: NOM_STATUS_LABELS[n.status] || n.status, my_vote: myVotes.has(n.id)
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+app.post("/api/nominations", async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim().slice(0, 100);
+    const city = String(req.body.city || "Warszawa").trim().slice(0, 60);
+    const address = String(req.body.address || "").trim().slice(0, 200);
+    if (!name || name.length < 2) return res.status(400).json({ error: "Podaj nazwę lokalu (min. 2 znaki)" });
+    const fp = req.body.fp || req.ip || "anon";
+    if (rateLimit(`nom_create:${fp}`, 3, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele propozycji. Spróbuj za godzinę." });
+    const dup = await pool.query(`SELECT id FROM fp1_nominations WHERE LOWER(name)=LOWER($1) AND LOWER(city)=LOWER($2) AND status NOT IN ('rejected') LIMIT 1`, [name, city]);
+    if (dup.rowCount > 0) return res.status(409).json({ error: "Ten lokal już został zaproponowany", nomination_id: dup.rows[0].id });
+    const r = await pool.query(`INSERT INTO fp1_nominations(name,city,address) VALUES($1,$2,$3) RETURNING id`, [name, city, address]);
+    res.json({ ok: true, nomination_id: r.rows[0].id });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+app.post("/api/nominations/:id/vote", async (req, res) => {
+  try {
+    const nomId = Number(req.params.id);
+    const fp = String(req.body.fp || req.ip || "anon").slice(0, 200);
+    const initData = req.headers["x-telegram-init-data"] || "";
+    const tgUser = verifyTelegramInitData(initData);
+    const userId = tgUser ? String(tgUser.id) : null;
+    let isMember = false;
+    if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
+    if (rateLimit(`nom_vote:${fp}`, 20, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele głosów." });
+    const nom = await pool.query(`SELECT id, status, vote_threshold FROM fp1_nominations WHERE id=$1 LIMIT 1`, [nomId]);
+    if (nom.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono" });
+    if (!["voting","threshold"].includes(nom.rows[0].status)) return res.status(400).json({ error: "Głosowanie zakończone" });
+    await pool.query(`INSERT INTO fp1_nomination_votes(nomination_id,fingerprint,tg_user_id,is_member) VALUES($1,$2,$3,$4) ON CONFLICT(nomination_id,fingerprint) DO NOTHING`, [nomId, fp, userId || null, isMember]);
+    const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_nomination_votes WHERE nomination_id=$1`, [nomId]);
+    if (cnt.rows[0].c >= nom.rows[0].vote_threshold && nom.rows[0].status === "voting") {
+      await pool.query(`UPDATE fp1_nominations SET status='threshold', updated_at=NOW() WHERE id=$1`, [nomId]);
+    }
+    res.json({ ok: true, votes: cnt.rows[0].c });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+/* ═══════════════════════════════════════════════════════════════
    GET /api/top
 ═══════════════════════════════════════════════════════════════ */
 app.get("/api/top", async (req, res) => {
@@ -3693,6 +3792,16 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
   const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
   const foxes   = await pool.query(`SELECT user_id,username,rating,invites,city,district,founder_number,streak_current,streak_best,created_at FROM fp1_foxes ORDER BY rating DESC LIMIT 50`);
   const growth  = await getGrowthLeaderboard(10);
+  // Nominations
+  const noms = await pool.query(`
+    SELECT n.*,
+      (SELECT COUNT(*)::int FROM fp1_nomination_votes v WHERE v.nomination_id=n.id) AS total_votes,
+      (SELECT COUNT(*)::int FROM fp1_nomination_votes v WHERE v.nomination_id=n.id AND v.is_member=TRUE) AS member_votes,
+      (SELECT COUNT(*)::int FROM fp1_nomination_votes v WHERE v.nomination_id=n.id AND v.is_member=FALSE) AS guest_votes
+    FROM fp1_nominations n ORDER BY
+      CASE n.status WHEN 'threshold' THEN 0 WHEN 'voting' THEN 1 WHEN 'review' THEN 2 WHEN 'contact' THEN 3 WHEN 'talking' THEN 4 ELSE 5 END,
+      total_votes DESC
+  `);
   const spotsLeft = await founderSpotsLeft();
   const districtStats = await pool.query(`SELECT district,COUNT(*)::int AS cnt FROM fp1_foxes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC`);
   const achStats = await pool.query(`SELECT achievement_code,COUNT(*)::int AS cnt FROM fp1_achievements GROUP BY achievement_code ORDER BY cnt DESC LIMIT 10`);
@@ -3714,6 +3823,24 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
   const achHtml  = achStats.rows.map(a => { const ach = ACHIEVEMENTS[a.achievement_code]; return `<tr><td>${ach?ach.emoji:"?"} ${escapeHtml(a.achievement_code)}</td><td><b>${a.cnt}</b></td></tr>`; }).join("");
+  const statusColors = {voting:"#3B82F6",threshold:"#22C55E",review:"#FF8A00",contact:"#8B5CF6",talking:"#EC4899",added:"#10B981",rejected:"#EF4444"};
+  const nomsHtml = noms.rows.length === 0 ? `<div class="muted">Brak nominacji</div>` : noms.rows.map(n => {
+    const sc = statusColors[n.status] || "#888";
+    const pct = Math.min(100, Math.round(n.total_votes / n.vote_threshold * 100));
+    return `<div style="padding:10px;margin:6px 0;border-radius:10px;border:1px solid ${sc}40;background:${sc}08">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b>${escapeHtml(n.name)}</b> · ${escapeHtml(n.city)}${n.address?` · <span class="muted">${escapeHtml(n.address)}</span>`:""}</div>
+        <span style="font-size:11px;color:${sc};font-weight:700;border:1px solid ${sc}40;border-radius:12px;padding:2px 8px">${NOM_STATUS_LABELS[n.status]}</span>
+      </div>
+      <div style="margin-top:6px;font-size:12px">
+        📊 <b>${n.total_votes}</b> głosów (🦊 <b>${n.member_votes}</b> członków · 👤 <b>${n.guest_votes}</b> spoza klubu) · próg: ${n.vote_threshold}
+        <div style="height:4px;background:#1a1f35;border-radius:2px;margin-top:4px"><div style="width:${pct}%;height:100%;background:${sc};border-radius:2px"></div></div>
+      </div>
+      <form method="POST" action="/admin/nominations/${n.id}/status" style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">
+        ${NOM_STATUSES.filter(s=>s!==n.status).map(s=>`<button name="status" value="${s}" style="font-size:11px;padding:3px 8px;background:${statusColors[s]}20;border:1px solid ${statusColors[s]}40;color:${statusColors[s]};border-radius:6px;cursor:pointer">${NOM_STATUS_LABELS[s]}</button>`).join("")}
+      </form>
+    </div>`;
+  }).join("");
   const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
 
   res.send(pageShell("Admin — FoxPot", `
@@ -3723,6 +3850,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       <div class="muted" style="margin-top:8px">👑 Pionier Fox: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
     </div>
     <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
+    <div class="card"><h2>🗳️ Głosowanie na lokale (${noms.rows.length})</h2>${nomsHtml}</div>
     <div class="card">
       <h2>🚀 Ranking wzrostu</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3891,6 +4019,14 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
     console.error("CSV_EXPORT_ERR", e);
     res.status(500).send("Błąd eksportu: " + String(e?.message || e).slice(0, 200));
   }
+});
+
+app.post("/admin/nominations/:id/status", requireAdminAuth, async (req, res) => {
+  const nomId = Number(req.params.id);
+  const status = String(req.body.status || "").trim();
+  if (!NOM_STATUSES.includes(status)) return res.redirect(`/admin?err=${encodeURIComponent("Nieprawidłowy status")}`);
+  await pool.query(`UPDATE fp1_nominations SET status=$1, updated_at=NOW() WHERE id=$2`, [status, nomId]);
+  res.redirect(`/admin?ok=${encodeURIComponent(`Status zmieniony na: ${NOM_STATUS_LABELS[status]}`)}`);
 });
 
 app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
