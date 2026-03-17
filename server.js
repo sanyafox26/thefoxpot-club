@@ -507,6 +507,29 @@ async function migrate() {
       UNIQUE(nomination_id, fingerprint)
     )
   `);
+  // City nominations & votes
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_city_nominations (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      country TEXT NOT NULL DEFAULT 'Polska',
+      status TEXT NOT NULL DEFAULT 'voting',
+      vote_threshold INT NOT NULL DEFAULT 500,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_city_votes (
+      id SERIAL PRIMARY KEY,
+      city_nomination_id INT NOT NULL REFERENCES fp1_city_nominations(id) ON DELETE CASCADE,
+      fingerprint TEXT NOT NULL,
+      tg_user_id TEXT,
+      is_member BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(city_nomination_id, fingerprint)
+    )
+  `);
 
   await ensureColumn("fp1_foxes",          "referred_by_venue",     "BIGINT");
   await ensureColumn("fp1_foxes",          "founder_number",        "INT");
@@ -3116,6 +3139,120 @@ app.post("/api/nominations/:id/vote", async (req, res) => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
+   CITY NOMINATIONS — City voting system
+═══════════════════════════════════════════════════════════════ */
+const CITY_NOM_STATUSES = ["voting","threshold","review","planned","not_now"];
+const CITY_NOM_LABELS = {
+  voting:"Zbieranie głosów", threshold:"Próg osiągnięty", review:"W analizie FoxPot",
+  planned:"Planowane", not_now:"Nie teraz"
+};
+const BIG_CITY_THRESHOLD = 1000;
+const SMALL_CITY_THRESHOLD = 500;
+const CITY_VOTE_COOLDOWN_DAYS = 30;
+
+app.get("/api/city-nominations", async (req, res) => {
+  try {
+    const initData = req.headers["x-telegram-init-data"] || "";
+    const tgUser = verifyTelegramInitData(initData);
+    const userId = tgUser ? String(tgUser.id) : null;
+    const fp = req.query.fp || req.ip || "anon";
+
+    const rows = await pool.query(`
+      SELECT n.id, n.name, n.country, n.status, n.vote_threshold, n.created_at,
+        (SELECT COUNT(*)::int FROM fp1_city_votes v WHERE v.city_nomination_id=n.id) AS votes
+      FROM fp1_city_nominations n
+      ORDER BY votes DESC, n.created_at ASC LIMIT 50
+    `);
+
+    const myVotes = new Set();
+    if (userId || fp) {
+      const mv = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
+      mv.rows.forEach(r => myVotes.add(r.city_nomination_id));
+    }
+
+    // Check cooldown: last vote time
+    let canVoteAfter = null;
+    if (fp) {
+      const lastVote = await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+      if (lastVote.rowCount > 0) {
+        const next = new Date(lastVote.rows[0].created_at);
+        next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
+        if (next > new Date()) canVoteAfter = next.toISOString();
+      }
+    }
+
+    res.json({
+      cities: rows.rows.map(n => ({
+        ...n, status_label: CITY_NOM_LABELS[n.status] || n.status, my_vote: myVotes.has(n.id)
+      })),
+      can_vote_after: canVoteAfter
+    });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+app.post("/api/city-nominations", async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim().slice(0, 100);
+    if (!name || name.length < 2) return res.status(400).json({ error: "Podaj nazwę miasta (min. 2 znaki)" });
+    const fp = req.body.fp || req.ip || "anon";
+    if (rateLimit(`citynom_create:${fp}`, 3, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele propozycji." });
+
+    // Check if already exists
+    const dup = await pool.query(`SELECT id FROM fp1_city_nominations WHERE LOWER(name)=LOWER($1) LIMIT 1`, [name]);
+    if (dup.rowCount > 0) return res.status(409).json({ error: "To miasto już jest na liście", city_id: dup.rows[0].id });
+
+    // Determine threshold based on population heuristic
+    const bigCities = ["Warszawa","Kraków","Łódź","Wrocław","Poznań","Gdańsk","Szczecin","Bydgoszcz","Lublin","Białystok","Katowice"];
+    const threshold = bigCities.some(c => c.toLowerCase() === name.toLowerCase()) ? BIG_CITY_THRESHOLD : SMALL_CITY_THRESHOLD;
+
+    const r = await pool.query(`INSERT INTO fp1_city_nominations(name,vote_threshold) VALUES($1,$2) RETURNING id`, [name, threshold]);
+    res.json({ ok: true, city_id: r.rows[0].id });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+app.post("/api/city-nominations/:id/vote", async (req, res) => {
+  try {
+    const cityId = Number(req.params.id);
+    const fp = String(req.body.fp || req.ip || "anon").slice(0, 200);
+    const initData = req.headers["x-telegram-init-data"] || "";
+    const tgUser = verifyTelegramInitData(initData);
+    const userId = tgUser ? String(tgUser.id) : null;
+
+    let isMember = false;
+    if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
+
+    if (rateLimit(`citynom_vote:${fp}`, 10, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele głosów." });
+
+    // Check already voted on THIS city (lifetime)
+    const already = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [cityId, fp]);
+    if (already.rowCount > 0) return res.status(409).json({ error: "Już zagłosowałeś na to miasto" });
+
+    // Check cooldown (30 days since last vote on ANY city)
+    const lastVote = await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+    if (lastVote.rowCount > 0) {
+      const next = new Date(lastVote.rows[0].created_at);
+      next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
+      if (next > new Date()) {
+        const daysLeft = Math.ceil((next - new Date()) / 86400000);
+        return res.status(429).json({ error: `Możesz zmienić głos za ${daysLeft} dni` });
+      }
+    }
+
+    const nom = await pool.query(`SELECT id, status, vote_threshold FROM fp1_city_nominations WHERE id=$1 LIMIT 1`, [cityId]);
+    if (nom.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono" });
+    if (!["voting","threshold"].includes(nom.rows[0].status)) return res.status(400).json({ error: "Głosowanie zakończone" });
+
+    await pool.query(`INSERT INTO fp1_city_votes(city_nomination_id,fingerprint,tg_user_id,is_member) VALUES($1,$2,$3,$4)`, [cityId, fp, userId || null, isMember]);
+
+    const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_city_votes WHERE city_nomination_id=$1`, [cityId]);
+    if (cnt.rows[0].c >= nom.rows[0].vote_threshold && nom.rows[0].status === "voting") {
+      await pool.query(`UPDATE fp1_city_nominations SET status='threshold', updated_at=NOW() WHERE id=$1`, [cityId]);
+    }
+    res.json({ ok: true, votes: cnt.rows[0].c });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+/* ═══════════════════════════════════════════════════════════════
    GET /api/top
 ═══════════════════════════════════════════════════════════════ */
 app.get("/api/top", async (req, res) => {
@@ -3802,6 +3939,13 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       CASE n.status WHEN 'threshold' THEN 0 WHEN 'voting' THEN 1 WHEN 'review' THEN 2 WHEN 'contact' THEN 3 WHEN 'talking' THEN 4 ELSE 5 END,
       total_votes DESC
   `);
+  const cityNoms = await pool.query(`
+    SELECT n.*,
+      (SELECT COUNT(*)::int FROM fp1_city_votes v WHERE v.city_nomination_id=n.id) AS total_votes,
+      (SELECT COUNT(*)::int FROM fp1_city_votes v WHERE v.city_nomination_id=n.id AND v.is_member=TRUE) AS member_votes,
+      (SELECT COUNT(*)::int FROM fp1_city_votes v WHERE v.city_nomination_id=n.id AND v.is_member=FALSE) AS guest_votes
+    FROM fp1_city_nominations n ORDER BY total_votes DESC
+  `);
   const spotsLeft = await founderSpotsLeft();
   const districtStats = await pool.query(`SELECT district,COUNT(*)::int AS cnt FROM fp1_foxes WHERE district IS NOT NULL GROUP BY district ORDER BY cnt DESC`);
   const achStats = await pool.query(`SELECT achievement_code,COUNT(*)::int AS cnt FROM fp1_achievements GROUP BY achievement_code ORDER BY cnt DESC LIMIT 10`);
@@ -3841,6 +3985,24 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       </form>
     </div>`;
   }).join("");
+  const cityStatusColors = {voting:"#3B82F6",threshold:"#22C55E",review:"#FF8A00",planned:"#8B5CF6",not_now:"#EF4444"};
+  const cityNomsHtml = cityNoms.rows.length === 0 ? `<div class="muted">Brak głosów na miasta</div>` : cityNoms.rows.map(n => {
+    const sc = cityStatusColors[n.status] || "#888";
+    const pct = Math.min(100, Math.round(n.total_votes / n.vote_threshold * 100));
+    return `<div style="padding:8px;margin:4px 0;border-radius:8px;border:1px solid ${sc}30;background:${sc}06">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>${escapeHtml(n.name)}</b>
+        <span style="font-size:11px;color:${sc};font-weight:700;border:1px solid ${sc}40;border-radius:12px;padding:2px 8px">${CITY_NOM_LABELS[n.status]}</span>
+      </div>
+      <div style="margin-top:4px;font-size:12px">
+        📊 <b>${n.total_votes}</b>/${n.vote_threshold} (🦊 ${n.member_votes} · 👤 ${n.guest_votes})
+        <div style="height:4px;background:#1a1f35;border-radius:2px;margin-top:3px"><div style="width:${pct}%;height:100%;background:${sc};border-radius:2px"></div></div>
+      </div>
+      <form method="POST" action="/admin/city-nominations/${n.id}/status" style="margin-top:6px;display:flex;gap:3px;flex-wrap:wrap">
+        ${CITY_NOM_STATUSES.filter(s=>s!==n.status).map(s=>`<button name="status" value="${s}" style="font-size:10px;padding:2px 6px;background:${cityStatusColors[s]}20;border:1px solid ${cityStatusColors[s]}40;color:${cityStatusColors[s]};border-radius:4px;cursor:pointer">${CITY_NOM_LABELS[s]}</button>`).join("")}
+      </form>
+    </div>`;
+  }).join("");
   const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
 
   res.send(pageShell("Admin — FoxPot", `
@@ -3851,6 +4013,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     </div>
     <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
     <div class="card"><h2>🗳️ Głosowanie na lokale (${noms.rows.length})</h2>${nomsHtml}</div>
+    <div class="card"><h2>🏙️ Głosowanie na miasta (${cityNoms.rows.length})</h2>${cityNomsHtml}</div>
     <div class="card">
       <h2>🚀 Ranking wzrostu</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -4027,6 +4190,14 @@ app.post("/admin/nominations/:id/status", requireAdminAuth, async (req, res) => 
   if (!NOM_STATUSES.includes(status)) return res.redirect(`/admin?err=${encodeURIComponent("Nieprawidłowy status")}`);
   await pool.query(`UPDATE fp1_nominations SET status=$1, updated_at=NOW() WHERE id=$2`, [status, nomId]);
   res.redirect(`/admin?ok=${encodeURIComponent(`Status zmieniony na: ${NOM_STATUS_LABELS[status]}`)}`);
+});
+
+app.post("/admin/city-nominations/:id/status", requireAdminAuth, async (req, res) => {
+  const cityId = Number(req.params.id);
+  const status = String(req.body.status || "").trim();
+  if (!CITY_NOM_STATUSES.includes(status)) return res.redirect(`/admin?err=${encodeURIComponent("Nieprawidłowy status")}`);
+  await pool.query(`UPDATE fp1_city_nominations SET status=$1, updated_at=NOW() WHERE id=$2`, [status, cityId]);
+  res.redirect(`/admin?ok=${encodeURIComponent(`Status miasta zmieniony na: ${CITY_NOM_LABELS[status]}`)}`);
 });
 
 app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
