@@ -663,27 +663,24 @@ async function migrate() {
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_fox_id DROP NOT NULL`); } catch {}
   try { await pool.query(`ALTER TABLE fp1_invites ALTER COLUMN created_by_tg DROP NOT NULL`); } catch {}
 
-  if (ADMIN_TG_ID) {
-    await pool.query(
-      `UPDATE fp1_foxes SET founder_number=NULL, founder_registered_at=NULL WHERE user_id=$1`,
-      [ADMIN_TG_ID]
-    );
-    console.log(`✅ Founder number скинуто для адміна (TG ID: ${ADMIN_TG_ID})`);
-  }
-
   await ensureIndex(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_founder_number ON fp1_foxes(founder_number) WHERE founder_number IS NOT NULL`);
   await ensureIndex(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_pioneer_number ON fp1_venues(pioneer_number) WHERE pioneer_number IS NOT NULL`);
 
-  // Auto-assign pioneer_number for first 50 venues in Warsaw
-  await pool.query(`
-    WITH ranked AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
-      FROM fp1_venues
-      WHERE pioneer_number IS NULL AND approved=TRUE AND LOWER(city) IN ('warsaw','warszawa')
-    )
-    UPDATE fp1_venues SET pioneer_number=ranked.rn
-    FROM ranked WHERE fp1_venues.id=ranked.id AND ranked.rn <= 50
-  `);
+  // Auto-assign pioneer_number (safe — skips if already assigned)
+  try {
+    const hasPioneers = await pool.query(`SELECT 1 FROM fp1_venues WHERE pioneer_number IS NOT NULL LIMIT 1`);
+    if (hasPioneers.rowCount === 0) {
+      await pool.query(`
+        WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+          FROM fp1_venues
+          WHERE pioneer_number IS NULL AND approved=TRUE AND LOWER(city) IN ('warsaw','warszawa')
+        )
+        UPDATE fp1_venues SET pioneer_number=ranked.rn
+        FROM ranked WHERE fp1_venues.id=ranked.id AND ranked.rn <= 50
+      `);
+    }
+  } catch(e) { console.warn("pioneer_number migration skipped:", e.message); }
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_achievements_user   ON fp1_achievements(user_id)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_otp        ON fp1_checkins(otp)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_checkins_expires    ON fp1_checkins(expires_at)`);
@@ -706,19 +703,21 @@ async function migrate() {
   await pool.query(`UPDATE fp1_counted_visits SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
   await pool.query(`UPDATE fp1_checkins SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
 
-  // Assign founder numbers only if none exist yet (one-time migration)
-  const hasFounders = await pool.query(`SELECT 1 FROM fp1_foxes WHERE founder_number IS NOT NULL LIMIT 1`);
-  if (hasFounders.rowCount === 0) {
-    await pool.query(`
-      WITH ranked AS (
-        SELECT user_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
-        FROM fp1_foxes
-        WHERE founder_number IS NULL AND ($1 = '' OR user_id != $1::bigint)
-      )
-      UPDATE fp1_foxes SET founder_number=ranked.rn, founder_registered_at=NOW()
-      FROM ranked WHERE fp1_foxes.user_id=ranked.user_id AND ranked.rn <= 1000
-    `, [ADMIN_TG_ID || ""]);
-  }
+  // Assign founder numbers only if none exist yet (one-time, safe)
+  try {
+    const hasFounders = await pool.query(`SELECT 1 FROM fp1_foxes WHERE founder_number IS NOT NULL LIMIT 1`);
+    if (hasFounders.rowCount === 0) {
+      await pool.query(`
+        WITH ranked AS (
+          SELECT user_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+          FROM fp1_foxes
+          WHERE founder_number IS NULL AND ($1 = '' OR user_id != $1::bigint)
+        )
+        UPDATE fp1_foxes SET founder_number=ranked.rn, founder_registered_at=NOW()
+        FROM ranked WHERE fp1_foxes.user_id=ranked.user_id AND ranked.rn <= 1000
+      `, [ADMIN_TG_ID || ""]);
+    }
+  } catch(e) { console.warn("founder_number migration skipped:", e.message); }
 
   const hasDayKey = await hasColumn("fp1_counted_visits", "day_key");
   COUNTED_DAY_COL = hasDayKey ? "day_key" : "war_day";
