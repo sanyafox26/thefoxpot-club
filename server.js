@@ -38,6 +38,7 @@ const path     = require("path");
 const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
 const { setupSupport, migrateSupport } = require("./fox_support");
+const jwt      = require("jsonwebtoken");
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -52,6 +53,7 @@ const PUBLIC_URL     = (process.env.PUBLIC_URL     || "").trim().replace(/\/+$/,
 const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || require("crypto").randomBytes(32).toString("hex")).trim();
 const COOKIE_SECRET  = (process.env.COOKIE_SECRET  || require("crypto").randomBytes(32).toString("hex")).trim();
 const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "").trim();
+const JWT_SECRET     = (process.env.JWT_SECRET     || COOKIE_SECRET).trim();
 const ADMIN_TG_ID    = (process.env.ADMIN_TG_ID    || "").trim();
 const PORT           = process.env.PORT || 8080;
 
@@ -622,6 +624,7 @@ async function migrate() {
   await ensureColumn("fp1_invite_uses",    "used_by_user_id",       "BIGINT");
   await ensureColumn("fp1_invite_uses",    "code",                  "TEXT");
   await ensureColumn("fp1_invite_uses",    "used_by_tg",            "BIGINT");
+  await ensureColumn("fp1_foxes",          "phone",                 "TEXT");
   // Drop NOT NULL constraints that may exist from old schema
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
@@ -742,8 +745,22 @@ async function migrate() {
     )
   `);
 
+  // OTP codes for phone auth
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_otp_codes (
+      id SERIAL PRIMARY KEY,
+      phone TEXT NOT NULL,
+      code TEXT NOT NULL,
+      attempts INT NOT NULL DEFAULT 0,
+      used BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fp1_otp_phone ON fp1_otp_codes(phone, created_at DESC)`).catch(()=>{});
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_phone ON fp1_foxes(phone) WHERE phone IS NOT NULL`).catch(()=>{});
+
   await migrateSupport(pool);
-  console.log("✅ Migrations OK (V25 + Support)");
+  console.log("✅ Migrations OK (V26 + Support)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1523,8 +1540,159 @@ async function requireWebAppAuth(req, res, next) {
     } catch(e) { console.error("[PWA Auth]", e.message); }
   }
 
+  // ── 4. JWT Bearer token (phone auth) ──
+  const authHeader = req.headers.authorization || "";
+  if (authHeader.startsWith("Bearer ")) {
+    try {
+      const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+      if (decoded.fox_id) {
+        const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`, [decoded.fox_id]);
+        if (foxQ.rows.length) {
+          req.tgUser = { id: foxQ.rows[0].user_id || decoded.fox_id };
+          req.foxJwt = decoded;
+          return next();
+        }
+      }
+    } catch(e) { /* invalid/expired token — fall through */ }
+  }
+
   return res.status(401).json({ error: "Unauthorized" });
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTH — Phone OTP (SMS)
+═══════════════════════════════════════════════════════════════ */
+app.post("/api/auth/send-otp", express.json(), async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    // Validate Polish phone: +48 followed by 9 digits
+    const cleaned = String(phone || "").replace(/[\s\-()]/g, "");
+    if (!/^\+48\d{9}$/.test(cleaned)) {
+      return res.status(400).json({ error: "Nieprawidłowy numer telefonu. Format: +48XXXXXXXXX" });
+    }
+
+    // Rate limit: max 5 OTPs per hour per phone
+    const rateQ = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '1 hour'`,
+      [cleaned]
+    );
+    if (rateQ.rows[0].cnt >= 5) {
+      return res.status(429).json({ error: "Za dużo prób. Spróbuj ponownie za godzinę." });
+    }
+
+    // Generate 6-digit code
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    await pool.query(
+      `INSERT INTO fp1_otp_codes(phone, code) VALUES($1, $2)`,
+      [cleaned, code]
+    );
+
+    // TODO: Twilio integration — send SMS
+    // For now: return code in response for testing
+    console.log(`[OTP] ${cleaned} → ${code}`);
+
+    res.json({ ok: true, phone: cleaned, _debug_code: code });
+  } catch(e) {
+    console.error("SEND_OTP_ERR", e.message);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
+  try {
+    const { phone, code } = req.body || {};
+    const cleaned = String(phone || "").replace(/[\s\-()]/g, "");
+    if (!/^\+48\d{9}$/.test(cleaned) || !code) {
+      return res.status(400).json({ error: "Nieprawidłowe dane" });
+    }
+
+    // Check if phone is blocked (5+ failed attempts on latest code in last hour)
+    const blockQ = await pool.query(
+      `SELECT attempts FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '1 hour' ORDER BY created_at DESC LIMIT 1`,
+      [cleaned]
+    );
+    if (blockQ.rows.length && blockQ.rows[0].attempts >= 5) {
+      return res.status(429).json({ error: "Numer zablokowany. Spróbuj ponownie za godzinę." });
+    }
+
+    // Find valid OTP: not used, < 5 min old, < 5 attempts
+    const otpQ = await pool.query(
+      `SELECT id, code, attempts FROM fp1_otp_codes
+       WHERE phone=$1 AND used=FALSE AND created_at > NOW() - INTERVAL '5 minutes' AND attempts < 5
+       ORDER BY created_at DESC LIMIT 1`,
+      [cleaned]
+    );
+
+    if (!otpQ.rows.length) {
+      return res.status(400).json({ error: "Kod wygasł lub nie istnieje. Wyślij nowy." });
+    }
+
+    const otp = otpQ.rows[0];
+
+    if (otp.code !== String(code).trim()) {
+      // Wrong code — increment attempts
+      await pool.query(`UPDATE fp1_otp_codes SET attempts=attempts+1 WHERE id=$1`, [otp.id]);
+      const left = 4 - otp.attempts;
+      return res.status(400).json({ error: `Nieprawidłowy kod. Pozostało prób: ${left}` });
+    }
+
+    // Mark OTP as used
+    await pool.query(`UPDATE fp1_otp_codes SET used=TRUE WHERE id=$1`, [otp.id]);
+
+    // Find or create Fox
+    let foxQ = await pool.query(`SELECT id, user_id, username, city FROM fp1_foxes WHERE phone=$1 AND is_deleted=FALSE LIMIT 1`, [cleaned]);
+    let isNew = false;
+    let foxId;
+
+    if (foxQ.rows.length) {
+      foxId = foxQ.rows[0].id;
+    } else {
+      // Create new Fox with phone (no tg_id)
+      // Use negative timestamp as pseudo user_id to avoid conflicts with TG ids
+      const pseudoId = -Date.now();
+      const ins = await pool.query(
+        `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city) VALUES($1, $2, 1, 3, 'Warszawa') RETURNING id`,
+        [pseudoId, cleaned]
+      );
+      foxId = ins.rows[0].id;
+      isNew = true;
+    }
+
+    // Generate JWT (7 days)
+    const token = jwt.sign({ fox_id: foxId, phone: cleaned }, JWT_SECRET, { expiresIn: "7d" });
+
+    res.json({ ok: true, token, is_new: isNew });
+  } catch(e) {
+    console.error("VERIFY_OTP_ERR", e.message);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+app.post("/api/auth/onboard", express.json(), async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
+    const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+    if (!decoded.fox_id) return res.status(401).json({ error: "Unauthorized" });
+
+    const { username, city, district } = req.body || {};
+    if (!username || !city) return res.status(400).json({ error: "Podaj nick i miasto" });
+
+    const clean = String(username).trim().replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20);
+    if (clean.length < 2) return res.status(400).json({ error: "Nick musi mieć min. 2 znaki (a-z, 0-9, _)" });
+
+    await pool.query(
+      `UPDATE fp1_foxes SET username=$1, city=$2, district=$3, consent_at=NOW(), consent_version='phone_v1' WHERE id=$4`,
+      [clean, city, district || null, decoded.fox_id]
+    );
+
+    res.json({ ok: true });
+  } catch(e) {
+    if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return res.status(401).json({ error: "Sesja wygasła" });
+    console.error("ONBOARD_ERR", e.message);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
 
 /* ═══════════════════════════════════════════════════════════════
    ROUTES — HEALTH & STATIC

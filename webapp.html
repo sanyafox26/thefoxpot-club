@@ -456,10 +456,53 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="welcome">
         <div class="welcome-fox"><img src="/icons/icon-192.png" width="80" height="80" style="display:block;margin:0 auto;border-radius:16px" alt="FoxPot" onerror="this.outerHTML='🦊'"/></div>
         <div class="welcome-title">THE FOXPOT CLUB</div>
-        <div class="welcome-sub" id="loginMessage">Logowanie...</div>
-        <div id="loginScreen" style="display:none;margin-top:20px">
-          <a href="https://t.me/thefoxpot_club_bot" target="_blank" style="display:block;width:100%;padding:14px;background:linear-gradient(135deg,#0088cc,#0066aa);border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;text-align:center;text-decoration:none;font-family:var(--font);margin-bottom:10px">✈️ Zaloguj przez Telegram</a>
-          <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.5">Inne metody logowania — wkrótce</div>
+        <div class="welcome-sub" id="loginMessage">Zaloguj się, aby kontynuować</div>
+
+        <!-- Step 1: Phone input -->
+        <div id="loginStep1" style="display:none;margin-top:20px">
+          <div style="font-size:13px;color:var(--muted);margin-bottom:10px;text-align:center">Podaj numer telefonu</div>
+          <div style="display:flex;gap:6px;margin-bottom:10px">
+            <span style="padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-weight:700;font-family:var(--mono)">+48</span>
+            <input id="loginPhone" type="tel" placeholder="--- --- ---" maxlength="11" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:15px;font-family:var(--mono);outline:none;letter-spacing:1px" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,9)"/>
+          </div>
+          <button id="loginSendBtn" onclick="loginSendOtp()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📲 Wyślij kod SMS</button>
+          <div id="loginErr1" style="display:none;margin-top:8px;font-size:12px;color:#EF4444;text-align:center"></div>
+
+          <div style="display:flex;align-items:center;gap:12px;margin:16px 0">
+            <div style="flex:1;height:1px;background:var(--border2)"></div>
+            <span style="font-size:11px;color:var(--muted)">lub</span>
+            <div style="flex:1;height:1px;background:var(--border2)"></div>
+          </div>
+          <a href="https://t.me/thefoxpot_club_bot" target="_blank" style="display:block;width:100%;padding:12px;background:rgba(0,136,204,.1);border:1px solid rgba(0,136,204,.3);border-radius:var(--radius-sm);color:#0088cc;font-size:14px;font-weight:700;text-align:center;text-decoration:none;font-family:var(--font)">✈️ Zaloguj przez Telegram</a>
+        </div>
+
+        <!-- Step 2: OTP verify -->
+        <div id="loginStep2" style="display:none;margin-top:20px">
+          <div style="font-size:13px;color:var(--muted);margin-bottom:4px;text-align:center">Kod wysłany na</div>
+          <div id="loginPhoneDisplay" style="font-size:15px;font-weight:700;color:var(--text);text-align:center;margin-bottom:12px;font-family:var(--mono)"></div>
+          <input id="loginCode" type="tel" placeholder="------" maxlength="6" style="width:100%;padding:14px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:22px;font-family:var(--mono);text-align:center;outline:none;letter-spacing:6px;margin-bottom:10px" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,6);if(this.value.length===6)loginVerifyOtp()"/>
+          <button id="loginVerifyBtn" onclick="loginVerifyOtp()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">Zaloguj się</button>
+          <div id="loginErr2" style="display:none;margin-top:8px;font-size:12px;color:#EF4444;text-align:center"></div>
+          <button onclick="loginBackToPhone()" style="width:100%;margin-top:10px;padding:10px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:13px;cursor:pointer;font-family:var(--font)">← Zmień numer</button>
+        </div>
+
+        <!-- Step 3: Onboarding (new Fox) -->
+        <div id="loginStep3" style="display:none;margin-top:20px">
+          <div style="font-size:15px;font-weight:800;color:var(--text);text-align:center;margin-bottom:4px">Witaj w FoxPot Club!</div>
+          <div style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:16px">Uzupełnij profil, aby kontynuować</div>
+          <input id="obNick" type="text" placeholder="Twój nick (a-z, 0-9, _)" maxlength="20" style="width:100%;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);outline:none;margin-bottom:8px" oninput="this.value=this.value.replace(/[^a-zA-Z0-9_]/g,'')"/>
+          <select id="obCity" style="width:100%;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);outline:none;margin-bottom:8px" onchange="obCityChanged()">
+            <option value="Warszawa">Warszawa</option>
+          </select>
+          <select id="obDistrict" style="width:100%;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);outline:none;margin-bottom:12px">
+            <option value="">— Wybierz dzielnicę —</option>
+          </select>
+          <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:14px;cursor:pointer">
+            <input type="checkbox" id="obConsent" style="margin-top:3px;accent-color:var(--fox)"/>
+            <span style="font-size:11px;color:var(--muted);line-height:1.5">Akceptuję <a href="/rules" target="_blank" style="color:var(--fox)">Regulamin</a> i <a href="/privacy" target="_blank" style="color:var(--fox)">Politykę Prywatności</a></span>
+          </label>
+          <button id="obJoinBtn" onclick="loginOnboard()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">🦊 Dołącz do FoxPot Club!</button>
+          <div id="loginErr3" style="display:none;margin-top:8px;font-size:12px;color:#EF4444;text-align:center"></div>
         </div>
       </div>
     </div>
@@ -933,7 +976,7 @@ async function api(path,method='GET',body=null){
 async function loadProfile(){
   S.profileLoaded=true;
   const $l=q('pLoading'),$c=q('pContent'),$e=q('pError'),$u=q('pUnauth');
-  if(!IS_AUTHENTICATED){$l.style.display='none';$u.style.display='block';q('loginMessage').textContent='Zaloguj się, aby kontynuować';q('loginScreen').style.display='';return}
+  if(!IS_AUTHENTICATED){$l.style.display='none';$u.style.display='block';loginShowStep(1);return}
   try{
     const d=await api('/api/profile');
     S.profile=d; S.district=d.district;
@@ -2594,9 +2637,112 @@ async function supSendTicket() {
   }
 }
 
+// ── Phone OTP Login Flow ──
+let _loginPhone = '';
+
+function loginShowStep(n) {
+  q('loginStep1').style.display = n===1 ? '' : 'none';
+  q('loginStep2').style.display = n===2 ? '' : 'none';
+  q('loginStep3').style.display = n===3 ? '' : 'none';
+  ['loginErr1','loginErr2','loginErr3'].forEach(id => { q(id).style.display='none'; });
+}
+
+function loginShowErr(id, msg) {
+  const el = q(id);
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+async function loginSendOtp() {
+  const phone = '+48' + (q('loginPhone').value || '').replace(/\D/g,'');
+  if (phone.length !== 12) return loginShowErr('loginErr1', 'Podaj 9 cyfr numeru telefonu');
+  const btn = q('loginSendBtn');
+  btn.disabled = true; btn.textContent = 'Wysyłanie...';
+  try {
+    const r = await fetch(BASE + '/api/auth/send-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Błąd');
+    _loginPhone = phone;
+    q('loginPhoneDisplay').textContent = phone.replace(/(\+48)(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4');
+    loginShowStep(2);
+    q('loginCode').value = '';
+    q('loginCode').focus();
+  } catch(e) {
+    loginShowErr('loginErr1', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '📲 Wyślij kod SMS';
+  }
+}
+
+async function loginVerifyOtp() {
+  const code = (q('loginCode').value || '').replace(/\D/g,'');
+  if (code.length !== 6) return;
+  const btn = q('loginVerifyBtn');
+  btn.disabled = true; btn.textContent = 'Weryfikacja...';
+  try {
+    const r = await fetch(BASE + '/api/auth/verify-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: _loginPhone, code })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Błąd');
+    localStorage.setItem('fp1_jwt', d.token);
+    if (d.is_new) {
+      // Show onboarding
+      obFillDistricts('Warszawa');
+      loginShowStep(3);
+      q('obNick').focus();
+    } else {
+      location.reload();
+    }
+  } catch(e) {
+    loginShowErr('loginErr2', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Zaloguj się';
+  }
+}
+
+function loginBackToPhone() { loginShowStep(1); q('loginPhone').focus(); }
+
+function obFillDistricts(city) {
+  const sel = q('obDistrict');
+  sel.innerHTML = '<option value="">— Wybierz dzielnicę —</option>';
+  (CITY_DISTRICTS_MAP[city] || []).forEach(d => {
+    sel.innerHTML += `<option value="${d}">${d}</option>`;
+  });
+}
+function obCityChanged() { obFillDistricts(q('obCity').value); }
+
+async function loginOnboard() {
+  const nick = q('obNick').value.trim();
+  const city = q('obCity').value;
+  const district = q('obDistrict').value;
+  if (!nick || nick.length < 2) return loginShowErr('loginErr3', 'Nick musi mieć min. 2 znaki');
+  if (!q('obConsent').checked) return loginShowErr('loginErr3', 'Zaakceptuj regulamin');
+  const btn = q('obJoinBtn');
+  btn.disabled = true; btn.textContent = 'Tworzenie konta...';
+  try {
+    const token = localStorage.getItem('fp1_jwt');
+    const r = await fetch(BASE + '/api/auth/onboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ username: nick, city, district })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Błąd');
+    location.reload();
+  } catch(e) {
+    loginShowErr('loginErr3', e.message);
+    btn.disabled = false; btn.textContent = '🦊 Dołącz do FoxPot Club!';
+  }
+}
+
 loadProfile();
 renderProfileSlot();
-if(!TG) console.warn('[FoxPot] Nie w Telegram WebApp');
+if(!IS_TELEGRAM) console.warn('[FoxPot] Nie w Telegram WebApp');
 
 /* ── PWA Install Prompt ── */
 let _pwaPrompt = null;
