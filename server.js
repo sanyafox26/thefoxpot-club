@@ -43,6 +43,11 @@ const jwt      = require("jsonwebtoken");
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: "12mb" }));
+// Allow popups (Google Maps, external links) without COOP blocking
+app.use((_req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
 
 /* ═══════════════════════════════════════════════════════════════
    ENV
