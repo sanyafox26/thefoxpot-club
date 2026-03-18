@@ -1594,7 +1594,8 @@ app.post("/api/auth/send-otp", express.json(), async (req, res) => {
     }
 
     // Generate 6-digit code
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // TODO: remove hardcoded OTP, use random + Twilio
+    const code = "123456";
     await pool.query(
       `INSERT INTO fp1_otp_codes(phone, code) VALUES($1, $2)`,
       [cleaned, code]
