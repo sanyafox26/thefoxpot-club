@@ -3401,6 +3401,55 @@ const REC_TITLES_FOX   = ["🏆 Ranking Foxów"];
 const REC_TITLES_VOTE  = ["🗳️ Aktywne głosowanie"];
 function pickOne(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+// ── Per-Fox frequency cap (in-memory, resets on restart) ──
+// Stores last N shown items per fox: Map<foxId, [{venue_id, card_type, ts}]>
+const _recHistory = new Map();
+const REC_HISTORY_SIZE = 10;        // remember last 10 shown cards
+const REC_VENUE_MAX_IN_WINDOW = 2;  // same venue_id max 2 times in last 10
+const REC_HISTORY_TTL = 30*60*1000; // 30 min TTL — after that, history entry expires
+
+function getRecHistory(foxId) {
+  if (!foxId) return [];
+  const h = _recHistory.get(foxId) || [];
+  const now = Date.now();
+  // Prune expired entries
+  const valid = h.filter(e => (now - e.ts) < REC_HISTORY_TTL);
+  if (valid.length !== h.length) _recHistory.set(foxId, valid);
+  return valid;
+}
+
+function pushRecHistory(foxId, card) {
+  if (!foxId) return;
+  const h = getRecHistory(foxId);
+  h.push({ venue_id: card.venue_id, card_type: card.card_type, ts: Date.now() });
+  if (h.length > REC_HISTORY_SIZE) h.shift();
+  _recHistory.set(foxId, h);
+}
+
+function isBlocked(foxId, card) {
+  const h = getRecHistory(foxId);
+  if (!h.length) return false;
+  // Rule 1: No same venue_id twice in a row
+  const last = h[h.length - 1];
+  if (card.venue_id && last.venue_id && card.venue_id === last.venue_id) return true;
+  // Rule 2: No same card_type twice in a row
+  if (last.card_type === card.card_type) return true;
+  // Rule 3: Same venue_id max N times in window
+  if (card.venue_id) {
+    const cnt = h.filter(e => e.venue_id === card.venue_id).length;
+    if (cnt >= REC_VENUE_MAX_IN_WINDOW) return true;
+  }
+  return false;
+}
+
+// Cleanup stale fox histories every 10 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [fid, h] of _recHistory) {
+    if (!h.length || (now - h[h.length-1].ts) > REC_HISTORY_TTL) _recHistory.delete(fid);
+  }
+}, 10*60*1000);
+
 app.get("/api/recommendation", async (req, res) => {
   const FALLBACK = { type:"system", card_type:"fallback", title:"🦊 FoxPot poleca dziś", name:"FoxPot Club", text:"🦊 Odkrywaj lokale z FoxPot Club!", discount:null, district:null, status_badge:null, venue_id:null, is_promo:false };
   try {
@@ -3422,7 +3471,7 @@ app.get("/api/recommendation", async (req, res) => {
     let card = null;
 
     if (Math.random() < promoChance) {
-      // Try paid promo
+      // Try paid promo — fetch a few to allow anti-repeat filtering
       const promoQ = await pool.query(`
         SELECT p.id, p.venue_id, p.promo_text, v.name AS venue_name, v.city,
                v.address, v.discount_percent, v.pioneer_number
@@ -3431,21 +3480,20 @@ app.get("/api/recommendation", async (req, res) => {
         WHERE p.status='active' AND p.starts_at <= NOW() AND p.ends_at > NOW()
           ${excludeVenueId ? 'AND p.venue_id != $1' : ''}
         ORDER BY CASE p.package WHEN 'premium' THEN 0 WHEN 'boost' THEN 1 ELSE 2 END, RANDOM()
-        LIMIT 1
+        LIMIT 5
       `, excludeVenueId ? [excludeVenueId] : []);
-      if (promoQ.rows.length) {
-        const p = promoQ.rows[0];
+      for (const p of promoQ.rows) {
         const disc = parseFloat(p.discount_percent) || 10;
-        const near = false; // venues don't have district column yet
-        card = {
+        const candidate = {
           type:"paid", card_type:"promo", title: pickOne(REC_TITLES_VENUE),
           name: p.venue_name,
           text: p.promo_text || `🦊 The FoxPot Club poleca: ${p.venue_name}`,
           discount: disc > 0 ? disc : null,
-          district: near ? "📍 Blisko Ciebie!" : null,
+          district: null,
           status_badge: null,
           venue_id: p.venue_id, is_promo: true
         };
+        if (!isBlocked(foxId, candidate)) { card = candidate; break; }
       }
     }
 
@@ -3500,7 +3548,6 @@ app.get("/api/recommendation", async (req, res) => {
       for (const n of nomQ.rows) {
         const remaining = n.vote_threshold - n.votes;
         if (remaining > 0 && remaining <= Math.ceil(n.vote_threshold * 0.2)) {
-          // Close to threshold
           cards.push({
             type:"system", card_type:"glosowanie_blisko", title: pickOne(REC_TITLES_VOTE),
             name: n.name, text: `🗳️ Do aktywacji ${n.name} brakuje jeszcze ${remaining} głosów!`,
@@ -3529,22 +3576,29 @@ app.get("/api/recommendation", async (req, res) => {
         });
       }
 
-      // — Venue-based cards (random venue) —
+      // — Venue-based cards (weighted selection pool) —
+      // Fetch pool of 5, weighted: new 2x (capped), pioneer 1.5x, recommended 1.3x, discount 1.3x
       const venueQ = await pool.query(`
         SELECT id, name, city, discount_percent, recommended,
                pioneer_number, venue_type, cuisine, created_at
         FROM fp1_venues WHERE approved=TRUE
           ${excludeVenueId ? 'AND id != $1' : ''}
-        ORDER BY RANDOM() LIMIT 1
+        ORDER BY (
+          CASE WHEN created_at > NOW() - INTERVAL '7 days' THEN 2.0 ELSE 1.0 END
+          * CASE WHEN pioneer_number IS NOT NULL THEN 1.5 ELSE 1.0 END
+          * CASE WHEN COALESCE(recommended,'') != '' THEN 1.3 ELSE 1.0 END
+          * CASE WHEN discount_percent > 10 THEN 1.3 ELSE 1.0 END
+        ) * RANDOM() DESC
+        LIMIT 5
       `, excludeVenueId ? [excludeVenueId] : []);
 
-      if (venueQ.rows.length) {
-        const v = venueQ.rows[0];
+      for (const v of venueQ.rows) {
         const disc = parseFloat(v.discount_percent) || 10;
         const near = false; // venues don't have district column yet
+        const isNew = v.created_at && (Date.now() - new Date(v.created_at).getTime()) < 7*24*60*60*1000;
 
         // 9. New venue (< 7 days)
-        if (v.created_at && (Date.now() - new Date(v.created_at).getTime()) < 7*24*60*60*1000) {
+        if (isNew) {
           cards.push({
             type:"system", card_type:"nowy_lokal", title: pickOne(REC_TITLES_VENUE),
             name: v.name, text: `🆕 Nowy partner w FoxPot: ${v.name}!`,
@@ -3609,7 +3663,7 @@ app.get("/api/recommendation", async (req, res) => {
           });
         }
 
-        // 15. Blisko Ciebie (only if district matches and no other "near" card)
+        // 15. Blisko Ciebie
         if (near && !cards.some(c => c.venue_id === v.id)) {
           cards.push({
             type:"system", card_type:"blisko", title: pickOne(REC_TITLES_VENUE),
@@ -3620,9 +3674,17 @@ app.get("/api/recommendation", async (req, res) => {
         }
       }
 
-      // Pick random card from all collected
-      card = cards.length ? pickOne(cards) : FALLBACK;
+      // ── Step 3: Pick card respecting frequency cap ──
+      // Shuffle cards, then pick first non-blocked
+      for (let i = cards.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [cards[i], cards[j]] = [cards[j], cards[i]];
+      }
+      card = cards.find(c => !isBlocked(foxId, c)) || cards[0] || FALLBACK;
     }
+
+    // Record shown card in fox history
+    pushRecHistory(foxId, card);
 
     return res.json(card);
   } catch (e) {
