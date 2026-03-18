@@ -447,6 +447,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <button type="button" id="stampsToggle" onclick="var c=q('stampsList');c.style.display=c.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,138,0,.2);border-radius:8px;padding:10px;color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;text-align:left;font-family:var(--font)">🎫 Twoje stemple ▾</button>
         <div id="stampsList" style="display:none;margin-top:10px"></div>
       </div>
+
+      <!-- PWA Install Button -->
+      <button id="pwaInstallBtn" style="display:none;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font);margin-bottom:12px;text-align:center">📲 Dodaj FoxPot do ekranu głównego</button>
     </div>
     <div id="pError" class="err-banner"></div>
     <div id="pUnauth" style="display:none">
@@ -2537,6 +2540,38 @@ async function supSendTicket() {
 loadProfile();
 renderProfileSlot();
 if(!TG) console.warn('[FoxPot] Nie w Telegram WebApp');
+
+/* ── PWA Install Prompt ── */
+let _pwaPrompt = null;
+const _pwaBtn = q('pwaInstallBtn');
+
+// Hide if already installed as standalone
+if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+  if (_pwaBtn) _pwaBtn.style.display = 'none';
+} else {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _pwaPrompt = e;
+    if (_pwaBtn) _pwaBtn.style.display = '';
+  });
+}
+
+if (_pwaBtn) {
+  _pwaBtn.addEventListener('click', async () => {
+    if (!_pwaPrompt) return;
+    _pwaPrompt.prompt();
+    const result = await _pwaPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      _pwaBtn.style.display = 'none';
+    }
+    _pwaPrompt = null;
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  if (_pwaBtn) _pwaBtn.style.display = 'none';
+  _pwaPrompt = null;
+});
 
 /* ── PWA Service Worker ── */
 if ('serviceWorker' in navigator) {
