@@ -796,7 +796,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
     <!-- Link to voting page -->
     <div class="card" style="margin-top:12px;text-align:center">
-      <a href="/voting.html" style="display:block;padding:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:var(--radius-sm);color:#3B82F6;font-weight:700;font-size:14px;text-decoration:none">🗳️ Głosuj na lokale i miasta →</a>
+      <a href="#" onclick="openExternal(BASE+'/voting',event);return false" style="display:block;padding:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:var(--radius-sm);color:#3B82F6;font-weight:700;font-size:14px;text-decoration:none">🗳️ Głosuj na lokale i miasta →</a>
     </div>
   </section>
 
@@ -917,11 +917,12 @@ function getUserId(profile) {
 
 // ── Open External URL (Google Maps, etc.) ──
 function openExternal(url, event) {
+  if (event) event.preventDefault();
   if (IS_TELEGRAM && TG?.openLink) {
-    if (event) event.preventDefault();
     TG.openLink(url);
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
-  // Non-TG: let the <a target="_blank" rel="noopener noreferrer"> handle it naturally
 }
 
 // ── Share Abstraction ──
@@ -1087,8 +1088,8 @@ const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:f
 function renderSocialBonus(d) {
   const card = q('socialBonusCard');
   if (!card) return;
-  // If bonus already claimed — hide section entirely
-  if (d.sub_bonus_claimed) {
+  // Hide for phone-only users (no Telegram) and if bonus already claimed
+  if (d.sub_bonus_claimed || (d.user_id && Number(d.user_id) < 0)) {
     card.style.display = 'none';
     return;
   }
@@ -2284,7 +2285,7 @@ async function startTrial(venueId) {
   q('venueModalContent').innerHTML = `
     <div style="text-align:center;margin-bottom:16px">
       ${(v.has_photos || v.google_place_id) ? `<div id="vPhoto${v.id}" style="width:100%;height:180px;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px;background:var(--card-bg);position:relative;cursor:pointer" onclick="nextVenuePhoto(${v.id})">
-        <img id="vPhotoImg${v.id}" src="/api/venue-photo/${v.id}?w=400&idx=0" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#127978;'"/>
+        <img id="vPhotoImg${v.id}" src="${BASE}/api/venue-photo/${v.id}?w=400&idx=0" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='&#127978;'"/>
         <div id="vPhotoDots${v.id}" style="position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:6px"></div>
       </div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>

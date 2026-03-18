@@ -2455,8 +2455,8 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
       });
     }
 
-    // Telegram: real verification via getChatMember
-    if (platform === "telegram") {
+    // Telegram: real verification via getChatMember (skip for phone-only users)
+    if (platform === "telegram" && Number(userId) > 0) {
       try {
         const TG_CHANNEL = "@thefoxpotclub";
         const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getChatMember?chat_id=${TG_CHANNEL}&user_id=${userId}`;
