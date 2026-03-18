@@ -1,0 +1,14 @@
+node_modules/
+.env
+*.log
+
+# Capacitor build artifacts
+android/app/build/
+android/.gradle/
+android/build/
+public/
+
+# IDE
+.idea/
+.vscode/
+*.swp

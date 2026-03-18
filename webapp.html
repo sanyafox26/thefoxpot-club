@@ -848,13 +848,13 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
 </div>
 <script>
-const BASE = window.location.origin;
-
 // ── Platform Detection ──
 const TG   = window.Telegram?.WebApp;
 const IS_TELEGRAM  = !!(TG && TG.initData);
 const IS_STANDALONE = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
 const IS_CAPACITOR = !!window.Capacitor;
+// In Capacitor, local files have capacitor:// origin — use production URL for API
+const BASE = IS_CAPACITOR ? 'https://thefoxpot.club' : window.location.origin;
 const _urlParams = new URLSearchParams(location.search);
 
 // ── Auth Abstraction Layer ──
@@ -2381,7 +2381,10 @@ async function fetchRec(slot, exclude) {
     const params = new URLSearchParams();
     params.set('slot', slot);
     if (exclude) params.set('exclude', exclude);
-    const r = await fetch(BASE + '/api/recommendation?' + params, { headers: { 'X-Telegram-Init-Data': INIT_DATA || '' } });
+    const h = {};
+    if (INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA;
+    if (_jwtToken) h['Authorization'] = 'Bearer ' + _jwtToken;
+    const r = await fetch(BASE + '/api/recommendation?' + params, { headers: h });
     const d = await r.json();
     return (d.text && d.name) ? d : _recFallback;
   } catch(e) { return _recFallback; }
@@ -2798,8 +2801,8 @@ window.addEventListener('appinstalled', () => {
   _pwaPrompt = null;
 });
 
-/* ── PWA Service Worker ── */
-if ('serviceWorker' in navigator) {
+/* ── PWA Service Worker (skip in Capacitor — native handles caching) ── */
+if ('serviceWorker' in navigator && !IS_CAPACITOR) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then(reg => console.log('[SW] registered, scope:', reg.scope))
