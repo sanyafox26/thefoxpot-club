@@ -1686,12 +1686,36 @@ app.post("/api/auth/onboard", express.json(), async (req, res) => {
       [clean, city, district || null, decoded.fox_id]
     );
 
+    // Auto-redeem invite code if provided
+    const inviteCode = req.body.invite_code;
+    if (inviteCode) {
+      const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [decoded.fox_id]);
+      if (foxQ.rows.length) {
+        await redeemInviteCode(foxQ.rows[0].user_id, inviteCode);
+      }
+    }
+
     res.json({ ok: true });
   } catch(e) {
     if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return res.status(401).json({ error: "Sesja wygasła" });
     console.error("ONBOARD_ERR", e.message);
     res.status(500).json({ error: "Błąd serwera" });
   }
+});
+
+// GET /api/invite/info/:code — public invite info (inviter nick)
+app.get("/api/invite/info/:code", async (req, res) => {
+  try {
+    const code = String(req.params.code || "").trim().toUpperCase();
+    const inv = await pool.query(
+      `SELECT i.code, i.uses, i.max_uses, f.username FROM fp1_invites i LEFT JOIN fp1_foxes f ON f.user_id=i.created_by_user_id WHERE i.code=$1 LIMIT 1`,
+      [code]
+    );
+    if (!inv.rows.length || Number(inv.rows[0].uses) >= Number(inv.rows[0].max_uses)) {
+      return res.json({ valid: false });
+    }
+    res.json({ valid: true, inviter: inv.rows[0].username || 'Fox' });
+  } catch(e) { res.json({ valid: false }); }
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1708,7 +1732,22 @@ app.get("/faq",      (_req, res) => res.sendFile(path.join(__dirname, "faq.html"
 app.get("/faq.html", (_req, res) => res.sendFile(path.join(__dirname, "faq.html")));
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V26_0_OK"));;
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V27_0_OK"));
+
+// ── Invite link without Telegram ──
+app.get("/invite/:code", async (req, res) => {
+  try {
+    const code = String(req.params.code || "").trim().toUpperCase();
+    const inv = await pool.query(`SELECT code, uses, max_uses FROM fp1_invites WHERE code=$1 LIMIT 1`, [code]);
+    if (inv.rowCount && Number(inv.rows[0].uses) < Number(inv.rows[0].max_uses)) {
+      return res.redirect(`/webapp?invite=${encodeURIComponent(code)}`);
+    }
+    // Invalid or exhausted
+    res.status(404).send(`<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FoxPot Club</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0b14;color:#f0f0f5;font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:20px}a{color:#F59E0B;text-decoration:none;font-weight:700}</style></head><body><div><div style="font-size:48px;margin-bottom:16px">🦊</div><h2>Kod zaproszenia wygasł lub jest nieprawidłowy</h2><p style="color:#888;margin-bottom:20px">Poproś znajomego o nowy kod zaproszenia.</p><a href="/">← Strona główna</a></div></body></html>`);
+  } catch(e) {
+    res.redirect('/');
+  }
+});
 
 /* ── PWA ── */
 app.get("/manifest.json", (_req, res) => {

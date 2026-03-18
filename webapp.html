@@ -872,6 +872,14 @@ if(IS_PWA && !document.cookie.includes('fp1_pwa=')) {
   location.href = '/pwa';
 }
 
+// ── Invite URL helper ──
+function inviteUrl(code) {
+  return IS_TELEGRAM
+    ? 'https://t.me/thefoxpot_club_bot?start=' + code
+    : BASE + '/invite/' + code;
+}
+const INVITE_SHARE_TEXT = 'Dołącz do The FoxPot Club! Zniżki w najlepszych lokalach w Warszawie 🦊';
+
 // ── App Ready ──
 function appReady() {
   if(IS_TELEGRAM && TG) { TG.ready(); }
@@ -1610,9 +1618,9 @@ async function genInvite(){
 
 function copyCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
-  const link='https://t.me/thefoxpot_club_bot?start='+code;
+  const link=inviteUrl(code);
   const btn=q('invCopyBtn');
-  const text=`🦊 Zaproszenie do The FoxPot Club.\nNależysz tu.\n${link}`;
+  const text=INVITE_SHARE_TEXT+'\n'+link;
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>{
       btn.textContent='✅ Skopiowano!'; btn.classList.add('copied');
@@ -1629,9 +1637,8 @@ function fallbackCopy(code,btn){
 }
 function shareCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
-  const link='https://t.me/thefoxpot_club_bot?start='+code;
-  const text='🦊 Zaproszenie do The FoxPot Club.\nNie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.';
-  shareLink(link, text);
+  const link=inviteUrl(code);
+  shareLink(link, INVITE_SHARE_TEXT);
   haptic('success');
 }
 
@@ -1648,7 +1655,7 @@ async function quickInvite() {
   btn.disabled = true;
   try {
     const d = await api('/api/invite/create', 'POST');
-    const link = 'https://t.me/thefoxpot_club_bot?start=' + d.code;
+    const link = inviteUrl(d.code);
     _quickInviteLink = link;
     S.lastCode = d.code;
     q('profileInviteLink').textContent = link;
@@ -1667,8 +1674,7 @@ async function quickInvite() {
 function shareInviteLink() {
   const link = _quickInviteLink;
   if (!link) return;
-  const text = `🦊 Zaproszenie do The FoxPot Club.\n\nNie dla wszystkich.\nDla tych, którzy wiedzą, gdzie warto być.\n\nNależysz tu.\n${link}`;
-  shareLink(link, '🦊 Zaproszenie do The FoxPot Club. Nie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.');
+  shareLink(link, INVITE_SHARE_TEXT);
   haptic('success');
 }
 function copyInviteLink() {
@@ -2639,12 +2645,27 @@ async function supSendTicket() {
 
 // ── Phone OTP Login Flow ──
 let _loginPhone = '';
+// Detect invite code from URL (?invite=CODE)
+const _inviteCode = _urlParams.get('invite') || localStorage.getItem('fp1_pending_invite') || '';
+if (_inviteCode) localStorage.setItem('fp1_pending_invite', _inviteCode);
+
+// Fetch inviter info if we have an invite code
+let _inviterName = null;
+if (_inviteCode) {
+  fetch(BASE + '/api/invite/info/' + encodeURIComponent(_inviteCode)).then(r=>r.json()).then(d => {
+    if (d.valid && d.inviter) _inviterName = d.inviter;
+  }).catch(()=>{});
+}
 
 function loginShowStep(n) {
   q('loginStep1').style.display = n===1 ? '' : 'none';
   q('loginStep2').style.display = n===2 ? '' : 'none';
   q('loginStep3').style.display = n===3 ? '' : 'none';
   ['loginErr1','loginErr2','loginErr3'].forEach(id => { q(id).style.display='none'; });
+  // Show invite banner
+  if (n === 1 && _inviterName) {
+    q('loginMessage').innerHTML = `Zaproszenie od <strong style="color:var(--fox)">@${_inviterName}</strong>! Witamy w FoxPot Club!`;
+  }
 }
 
 function loginShowErr(id, msg) {
@@ -2729,10 +2750,11 @@ async function loginOnboard() {
     const r = await fetch(BASE + '/api/auth/onboard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ username: nick, city, district })
+      body: JSON.stringify({ username: nick, city, district, invite_code: _inviteCode || undefined })
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Błąd');
+    localStorage.removeItem('fp1_pending_invite');
     location.reload();
   } catch(e) {
     loginShowErr('loginErr3', e.message);
