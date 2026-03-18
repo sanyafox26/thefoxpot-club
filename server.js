@@ -43,9 +43,17 @@ const jwt      = require("jsonwebtoken");
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: "12mb" }));
-// Allow popups (Google Maps, external links) without COOP blocking
-app.use((_req, res, next) => {
+// CORS for Capacitor + COOP for popups (Google Maps)
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "";
+  if (origin === "capacitor://localhost" || origin === "http://localhost" || origin === "https://localhost") {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Telegram-Init-Data, X-Pwa-Token");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 

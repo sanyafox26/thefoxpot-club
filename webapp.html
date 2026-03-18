@@ -852,8 +852,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 const TG   = window.Telegram?.WebApp;
 const IS_TELEGRAM  = !!(TG && TG.initData);
 const IS_STANDALONE = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
-const IS_CAPACITOR = !!window.Capacitor;
-// In Capacitor, local files have capacitor:// origin — use production URL for API
+const IS_CAPACITOR = !!window.Capacitor || window.location.origin.includes('localhost') || window.location.protocol === 'capacitor:';
+// In Capacitor, origin is capacitor://localhost or https://localhost — use production URL
 const BASE = IS_CAPACITOR ? 'https://thefoxpot.club' : window.location.origin;
 const _urlParams = new URLSearchParams(location.search);
 
