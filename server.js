@@ -706,15 +706,19 @@ async function migrate() {
   await pool.query(`UPDATE fp1_counted_visits SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
   await pool.query(`UPDATE fp1_checkins SET war_day=to_char(created_at AT TIME ZONE 'Europe/Warsaw','YYYY-MM-DD') WHERE war_day IS NULL`);
 
-  await pool.query(`
-    WITH ranked AS (
-      SELECT user_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
-      FROM fp1_foxes
-      WHERE founder_number IS NULL AND ($1 = '' OR user_id != $1::bigint)
-    )
-    UPDATE fp1_foxes SET founder_number=ranked.rn, founder_registered_at=NOW()
-    FROM ranked WHERE fp1_foxes.user_id=ranked.user_id AND ranked.rn <= 1000
-  `, [ADMIN_TG_ID || ""]);
+  // Assign founder numbers only if none exist yet (one-time migration)
+  const hasFounders = await pool.query(`SELECT 1 FROM fp1_foxes WHERE founder_number IS NOT NULL LIMIT 1`);
+  if (hasFounders.rowCount === 0) {
+    await pool.query(`
+      WITH ranked AS (
+        SELECT user_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+        FROM fp1_foxes
+        WHERE founder_number IS NULL AND ($1 = '' OR user_id != $1::bigint)
+      )
+      UPDATE fp1_foxes SET founder_number=ranked.rn, founder_registered_at=NOW()
+      FROM ranked WHERE fp1_foxes.user_id=ranked.user_id AND ranked.rn <= 1000
+    `, [ADMIN_TG_ID || ""]);
+  }
 
   const hasDayKey = await hasColumn("fp1_counted_visits", "day_key");
   COUNTED_DAY_COL = hasDayKey ? "day_key" : "war_day";
