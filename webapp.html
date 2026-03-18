@@ -364,16 +364,17 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
       
-      <!-- SLOT 1: Profile venue recommendation -->
+      <!-- SLOT 1: Content Rotation Engine -->
       <div id="profileRecSlot" style="display:none;margin-bottom:12px;padding:16px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;cursor:pointer">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-          <span style="font-size:16px">🦊</span>
-          <span style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px">The FoxPot Club poleca</span>
+        <div class="rec-title" style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <div class="rec-name" style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+          <div class="rec-badge" style="font-size:10px;font-weight:700;color:var(--accent2);white-space:nowrap"></div>
         </div>
-        <div class="rec-venue-name" style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="rec-venue-text" style="font-size:12px;color:var(--muted);line-height:1.4;flex:1;min-width:0"></div>
-          <div class="rec-venue-discount" style="font-size:14px;font-weight:800;color:var(--fox);margin-left:10px;white-space:nowrap"></div>
+        <div class="rec-text" style="font-size:12px;color:var(--muted);line-height:1.4;margin-bottom:4px"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="rec-discount" style="font-size:12px;font-weight:700;color:var(--fox)"></div>
+          <div class="rec-district" style="font-size:11px;font-weight:600;color:var(--green)"></div>
         </div>
       </div>
 
@@ -727,16 +728,17 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
    <div id="mapContainer" style="border-radius:var(--radius);overflow:hidden;margin-bottom:12px;height:300px;background:var(--bg3)"></div>
 
-    <!-- SLOT 2: Map venue recommendation -->
+    <!-- SLOT 2: Content Rotation Engine -->
     <div id="mapRecSlot" style="display:none;margin-bottom:12px;padding:16px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;cursor:pointer">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-        <span style="font-size:16px">🦊</span>
-        <span style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px">The FoxPot Club poleca</span>
+      <div class="rec-title" style="font-size:10px;font-weight:700;color:var(--fox);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px"></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <div class="rec-name" style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+        <div class="rec-badge" style="font-size:10px;font-weight:700;color:var(--accent2);white-space:nowrap"></div>
       </div>
-      <div class="rec-venue-name" style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="rec-venue-text" style="font-size:12px;color:var(--muted);line-height:1.4;flex:1;min-width:0"></div>
-        <div class="rec-venue-discount" style="font-size:14px;font-weight:800;color:var(--fox);margin-left:10px;white-space:nowrap"></div>
+      <div class="rec-text" style="font-size:12px;color:var(--muted);line-height:1.4;margin-bottom:4px"></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="rec-discount" style="font-size:12px;font-weight:700;color:var(--fox)"></div>
+        <div class="rec-district" style="font-size:11px;font-weight:600;color:var(--green)"></div>
       </div>
     </div>
 
@@ -2244,44 +2246,49 @@ async function loadVenueMenu(venueId, btn) {
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }
 
-// ── Recommendation slots — never empty, powered by /api/recommendation ──
+// ── Content Rotation Engine — never empty ──
 let _slot1VenueId = null;
+let _slot1CardType = null;
 
 function fillRecSlot(containerId, data) {
   const el = q(containerId);
   if (!el) return;
-  const nameEl = el.querySelector('.rec-venue-name');
-  const textEl = el.querySelector('.rec-venue-text');
-  const discEl = el.querySelector('.rec-venue-discount');
-  if (nameEl) nameEl.textContent = data.venue_name || '';
-  if (textEl) textEl.textContent = data.text || '';
-  if (discEl) discEl.textContent = data.discount ? data.discount + '%' : '';
+  const set = (cls, val) => { const e = el.querySelector('.'+cls); if (e) e.textContent = val || ''; };
+  set('rec-title', data.title);
+  set('rec-name', data.name);
+  set('rec-badge', data.status_badge);
+  set('rec-text', data.text);
+  set('rec-discount', data.discount ? `🎁 ${data.discount}% zniżki dla Fox` : '');
+  set('rec-district', data.district);
   el.onclick = data.venue_id ? function(){ openVenueDetail(data.venue_id); } : null;
   el.style.cursor = data.venue_id ? 'pointer' : 'default';
   el.style.display = '';
 }
 
-const _recFallback = { venue_id: null, venue_name: '', text: '🦊 Odkrywaj lokale z FoxPot Club!', discount: null };
+const _recFallback = { type:'system', card_type:'fallback', title:'🦊 FoxPot poleca dziś', name:'FoxPot Club', text:'🦊 Odkrywaj lokale z FoxPot Club!', discount:null, district:null, status_badge:null, venue_id:null, is_promo:false };
 
-async function fetchRec(exclude) {
+async function fetchRec(slot, exclude) {
   try {
-    const url = BASE + '/api/recommendation' + (exclude ? '?exclude=' + exclude : '');
-    const r = await fetch(url, { headers: { 'X-Telegram-Init-Data': INIT_DATA || '' } });
+    const params = new URLSearchParams();
+    params.set('slot', slot);
+    if (exclude) params.set('exclude', exclude);
+    const r = await fetch(BASE + '/api/recommendation?' + params, { headers: { 'X-Telegram-Init-Data': INIT_DATA || '' } });
     const d = await r.json();
-    return d.venue_id ? d : _recFallback;
+    return (d.text && d.name) ? d : _recFallback;
   } catch(e) { return _recFallback; }
 }
 
-// SLOT 1 — Profile
+// SLOT 1 — Profile (50% paid / 50% system)
 async function renderProfileSlot() {
-  const data = await fetchRec(null);
+  const data = await fetchRec('profile', null);
   _slot1VenueId = data.venue_id;
+  _slot1CardType = data.card_type;
   fillRecSlot('profileRecSlot', data);
 }
 
-// SLOT 2 — Map (excludes slot 1 venue)
+// SLOT 2 — Map (70% paid / 30% system, excludes slot 1 venue)
 async function loadMapSlot() {
-  const data = await fetchRec(_slot1VenueId);
+  const data = await fetchRec('map', _slot1VenueId);
   fillRecSlot('mapRecSlot', data);
 }
 

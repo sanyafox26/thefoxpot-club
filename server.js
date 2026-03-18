@@ -3390,20 +3390,42 @@ app.get("/api/promo", async (_req, res) => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
-   GET /api/recommendation — smart venue recommendation for slots
+   GET /api/recommendation — Content Rotation Engine
+   ?slot=profile|map  — controls paid promo probability
+   ?exclude=ID        — exclude venue/card (so slot1 ≠ slot2)
+   Returns: { type, card_type, title, name, text, discount,
+              district, status_badge, venue_id, is_promo }
 ═══════════════════════════════════════════════════════════════ */
+const REC_TITLES_VENUE = ["🦊 The FoxPot Club poleca dziś","🦊 FoxPot poleca dziś","🦊 Polecane dla Ciebie"];
+const REC_TITLES_FOX   = ["🏆 Ranking Foxów"];
+const REC_TITLES_VOTE  = ["🗳️ Aktywne głosowanie"];
+function pickOne(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
 app.get("/api/recommendation", async (req, res) => {
+  const FALLBACK = { type:"system", card_type:"fallback", title:"🦊 FoxPot poleca dziś", name:"FoxPot Club", text:"🦊 Odkrywaj lokale z FoxPot Club!", discount:null, district:null, status_badge:null, venue_id:null, is_promo:false };
   try {
     const initData = req.headers["x-telegram-init-data"] || "";
     const tgUser = verifyTelegramInitData(initData);
     const foxId = tgUser ? String(tgUser.id) : null;
     const excludeVenueId = req.query.exclude ? parseInt(req.query.exclude) : null;
+    const slot = req.query.slot === "map" ? "map" : "profile";
 
-    // Step 1 — Check for active promotion (60% chance)
-    if (Math.random() < 0.6) {
+    // Fox district for "Blisko Ciebie"
+    let foxDistrict = null;
+    if (foxId) {
+      const fq = await pool.query(`SELECT district FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [foxId]);
+      foxDistrict = fq.rows[0]?.district || null;
+    }
+
+    // ── Step 1: Paid or system? ──
+    const promoChance = slot === "map" ? 0.7 : 0.5;
+    let card = null;
+
+    if (Math.random() < promoChance) {
+      // Try paid promo
       const promoQ = await pool.query(`
         SELECT p.id, p.venue_id, p.promo_text, v.name AS venue_name, v.city,
-               v.address, v.discount_percent
+               v.address, v.discount_percent, v.pioneer_number
         FROM fp1_promotions p
         JOIN fp1_venues v ON v.id = p.venue_id
         WHERE p.status='active' AND p.starts_at <= NOW() AND p.ends_at > NOW()
@@ -3413,124 +3435,199 @@ app.get("/api/recommendation", async (req, res) => {
       `, excludeVenueId ? [excludeVenueId] : []);
       if (promoQ.rows.length) {
         const p = promoQ.rows[0];
-        return res.json({
-          venue_id: p.venue_id,
-          venue_name: p.venue_name,
+        const disc = parseFloat(p.discount_percent) || 10;
+        const near = false; // venues don't have district column yet
+        card = {
+          type:"paid", card_type:"promo", title: pickOne(REC_TITLES_VENUE),
+          name: p.venue_name,
           text: p.promo_text || `🦊 The FoxPot Club poleca: ${p.venue_name}`,
-          is_promo: true,
-          venue_district: p.city,
-          discount: parseFloat(p.discount_percent) || 10
+          discount: disc > 0 ? disc : null,
+          district: near ? "📍 Blisko Ciebie!" : null,
+          status_badge: null,
+          venue_id: p.venue_id, is_promo: true
+        };
+      }
+    }
+
+    // ── Step 2: System info cards (if no paid card) ──
+    if (!card) {
+      const cards = [];
+
+      // — Fox leaders (week/month/year) —
+      const foxBadges = await getTopFoxBadges();
+      for (const [uid, period] of Object.entries(foxBadges)) {
+        if (excludeVenueId && String(excludeVenueId) === uid) continue;
+        const fu = await pool.query(`SELECT username, founder_number FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [uid]);
+        if (!fu.rows.length) continue;
+        const f = fu.rows[0];
+        const nick = f.username ? `@${f.username}` : `Fox`;
+        const badge = f.founder_number ? (f.founder_number <= 50 ? "Założyciel" : "Pionier") : null;
+        const periodLabel = {week:"tygodnia",month:"miesiąca",year:"roku"}[period];
+        cards.push({
+          type:"system", card_type:`lider_fox_${period}`, title: pickOne(REC_TITLES_FOX),
+          name: nick, text: `🏆 Lider ${periodLabel}: ${nick}${badge ? ` — ${badge}` : ""} — czy już go znasz?`,
+          discount: null, district: null, status_badge: badge, venue_id: null, is_promo: false
         });
       }
-    }
 
-    // Step 2 — Pick random active venue (round-robin via RANDOM)
-    const venueQ = await pool.query(`
-      SELECT id, name, city, discount_percent, recommended,
-             pioneer_number, venue_type, cuisine
-      FROM fp1_venues
-      WHERE approved=TRUE
-        ${excludeVenueId ? 'AND id != $1' : ''}
-      ORDER BY RANDOM()
-      LIMIT 1
-    `, excludeVenueId ? [excludeVenueId] : []);
+      // — Top venues (week/month) —
+      const wNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+      const weekStart = new Date(wNow); weekStart.setDate(weekStart.getDate() - wNow.getDay()); weekStart.setHours(0,0,0,0);
+      const monthStart = new Date(wNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+      const tvw = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at>=$1 GROUP BY venue_id ORDER BY cnt DESC LIMIT 1`, [weekStart.toISOString()]);
+      const tvm = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at>=$1 GROUP BY venue_id ORDER BY cnt DESC LIMIT 1`, [monthStart.toISOString()]);
 
-    if (!venueQ.rows.length) {
-      return res.json({
-        venue_id: null, venue_name: null,
-        text: "🦊 Odkrywaj lokale z FoxPot Club!",
-        is_promo: false, venue_district: null, discount: 10
-      });
-    }
-
-    const v = venueQ.rows[0];
-
-    // Step 3 — Generate text from available data
-    const candidates = [];
-
-    // 1. Most popular dish
-    const dishQ = await pool.query(`
-      SELECT d.name FROM fp1_venue_dishes d
-      WHERE d.venue_id=$1 AND d.is_active=TRUE
-      ORDER BY d.sort_order ASC LIMIT 1
-    `, [v.id]);
-    if (dishQ.rows.length) {
-      candidates.push(`🦊 Czy wiesz, że najczęściej wybieranym daniem w ${v.name} jest ${dishQ.rows[0].name}?`);
-    }
-
-    // 2. Venue recommended dishes
-    if (v.recommended && v.recommended.trim()) {
-      const recText = v.recommended.split('\n')[0].slice(0, 80);
-      candidates.push(`🦊 ${v.name} poleca dziś: ${recText}`);
-    }
-
-    // 3. Total visits
-    const visitsQ = await pool.query(
-      `SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`, [v.id]
-    );
-    const totalVisits = visitsQ.rows[0]?.cnt || 0;
-    if (totalVisits > 0) {
-      candidates.push(`🦊 ${v.name} — już ${totalVisits} wizyt Foxów! Sprawdź dlaczego!`);
-    }
-
-    // 4. Fox hasn't visited this venue
-    if (foxId) {
-      const myVisitQ = await pool.query(
-        `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND user_id=$2 LIMIT 1`,
-        [v.id, foxId]
-      );
-      if (!myVisitQ.rows.length) {
-        candidates.push(`🦊 Jeszcze tu nie byłeś — sprawdź ${v.name}!`);
+      for (const [row, period] of [[tvw.rows[0],"week"],[tvm.rows[0],"month"]]) {
+        if (!row) continue;
+        const vid = Number(row.venue_id);
+        if (excludeVenueId && vid === excludeVenueId) continue;
+        const vq = await pool.query(`SELECT name, city FROM fp1_venues WHERE id=$1`, [vid]);
+        if (!vq.rows.length) continue;
+        const label = period === "week" ? "🔥 Top tygodnia" : "🔥 Top miesiąca";
+        cards.push({
+          type:"system", card_type:`lider_lokal_${period}`, title: pickOne(REC_TITLES_VENUE),
+          name: vq.rows[0].name, text: `${label}: ${vq.rows[0].name} — sprawdź!`,
+          discount: null, district: null, status_badge: null, venue_id: vid, is_promo: false
+        });
       }
+
+      // — Active venue nominations (voting) —
+      const nomQ = await pool.query(`
+        SELECT n.id, n.name, n.vote_threshold,
+               (SELECT COUNT(*)::int FROM fp1_nomination_votes v WHERE v.nomination_id=n.id) AS votes
+        FROM fp1_nominations n WHERE n.status='voting' ORDER BY RANDOM() LIMIT 3
+      `);
+      for (const n of nomQ.rows) {
+        const remaining = n.vote_threshold - n.votes;
+        if (remaining > 0 && remaining <= Math.ceil(n.vote_threshold * 0.2)) {
+          // Close to threshold
+          cards.push({
+            type:"system", card_type:"glosowanie_blisko", title: pickOne(REC_TITLES_VOTE),
+            name: n.name, text: `🗳️ Do aktywacji ${n.name} brakuje jeszcze ${remaining} głosów!`,
+            discount: null, district: null, status_badge: null, venue_id: null, is_promo: false
+          });
+        } else {
+          cards.push({
+            type:"system", card_type:"glosowanie", title: pickOne(REC_TITLES_VOTE),
+            name: n.name, text: `🗳️ Nowe głosowanie: zagłosuj na ${n.name}!`,
+            discount: null, district: null, status_badge: null, venue_id: null, is_promo: false
+          });
+        }
+      }
+
+      // — City nominations —
+      const cityNomQ = await pool.query(`
+        SELECT name, vote_threshold,
+               (SELECT COUNT(*)::int FROM fp1_city_votes v WHERE v.city_nomination_id=c.id) AS votes
+        FROM fp1_city_nominations c WHERE c.status='voting' ORDER BY RANDOM() LIMIT 2
+      `);
+      for (const c of cityNomQ.rows) {
+        cards.push({
+          type:"system", card_type:"glosowanie_miasto", title: pickOne(REC_TITLES_VOTE),
+          name: c.name, text: `🏙️ Głosowanie: ${c.name} — już ${c.votes}/${c.vote_threshold} głosów!`,
+          discount: null, district: null, status_badge: null, venue_id: null, is_promo: false
+        });
+      }
+
+      // — Venue-based cards (random venue) —
+      const venueQ = await pool.query(`
+        SELECT id, name, city, discount_percent, recommended,
+               pioneer_number, venue_type, cuisine, created_at
+        FROM fp1_venues WHERE approved=TRUE
+          ${excludeVenueId ? 'AND id != $1' : ''}
+        ORDER BY RANDOM() LIMIT 1
+      `, excludeVenueId ? [excludeVenueId] : []);
+
+      if (venueQ.rows.length) {
+        const v = venueQ.rows[0];
+        const disc = parseFloat(v.discount_percent) || 10;
+        const near = false; // venues don't have district column yet
+
+        // 9. New venue (< 7 days)
+        if (v.created_at && (Date.now() - new Date(v.created_at).getTime()) < 7*24*60*60*1000) {
+          cards.push({
+            type:"system", card_type:"nowy_lokal", title: pickOne(REC_TITLES_VENUE),
+            name: v.name, text: `🆕 Nowy partner w FoxPot: ${v.name}!`,
+            discount: disc > 10 ? disc : null, district: near ? "📍 Blisko Ciebie!" : null,
+            status_badge: null, venue_id: v.id, is_promo: false
+          });
+        }
+
+        // 10. Fox hasn't visited
+        if (foxId) {
+          const myQ = await pool.query(`SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND user_id=$2 LIMIT 1`, [v.id, foxId]);
+          if (!myQ.rows.length) {
+            cards.push({
+              type:"system", card_type:"nie_byles", title: pickOne(REC_TITLES_VENUE),
+              name: v.name, text: `🦊 Jeszcze nie byłeś w ${v.name} — sprawdź!`,
+              discount: disc > 10 ? disc : null, district: near ? "📍 Blisko Ciebie!" : null,
+              status_badge: null, venue_id: v.id, is_promo: false
+            });
+          }
+        }
+
+        // 11. Top dish
+        const dishQ = await pool.query(
+          `SELECT d.name FROM fp1_venue_dishes d WHERE d.venue_id=$1 AND d.is_active=TRUE ORDER BY d.sort_order ASC LIMIT 1`, [v.id]
+        );
+        if (dishQ.rows.length) {
+          cards.push({
+            type:"system", card_type:"dish", title: pickOne(REC_TITLES_VENUE),
+            name: v.name, text: `🦊 Czy wiesz, że Foxowie najczęściej wybierają w ${v.name}: ${dishQ.rows[0].name}?`,
+            discount: disc > 10 ? disc : null, district: near ? "📍 Blisko Ciebie!" : null,
+            status_badge: null, venue_id: v.id, is_promo: false
+          });
+        }
+
+        // 12. Recommended by venue
+        if (v.recommended && v.recommended.trim()) {
+          cards.push({
+            type:"system", card_type:"polecane", title: pickOne(REC_TITLES_VENUE),
+            name: v.name, text: `🦊 ${v.name} poleca dziś: ${v.recommended.split('\n')[0].slice(0,80)}`,
+            discount: disc > 10 ? disc : null, district: near ? "📍 Blisko Ciebie!" : null,
+            status_badge: null, venue_id: v.id, is_promo: false
+          });
+        }
+
+        // 13. Discount > 10%
+        if (disc > 10) {
+          cards.push({
+            type:"system", card_type:"znizka", title: pickOne(REC_TITLES_VENUE),
+            name: v.name, text: `🎁 ${v.name} oferuje ${disc}% zniżki dla Foxów!`,
+            discount: disc, district: near ? "📍 Blisko Ciebie!" : null,
+            status_badge: null, venue_id: v.id, is_promo: false
+          });
+        }
+
+        // 14. Pioneer
+        if (v.pioneer_number) {
+          cards.push({
+            type:"system", card_type:"pionier", title: pickOne(REC_TITLES_VENUE),
+            name: v.name, text: `🌟 ${v.name} — jeden z pierwszych lokali w FoxPot!`,
+            discount: disc > 10 ? disc : null, district: near ? "📍 Blisko Ciebie!" : null,
+            status_badge: null, venue_id: v.id, is_promo: false
+          });
+        }
+
+        // 15. Blisko Ciebie (only if district matches and no other "near" card)
+        if (near && !cards.some(c => c.venue_id === v.id)) {
+          cards.push({
+            type:"system", card_type:"blisko", title: pickOne(REC_TITLES_VENUE),
+            name: v.name, text: `📍 ${v.name} — partner FoxPot blisko Ciebie!`,
+            discount: disc > 10 ? disc : null, district: "📍 Blisko Ciebie!",
+            status_badge: null, venue_id: v.id, is_promo: false
+          });
+        }
+      }
+
+      // Pick random card from all collected
+      card = cards.length ? pickOne(cards) : FALLBACK;
     }
 
-    // 5. TOP status — check if this venue is the top visited this week/month/year
-    const wNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
-    const weekStart = new Date(wNow); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); weekStart.setHours(0,0,0,0);
-    const monthStart = new Date(wNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-
-    const topWeekQ = await pool.query(
-      `SELECT venue_id FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id ORDER BY COUNT(*) DESC LIMIT 1`,
-      [weekStart.toISOString()]
-    );
-    const topMonthQ = await pool.query(
-      `SELECT venue_id FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id ORDER BY COUNT(*) DESC LIMIT 1`,
-      [monthStart.toISOString()]
-    );
-    if (String(topWeekQ.rows[0]?.venue_id) === String(v.id)) candidates.push(`🏆 Top tygodnia: ${v.name} — sprawdź!`);
-    else if (String(topMonthQ.rows[0]?.venue_id) === String(v.id)) candidates.push(`🏆 Top miesiąca: ${v.name} — sprawdź!`);
-
-    // 6. Discount > 10%
-    const disc = parseFloat(v.discount_percent) || 10;
-    if (disc > 10) {
-      candidates.push(`🎁 ${v.name} oferuje ${disc}% zniżki dla Foxów!`);
-    }
-
-    // 7. Pioneer
-    if (v.pioneer_number) {
-      candidates.push(`🌟 ${v.name} — jeden z pierwszych lokali w FoxPot!`);
-    }
-
-    // 8. Fallback (always available)
-    candidates.push(`🦊 The FoxPot Club poleca: ${v.name}`);
-
-    const text = candidates[Math.floor(Math.random() * candidates.length)];
-
-    res.json({
-      venue_id: v.id,
-      venue_name: v.name,
-      text,
-      is_promo: false,
-      venue_district: v.city,
-      discount: disc
-    });
+    return res.json(card);
   } catch (e) {
-    // Fallback — never empty
-    res.json({
-      venue_id: null, venue_name: null,
-      text: "🦊 Odkrywaj lokale z FoxPot Club!",
-      is_promo: false, venue_district: null, discount: 10
-    });
+    console.error("REC_ERR", e.message);
+    res.json(FALLBACK);
   }
 });
 
