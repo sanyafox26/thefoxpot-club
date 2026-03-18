@@ -454,10 +454,14 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div id="pError" class="err-banner"></div>
     <div id="pUnauth" style="display:none">
       <div class="welcome">
-        <div class="welcome-fox"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="80" height="80" style="display:block;margin:0 auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
+        <div class="welcome-fox"><img src="/icons/icon-192.png" width="80" height="80" style="display:block;margin:0 auto;border-radius:16px" alt="FoxPot" onerror="this.outerHTML='🦊'"/></div>
         <div class="welcome-title">THE FOXPOT CLUB</div>
-        <div class="welcome-sub">Otwórz tę aplikację przez bota Telegram, aby zobaczyć swój profil.</div>
-     </div>
+        <div class="welcome-sub" id="loginMessage">Logowanie...</div>
+        <div id="loginScreen" style="display:none;margin-top:20px">
+          <a href="https://t.me/thefoxpot_club_bot" target="_blank" style="display:block;width:100%;padding:14px;background:linear-gradient(135deg,#0088cc,#0066aa);border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;text-align:center;text-decoration:none;font-family:var(--font);margin-bottom:10px">✈️ Zaloguj przez Telegram</a>
+          <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.5">Inne metody logowania — wkrótce</div>
+        </div>
+      </div>
     </div>
     <!-- Social bonus moved to socialBonusSlot in profile -->
 
@@ -802,19 +806,74 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 </div>
 <script>
 const BASE = window.location.origin;
-const TG   = window.Telegram?.WebApp;
-if(TG){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor('#0a0b14')}
-const TG_USER   = TG?.initDataUnsafe?.user || null;
-const INIT_DATA = TG?.initData || '';
 
-// ── PWA mode: cookie-based auth (працює в iOS Safari PWA) ──
-// Cookie встановлюється сервером після логіну через /pwa
+// ── Platform Detection ──
+const TG   = window.Telegram?.WebApp;
+const IS_TELEGRAM  = !!(TG && TG.initData);
+const IS_STANDALONE = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
+const IS_CAPACITOR = !!window.Capacitor;
 const _urlParams = new URLSearchParams(location.search);
-const IS_PWA = !TG_USER && _urlParams.get('pwa') === '1';
-const PWA_TOKEN = null; // не потрібен — сервер читає cookie автоматично
+
+// ── Auth Abstraction Layer ──
+// Priority: 1) Telegram initData  2) PWA cookie  3) JWT token  4) unauthenticated
+if(IS_TELEGRAM){TG.ready();TG.expand();TG.setHeaderColor('#0a0b14');TG.setBackgroundColor('#0a0b14')}
+const TG_USER   = IS_TELEGRAM ? (TG.initDataUnsafe?.user || null) : null;
+const INIT_DATA = IS_TELEGRAM ? TG.initData : '';
+const IS_PWA = !TG_USER && (_urlParams.get('pwa') === '1' || document.cookie.includes('fp1_pwa='));
+const _jwtToken = localStorage.getItem('fp1_jwt') || null;
+const IS_JWT = !IS_TELEGRAM && !IS_PWA && !!_jwtToken;
+const IS_AUTHENTICATED = !!(TG_USER || IS_PWA || IS_JWT);
+
+// PWA cookie check
 if(IS_PWA && !document.cookie.includes('fp1_pwa=')) {
-  // Немає cookie — повертаємо на логін
   location.href = '/pwa';
+}
+
+// ── App Ready ──
+function appReady() {
+  if(IS_TELEGRAM && TG) { TG.ready(); }
+  // Standalone/Capacitor — nothing extra needed
+}
+appReady();
+
+// ── Haptic Feedback Abstraction ──
+function haptic(type, style) {
+  if (IS_TELEGRAM && TG?.HapticFeedback) {
+    if (type === 'selection') TG.HapticFeedback.selectionChanged();
+    else if (type === 'success') TG.HapticFeedback.notificationOccurred('success');
+    else if (type === 'error') TG.HapticFeedback.notificationOccurred('error');
+    else if (type === 'impact') TG.HapticFeedback.impactOccurred(style || 'medium');
+    else TG.HapticFeedback.notificationOccurred(type || 'success');
+  } else if (navigator.vibrate) {
+    if (type === 'error') navigator.vibrate([50, 30, 50]);
+    else if (type === 'impact') navigator.vibrate(40);
+    else navigator.vibrate(20);
+  }
+}
+
+// ── User Info Helpers ──
+function getUserName(profile) {
+  if (TG_USER) return (TG_USER.first_name||'') + ' ' + (TG_USER.last_name||'');
+  return profile?.first_name || 'Fox';
+}
+function getUserTag(profile) {
+  if (TG_USER) return TG_USER.username ? '@'+TG_USER.username : 'Fox #'+String(TG_USER.id).slice(-4);
+  return profile?.username ? '@'+profile.username : 'Fox #'+String(profile?.user_id||'').slice(-4);
+}
+function getUserId(profile) {
+  if (TG_USER) return String(TG_USER.id);
+  return String(profile?.user_id || '');
+}
+
+// ── Share Abstraction ──
+function shareLink(url, text) {
+  if (IS_TELEGRAM && TG) {
+    TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text));
+  } else if (navigator.share) {
+    navigator.share({ title: 'The FoxPot Club', text, url }).catch(()=>{});
+  } else {
+    navigator.clipboard?.writeText(url);
+  }
 }
 
 const CITY_DISTRICTS_MAP = {
@@ -843,7 +902,7 @@ function go(name){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   document.getElementById('nav-'+name).classList.add('active');
-  TG?.HapticFeedback?.selectionChanged();
+  haptic('selection');
   if(name==='profile'&&!S.profileLoaded)      loadProfile();
   if(name==='checkin'&&!S.venuesLoaded)        loadVenues();
   if(name==='achievements'&&!S.achLoaded)      loadAchievements();
@@ -856,14 +915,16 @@ function go(name){
 }
 
 async function api(path,method='GET',body=null){
-  const headers={'Content-Type':'application/json','X-Telegram-Init-Data':INIT_DATA};
+  const headers={'Content-Type':'application/json'};
+  if(INIT_DATA) headers['X-Telegram-Init-Data']=INIT_DATA;
+  if(_jwtToken) headers['Authorization']='Bearer '+_jwtToken;
   const opts={method,headers};
   if(body) opts.body=JSON.stringify(body);
   const res=await fetch(BASE+path,opts);
   const data=await res.json();
   if(!res.ok){
     // Токен протермінований — повертаємо на логін
-    if(res.status===401 && IS_PWA){ location.href='/pwa'; }
+    if(res.status===401){ if(IS_PWA) location.href='/pwa'; else if(IS_JWT) localStorage.removeItem('fp1_jwt'); }
     throw new Error(data?.error||'HTTP '+res.status);
   }
   return data;
@@ -872,12 +933,12 @@ async function api(path,method='GET',body=null){
 async function loadProfile(){
   S.profileLoaded=true;
   const $l=q('pLoading'),$c=q('pContent'),$e=q('pError'),$u=q('pUnauth');
-  if(!TG_USER&&!IS_PWA){$l.style.display='none';$u.style.display='block';return}
+  if(!IS_AUTHENTICATED){$l.style.display='none';$u.style.display='block';q('loginMessage').textContent='Zaloguj się, aby kontynuować';q('loginScreen').style.display='';return}
   try{
     const d=await api('/api/profile');
     S.profile=d; S.district=d.district;
-    q('pName').textContent=TG_USER?(TG_USER.first_name||'')+' '+(TG_USER.last_name||''):(d.first_name||'Fox');
-    q('pTag').textContent=TG_USER?(TG_USER.username?'@'+TG_USER.username:'Fox #'+String(TG_USER.id).slice(-4)):(d.username?'@'+d.username:'Fox #'+String(d.user_id||'').slice(-4));
+    q('pName').textContent=getUserName(d);
+    q('pTag').textContent=getUserTag(d);
     // P0.2: Color name by top badge / admin Założyciel
     q('pName').style.color=''; q('pTag').style.color='';
     const oldBadgeEl=document.getElementById('pTopBadge'); if(oldBadgeEl) oldBadgeEl.remove();
@@ -890,7 +951,7 @@ async function loadProfile(){
       q('pTag').style.color=TOP_BADGE_COLORS[d.top_badge];
       q('pTag').insertAdjacentHTML('afterend',`<div id="pTopBadge" style="font-size:11px;font-weight:700;color:${TOP_BADGE_COLORS[d.top_badge]};margin-bottom:4px">${TOP_BADGE_LABELS[d.top_badge]}</div>`);
     }
-    q('pTgId').textContent='ID: '+(TG_USER?TG_USER.id:(d.user_id||'\u2014'));
+    q('pTgId').textContent='ID: '+getUserId(d);
     if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='Pionier Fox #'+d.founder_number}
     const oldPionierEl=document.getElementById('pPionierInfo');if(oldPionierEl)oldPionierEl.remove();
     if(d.founder_number){q('pFounder').insertAdjacentHTML('afterend',`<div id="pPionierInfo" style="font-size:11px;color:var(--gold);margin-bottom:8px;opacity:.8">Jesteś wśród pierwszych 1000 uczestników klubu</div>`)}
@@ -1031,7 +1092,7 @@ function renderSocialBonus(d) {
 function openSocialLink(platform, url) {
   window.open(url, '_blank');
   socialClicked[platform] = true;
-  TG?.HapticFeedback?.selectionChanged();
+  haptic('selection');
   // Enable the Sprawdź button
   const btn = q('verifyBtn_' + platform);
   if (btn) {
@@ -1050,14 +1111,14 @@ async function verifySocial(platform) {
     const d = await api('/api/social/verify', 'POST', { platform });
     if (d.ok === false && d.verified === false) {
       // Telegram real check failed
-      TG?.HapticFeedback?.notificationOccurred('error');
+      haptic('error');
       if (btn) { btn.textContent = '❌'; btn.disabled = false; btn.style.background = 'rgba(231,76,60,.12)'; btn.style.borderColor = 'rgba(231,76,60,.3)'; btn.style.color = '#e74c3c'; }
       setTimeout(() => {
         if (btn) { btn.textContent = 'Sprawdź'; btn.style.background = 'rgba(46,204,113,.12)'; btn.style.borderColor = 'rgba(46,204,113,.3)'; btn.style.color = 'var(--green)'; }
       }, 2000);
       return;
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
     // Update profile stats
     if (d.rating && q('pRating')) q('pRating').textContent = d.rating;
     if (d.invites && q('pInvites')) q('pInvites').textContent = d.invites;
@@ -1066,12 +1127,12 @@ async function verifySocial(platform) {
     // Celebrate full set
     if (d.invite_bonus) {
       setTimeout(() => {
-        TG?.HapticFeedback?.notificationOccurred('success');
+        haptic('success');
         alert('🎉 Gratulacje! Zdobyłeś +12 pkt i +1 zaproszenie za komplet subskrypcji!');
       }, 500);
     }
   } catch (e) {
-    TG?.HapticFeedback?.notificationOccurred('error');
+    haptic('error');
     if (btn) { btn.textContent = 'Sprawdź'; btn.disabled = false; }
   }
 }
@@ -1081,7 +1142,7 @@ function openCityModal(){
   renderCityGrid('');
   q('citySearch').value='';
   q('cityModal').classList.add('open');
-  TG?.HapticFeedback?.selectionChanged();
+  haptic('selection');
 }
 function closeCityModal(){q('cityModal').classList.remove('open')}
 function filterCities(){renderCityGrid(q('citySearch').value.toLowerCase())}
@@ -1092,7 +1153,7 @@ function renderCityGrid(filter){
   ).join('')||(filter?'<div class="muted" style="padding:12px">Nie znaleziono</div>':'');
 }
 async function selectCity(c){
-  if(!TG_USER&&!IS_PWA)return;
+  if(!IS_AUTHENTICATED)return;
   try{
     const r=await api('/api/district','POST',{city:c});
     if(S.profile)S.profile.city=r.city;
@@ -1103,7 +1164,7 @@ async function selectCity(c){
     q('pDistrictCell').style.display=hasDist?'':'none';
     if(!hasDist){q('pDistrict').textContent='—';if(S.profile)S.profile.district=null;S.district=null;}
     else if(r.district){q('pDistrict').textContent=r.district;S.district=r.district;}
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   }catch(e){alert('Błąd: '+e.message)}
 }
 
@@ -1116,17 +1177,17 @@ function openDistrictModal(){
     `<button class="d-btn${S.district===d?' sel':''}" onclick="selectDistrict('${d.replace(/'/g,"\\'")}')">${esc(d)}</button>`
   ).join('');
   q('districtModal').classList.add('open');
-  TG?.HapticFeedback?.selectionChanged();
+  haptic('selection');
 }
 function closeDistrictModal(){q('districtModal').classList.remove('open')}
 async function selectDistrict(d){
-  if(!TG_USER&&!IS_PWA)return;
+  if(!IS_AUTHENTICATED)return;
   try{
     await api('/api/district','POST',{district:d});
     S.district=d;
     q('pDistrict').textContent=d;
     closeDistrictModal();
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   }catch(e){alert('Błąd: '+e.message)}
 }
 
@@ -1154,7 +1215,7 @@ async function loadVenues(){
     q('venuesList').innerHTML='<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd ładowania</div></div>';
   }
 }
-function pickVenue(id){q('venueSelect').value=String(id);TG?.HapticFeedback?.selectionChanged()}
+function pickVenue(id){q('venueSelect').value=String(id);haptic('selection')}
 
   function showConsent() {
   const el = q('consentOverlay');
@@ -1168,12 +1229,12 @@ async function acceptConsent() {
   try {
     await api('/api/consent', 'POST');
     q('consentOverlay').style.display = 'none';
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   } catch(e) { showErr('ciErr', '❌ ' + e.message); }
   btn.disabled = false; btn.textContent = '✅ Akceptuję i kontynuuję';
 }
 async function doCheckin(){
-  if(!TG_USER&&!IS_PWA)return showErr('ciErr','Otwórz przez Telegram.');
+  if(!IS_AUTHENTICATED)return showErr('ciErr','Otwórz przez Telegram.');
   const vId=q('venueSelect').value;
   if(!vId)return showErr('ciErr','Wybierz lokal.');
   const btn=q('ciBtn');
@@ -1199,7 +1260,7 @@ async function doCheckin(){
       showOtp(d.otp, venue?.name||'Lokal', d.expires_at);
       startOtpPolling(Number(vId), venue?.name||'Lokal', d.discount_percent || 10, false);
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   }catch(e){
     if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='Pokaż kod wizyty ✓';return}
     showErr('ciErr','Błąd: '+e.message);
@@ -1229,7 +1290,7 @@ function startOtpPolling(venueId, venueName, discount, isRepeat) {
         stopOtpPolling();
         q('otpBox').classList.remove('show');
         showReceiptForm(venueId, venueName, discount, isRepeat, d.checkin_id);
-        TG?.HapticFeedback?.notificationOccurred('success');
+        haptic('success');
       } else if (d.status === 'confirmed' && d.receipt_done) {
         stopOtpPolling();
         q('otpBox').classList.remove('show');
@@ -1265,7 +1326,7 @@ async function submitReceipt() {
     if (d.bonuses?.invites_added > 0) detail += '\n🎁 +' + d.bonuses.invites_added + ' zaproszenie';
     q('receiptDetail').textContent = detail;
    showCategoryPick();
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
     if (d.stats) {
       if (q('pRating')) q('pRating').textContent = d.stats.rating;
       if (q('pVisits')) S.profileLoaded = false;
@@ -1316,7 +1377,7 @@ async function pickDish(dishId) {
       const detail = q('receiptDetail');
       if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za wybór!';
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   } catch(e) { /* ignore */ }
   showReasonPick();
 }
@@ -1342,7 +1403,7 @@ async function pickAggCategory(cat) {
       const detail = q('receiptDetail');
       if (d.base_bonus) detail.textContent += '\n🎯 +1 pkt za kategorię!';
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   } catch(e) { /* ignore */ }
   showReasonPick();
 }
@@ -1366,7 +1427,7 @@ async function submitCustomDish() {
     } else if (d.error) {
       // soft fail — no penalty
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   } catch(e) { /* ignore */ }
   showReasonPick();
 }
@@ -1402,7 +1463,7 @@ async function pickReason(reason) {
       const detail = q('receiptDetail');
       detail.textContent += '\n⚡ +' + d.bonus_points + ' pkt za opinię!';
     }
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   } catch(e) { /* ignore */ }
   q('receiptResult').classList.add('show');
 }
@@ -1435,7 +1496,7 @@ function showErr(id,msg){const e=q(id);e.textContent=msg;e.classList.add('show')
 async function loadInvites(){
   S.invLoaded=true;
   const $l=q('invLoading'),$c=q('invContent'),$u=q('invUnauth');
-  if(!TG_USER&&!IS_PWA){$l.style.display='none';$u.style.display='block';return}
+  if(!IS_AUTHENTICATED){$l.style.display='none';$u.style.display='block';return}
   try{
     const d=await api('/api/invite/stats');
     q('invCount').textContent=d.invites_available??0;
@@ -1474,7 +1535,7 @@ async function loadInvites(){
 }
 
 async function genInvite(){
-  if(!TG_USER&&!IS_PWA)return;
+  if(!IS_AUTHENTICATED)return;
   const btn=q('invGenBtn');
   btn.disabled=true; btn.textContent='Generowanie…';
   q('invErr').classList.remove('show');
@@ -1494,7 +1555,7 @@ async function genInvite(){
     const list=q('invRecentList');
     list.insertAdjacentHTML('afterbegin',newRow);
     q('invRecentCard').style.display='block';
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
     if(d.invites_left<=0){btn.disabled=true;btn.textContent='❌ Brak zaproszeń';}
     else{btn.disabled=false;btn.textContent='🎟️ Generuj kolejny kod';}
   }catch(e){
@@ -1515,7 +1576,7 @@ function copyCode(){
       setTimeout(()=>{btn.textContent='📋 Kopiuj kod'; btn.classList.remove('copied')},2000);
     }).catch(()=>fallbackCopy(text,btn));
   }else fallbackCopy(text,btn);
-  TG?.HapticFeedback?.notificationOccurred('success');
+  haptic('success');
 }
 function fallbackCopy(code,btn){
   const ta=document.createElement('textarea');
@@ -1527,10 +1588,8 @@ function shareCode(){
   const code=S.lastCode||q('invCodeTxt').textContent;
   const link='https://t.me/thefoxpot_club_bot?start='+code;
   const text='🦊 Zaproszenie do The FoxPot Club.\nNie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.';
-  if(TG){TG.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+encodeURIComponent(text))}
-  else if(navigator.share){navigator.share({title:'The FoxPot Club',text,url:link}).catch(()=>{})}
-  else{copyCode()}
-  TG?.HapticFeedback?.notificationOccurred('success');
+  shareLink(link, text);
+  haptic('success');
 }
 
 // ── Quick invite from profile ──
@@ -1554,7 +1613,7 @@ async function quickInvite() {
     msg.style.display = 'block';
     btn.innerHTML = '<span>🎟️</span>Zaproś kolejnego';
     btn.disabled = false;
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
   } catch(e) {
     const noInv = e.message.includes('Brak') || e.message.includes('no_invites');
     btn.innerHTML = noInv ? '<span>❌</span>Brak zaproszeń' : '<span>❌</span>Błąd';
@@ -1566,10 +1625,8 @@ function shareInviteLink() {
   const link = _quickInviteLink;
   if (!link) return;
   const text = `🦊 Zaproszenie do The FoxPot Club.\n\nNie dla wszystkich.\nDla tych, którzy wiedzą, gdzie warto być.\n\nNależysz tu.\n${link}`;
-  if (TG) { TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent('🦊 Zaproszenie do The FoxPot Club. Nie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.')); }
-  else if (navigator.share) { navigator.share({ title: 'The FoxPot Club', text, url: link }).catch(() => {}); }
-  else { copyInviteLink(); }
-  TG?.HapticFeedback?.notificationOccurred('success');
+  shareLink(link, '🦊 Zaproszenie do The FoxPot Club. Nie dla wszystkich. Dla tych, którzy wiedzą, gdzie warto być. Należysz tu.');
+  haptic('success');
 }
 function copyInviteLink() {
   const link = _quickInviteLink;
@@ -1582,11 +1639,11 @@ function copyInviteLink() {
       setTimeout(() => { btn.textContent = '📋 Kopiuj'; }, 2000);
     }).catch(() => {});
   }
-  TG?.HapticFeedback?.notificationOccurred('success');
+  haptic('success');
 }
 
 function copyTgId(){
-  const id=TG_USER?String(TG_USER.id):String(S.profile?.user_id||'');
+  const id=getUserId(S.profile);
   if(!id)return;
   const el=q('pTgId');
   if(navigator.clipboard){
@@ -1595,12 +1652,12 @@ function copyTgId(){
       setTimeout(()=>{el.textContent='ID: '+id},1500);
     }).catch(()=>{});
   }
-  TG?.HapticFeedback?.notificationOccurred('success');
+  haptic('success');
 }
 
 function showLeaveModal(){
   const m=q('leaveModal');if(m){m.style.display='flex'}
-  TG?.HapticFeedback?.impactOccurred('heavy');
+  haptic('impact','heavy');
 }
 function hideLeaveModal(){
   const m=q('leaveModal');if(m){m.style.display='none'}
@@ -1612,7 +1669,7 @@ async function confirmLeave(){
   try{
     const r=await api('/api/leave','POST');
     hideLeaveModal();
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
     // Show goodbye message
     const $c=q('pContent');if($c)$c.style.display='none';
     const $leave=q('pLeaveSection');if($leave)$leave.style.display='none';
@@ -1625,10 +1682,10 @@ async function confirmLeave(){
       $e.style.color='#e74c3c';
     }
     // Close app after delay
-    setTimeout(()=>{if(TG?.close)TG.close()},4000);
+    setTimeout(()=>{if(IS_TELEGRAM&&TG?.close)TG.close();else window.close()},4000);
   }catch(e){
     btn.disabled=false;btn.textContent='❌ Opuszczam';
-    TG?.HapticFeedback?.notificationOccurred('error');
+    haptic('error');
     alert('Błąd: '+(e.message||'Spróbuj ponownie'));
   }
 }
@@ -1680,7 +1737,7 @@ async function doSpin(){
         q('ssFreeze').textContent=d.stats.freeze;
         q('spinStats').style.display='flex';
       }
-      TG?.HapticFeedback?.notificationOccurred('success');
+      haptic('success');
       btn.textContent='✅ Odebrano!';
       S.spinDone=true;
       S.profileLoaded=false;
@@ -1691,7 +1748,7 @@ async function doSpin(){
     reels.forEach(r=>r.classList.remove('spinning'));
     setReels(['⚠️','⚠️','⚠️','⚠️','⚠️']);
     btn.disabled=false; btn.textContent='Spróbuj ponownie';
-    TG?.HapticFeedback?.notificationOccurred('error');
+    haptic('error');
   }
 }
 function markSpinDone(prizeLabel){
@@ -1725,7 +1782,7 @@ const ACH={
 async function loadAchievements(){
   S.achLoaded=true;
   const $l=q('achLoading'),$c=q('achContent'),$s=q('achSummary');
-  if(!TG_USER&&!IS_PWA){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Otwórz przez Telegram</div></div>';return}
+  if(!IS_AUTHENTICATED){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Otwórz przez Telegram</div></div>';return}
   try{
     const d=await api('/api/achievements');
     const have=new Set(d.achievements||[]);
@@ -1764,7 +1821,7 @@ async function loadTop(){
     const d=await api('/api/top');
     $l.style.display='none';
     const medals=['🥇','🥈','🥉'];
-    const myId=TG_USER?String(TG_USER.id):null;
+    const myId=getUserId(S.profile)||null;
     const rows=(d.top||[]).map((f,i)=>{
       const me=myId&&String(f.user_id)===myId;
       const p=i+1;
@@ -1934,20 +1991,20 @@ function renderMapList() {
  async function makeReserve(venueId) {
   try {
     const d = await api('/api/reserve', 'POST', { venue_id: venueId });
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
     // Update venue data and reopen modal
     const v = S_map.venues.find(x => x.id === venueId);
     if (v) { v.my_reservation = d.expires_at; if (d.remaining !== undefined) v.trial_remaining = d.remaining; }
     openVenueDetail(venueId);
   } catch(e) {
-    TG?.HapticFeedback?.notificationOccurred('error');
+    haptic('error');
     alert(e.message || 'Błąd rezerwacji');
   }
 }
 async function cancelReserve(venueId) {
   try {
     await api('/api/reserve', 'DELETE', { venue_id: venueId });
-    TG?.HapticFeedback?.notificationOccurred('success');
+    haptic('success');
     const v = S_map.venues.find(x => x.id === venueId);
     if (v) { v.my_reservation = null; if (v.trial_remaining !== null) v.trial_remaining++; }
     openVenueDetail(venueId);
@@ -2026,10 +2083,10 @@ async function startTrial(venueId) {
         trial_blocked_until: null,
       };
       S_map.isFox = true; // Now they have a fox record
-      TG?.HapticFeedback?.notificationOccurred('success');
+      haptic('success');
       openVenueDetail(venueId); // Re-render
     } else if (res.code === 'VENUE_TRIAL_BLOCKED') {
-      TG?.HapticFeedback?.notificationOccurred('error');
+      haptic('error');
       alert('Dziś nie możesz aktywować współpracy testowej w tym lokalu. Spróbuj jutro.');
     } else {
       alert(res.error || 'Błąd');
@@ -2216,7 +2273,7 @@ async function startTrial(venueId) {
     </div>
   `;
   q('venueModal').classList.add('open');
-  TG?.HapticFeedback?.selectionChanged();
+  haptic('selection');
   initVenuePhotos(v.id);
 }
 async function loadVenueMenu(venueId, btn) {
@@ -2385,7 +2442,7 @@ let supState = { step:'menu', cat:null, prob:null };
 function supRender() {
   const el = q('supportContent');
   if (!el) return;
-  TG?.HapticFeedback?.selectionChanged();
+  haptic('selection');
 
   if (supState.step === 'menu') {
     el.innerHTML = `
