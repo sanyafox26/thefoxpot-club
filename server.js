@@ -3404,8 +3404,8 @@ function pickOne(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 // ── Per-Fox frequency cap (in-memory, resets on restart) ──
 // Stores last N shown items per fox: Map<foxId, [{venue_id, card_type, ts}]>
 const _recHistory = new Map();
-const REC_HISTORY_SIZE = 10;        // remember last 10 shown cards
-const REC_VENUE_MAX_IN_WINDOW = 2;  // same venue_id max 2 times in last 10
+const REC_HISTORY_SIZE = 12;        // remember last 12 shown cards
+const REC_VENUE_MAX_IN_WINDOW = 2;  // same venue_id max 2 times in last 12
 const REC_HISTORY_TTL = 30*60*1000; // 30 min TTL — after that, history entry expires
 
 function getRecHistory(foxId) {
