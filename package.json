@@ -11,15 +11,17 @@
     "cap:open": "npx cap open android"
   },
   "dependencies": {
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.12.0",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
     "@capacitor/android": "^8.2.0",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/keyboard": "^8.0.1",
     "@capacitor/splash-screen": "^8.0.1",
-    "@capacitor/status-bar": "^8.0.1",
-    "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.3",
-    "pg": "^8.12.0",
-    "telegraf": "^4.16.3"
+    "@capacitor/status-bar": "^8.0.1"
   }
 }
