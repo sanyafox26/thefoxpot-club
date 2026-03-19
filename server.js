@@ -2568,7 +2568,7 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
       });
     }
 
-    // Telegram: real verification via getChatMember (skip for phone-only users)
+    // Telegram: real verification via getChatMember (only for TG users with positive userId)
     if (platform === "telegram" && Number(userId) > 0) {
       try {
         const TG_CHANNEL = "@thefoxpotclub";
@@ -2585,9 +2585,17 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
         }
       } catch (tgErr) {
         console.error("[SOCIAL] Telegram getChatMember error:", tgErr);
-        // If API fails, fall through to trust-based (graceful degradation)
+        // API error (bot not admin of channel?) — reject, don't fallback to trust
+        return res.json({
+          ok: false,
+          verified: false,
+          platform,
+          message: "Nie udało się zweryfikować subskrypcji. Spróbuj ponownie."
+        });
       }
     }
+    // SMS Fox'y (negative userId): Telegram verification is trust-based
+    // (no TG user_id to check getChatMember)
 
     // Instagram/TikTok/YouTube: trust-based verification (industry standard)
     // Mark as verified + add +3 rating
