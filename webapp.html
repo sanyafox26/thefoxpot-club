@@ -756,7 +756,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="welcome">
         <div class="welcome-fox">🎟️</div>
         <div class="welcome-title">Zaproszenia</div>
-        <div class="welcome-sub">Otwórz przez Telegram, aby zarządzać zaproszeniami.</div>
+        <div class="welcome-sub">Zaloguj się, aby zarządzać zaproszeniami.</div>
       </div>
     </div>
   </section>
@@ -1368,7 +1368,7 @@ async function acceptConsent() {
   btn.disabled = false; btn.textContent = '✅ Akceptuję i kontynuuję';
 }
 async function doCheckin(){
-  if(!IS_AUTHENTICATED)return showErr('ciErr','Otwórz przez Telegram.');
+  if(!IS_AUTHENTICATED)return showErr('ciErr','Zaloguj się, aby kontynuować.');
   const vId=q('venueSelect').value;
   if(!vId)return showErr('ciErr','Wybierz lokal.');
   const btn=q('ciBtn');
@@ -1941,7 +1941,7 @@ const ACH={
 async function loadAchievements(){
   S.achLoaded=true;
   const $l=q('achLoading'),$c=q('achContent'),$s=q('achSummary');
-  if(!IS_AUTHENTICATED){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Otwórz przez Telegram</div></div>';return}
+  if(!IS_AUTHENTICATED){$l.style.display='none';$c.innerHTML='<div class="empty"><div class="empty-icon">🦊</div><div class="empty-text">Zaloguj się, aby zobaczyć</div></div>';return}
   try{
     const d=await api('/api/achievements');
     const have=new Set(d.achievements||[]);
@@ -2539,7 +2539,10 @@ async function loadMap() {
   S_map.loaded = true;
   q('mapLoading').style.display = 'flex';
   try {
-    const data = await fetch(BASE+'/api/venues', {headers:{'X-Telegram-Init-Data': INIT_DATA||''}}).then(r=>r.json());
+    const _vh = {};
+    if(INIT_DATA) _vh['X-Telegram-Init-Data'] = INIT_DATA;
+    if(_jwtToken) _vh['Authorization'] = 'Bearer ' + _jwtToken;
+    const data = await fetch(BASE+'/api/venues', {headers:_vh}).then(r=>r.json());
     if (data.error) throw new Error(data.error);
     S_map.venues = data.venues || [];
     S_map.isFox = !!data.is_fox;

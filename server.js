@@ -1515,6 +1515,26 @@ async function checkTrialExpiry(userId) {
   }
 }
 
+// Helper: extract userId from TG initData OR JWT Bearer token
+async function resolveUserId(req) {
+  // Try TG initData first
+  const initData = req.headers["x-telegram-init-data"] || "";
+  const tgUser = verifyTelegramInitData(initData);
+  if (tgUser) return String(tgUser.id);
+  // Try JWT Bearer
+  try {
+    const authH = req.headers.authorization || "";
+    if (authH.startsWith("Bearer ")) {
+      const decoded = jwt.verify(authH.slice(7), JWT_SECRET);
+      if (decoded.fox_id) {
+        const fq = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`, [decoded.fox_id]);
+        if (fq.rows.length) return String(fq.rows[0].user_id);
+      }
+    }
+  } catch(_) {}
+  return null;
+}
+
 async function requireWebAppAuth(req, res, next) {
   // ── 1. Telegram initData ──
   const initData = req.headers["x-telegram-init-data"] || "";
@@ -3445,9 +3465,7 @@ const NOM_STATUS_LABELS = {
 
 app.get("/api/nominations", async (req, res) => {
   try {
-    const initData = req.headers["x-telegram-init-data"] || "";
-    const tgUser = verifyTelegramInitData(initData);
-    const userId = tgUser ? String(tgUser.id) : null;
+    const userId = await resolveUserId(req);
     const fp = req.query.fp || req.ip || "anon";
 
     const rows = await pool.query(`
@@ -3496,9 +3514,7 @@ app.post("/api/nominations/:id/vote", async (req, res) => {
   try {
     const nomId = Number(req.params.id);
     const fp = String(req.body.fp || req.ip || "anon").slice(0, 200);
-    const initData = req.headers["x-telegram-init-data"] || "";
-    const tgUser = verifyTelegramInitData(initData);
-    const userId = tgUser ? String(tgUser.id) : null;
+    const userId = await resolveUserId(req);
     let isMember = false;
     if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
     if (rateLimit(`nom_vote:${fp}`, 20, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele głosów." });
@@ -3528,9 +3544,7 @@ const CITY_VOTE_COOLDOWN_DAYS = 30;
 
 app.get("/api/city-nominations", async (req, res) => {
   try {
-    const initData = req.headers["x-telegram-init-data"] || "";
-    const tgUser = verifyTelegramInitData(initData);
-    const userId = tgUser ? String(tgUser.id) : null;
+    const userId = await resolveUserId(req);
     const fp = req.query.fp || req.ip || "anon";
 
     const rows = await pool.query(`
@@ -3590,9 +3604,7 @@ app.post("/api/city-nominations/:id/vote", async (req, res) => {
   try {
     const cityId = Number(req.params.id);
     const fp = String(req.body.fp || req.ip || "anon").slice(0, 200);
-    const initData = req.headers["x-telegram-init-data"] || "";
-    const tgUser = verifyTelegramInitData(initData);
-    const userId = tgUser ? String(tgUser.id) : null;
+    const userId = await resolveUserId(req);
 
     let isMember = false;
     if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
@@ -3711,9 +3723,7 @@ let _promoRoundRobinIdx = 0;
 app.get("/api/recommendation", async (req, res) => {
   const FALLBACK = { type:"system", card_type:"fallback", title:"🦊 FoxPot poleca dziś", name:"FoxPot Club", text:"🦊 Odkrywaj lokale z FoxPot Club!", discount:null, district:null, status_badge:null, venue_id:null, is_promo:false };
   try {
-    const initData = req.headers["x-telegram-init-data"] || "";
-    const tgUser = verifyTelegramInitData(initData);
-    const foxId = tgUser ? String(tgUser.id) : null;
+    const foxId = await resolveUserId(req);
     const excludeVenueId = req.query.exclude ? parseInt(req.query.exclude) : null;
     const slot = req.query.slot === "map" ? "map" : "profile";
 
@@ -3961,9 +3971,7 @@ app.get("/api/recommendation", async (req, res) => {
 ═══════════════════════════════════════════════════════════════ */
 app.get("/api/top", async (req, res) => {
   try {
-    const initData = req.headers["x-telegram-init-data"] || "";
-    const tgUser   = verifyTelegramInitData(initData);
-    const myId     = tgUser ? String(tgUser.id) : null;
+    const myId = await resolveUserId(req);
 
     // Exclude admin from ranking list (parameterized)
     const adminExcludeSQL = ADMIN_TG_ID ? ` AND user_id != $1` : '';
