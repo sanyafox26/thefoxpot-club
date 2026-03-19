@@ -1162,8 +1162,8 @@ const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:f
 function renderSocialBonus(d) {
   const card = q('socialBonusCard');
   if (!card) return;
-  // Hide for phone-only users (no Telegram) and if bonus already claimed
-  if (d.sub_bonus_claimed || !IS_TELEGRAM || (d.user_id && Number(d.user_id) < 0)) {
+  // Hide only if all bonuses already claimed
+  if (d.sub_bonus_claimed) {
     card.style.display = 'none';
     return;
   }
@@ -1224,7 +1224,7 @@ function renderSocialBonus(d) {
 }
 
 function openSocialLink(platform, url) {
-  window.open(url, '_blank');
+  openExternal(url);
   socialClicked[platform] = true;
   haptic('selection');
   // Enable the Sprawdź button
