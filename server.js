@@ -1253,10 +1253,20 @@ async function upsertFox(ctx) {
 
 async function hasCountedToday(venueId, userId) {
   const day = warsawDayKey();
-  const r = await pool.query(
-    `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND user_id=$3 LIMIT 1`,
-    [venueId, day, String(userId)]
-  );
+  // Check by user_id OR visitor_phone (anti-cheat: survives account deletion)
+  const phone = await resolveVoterPhone(userId);
+  let r;
+  if (phone) {
+    r = await pool.query(
+      `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND (user_id=$3 OR visitor_phone=$4) LIMIT 1`,
+      [venueId, day, String(userId), phone]
+    );
+  } else {
+    r = await pool.query(
+      `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND user_id=$3 LIMIT 1`,
+      [venueId, day, String(userId)]
+    );
+  }
   return r.rowCount > 0;
 }
 
@@ -2187,12 +2197,19 @@ app.get("/api/venues", async (req, res) => {
       );
       mv.rows.forEach(r => myVisits[r.venue_id] = r.cnt);
       // Monthly credited visits per venue (for visit cap display)
-      const mmc = await pool.query(
-        `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits
-         WHERE user_id=$1 AND is_credited=TRUE
-         AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())
-         GROUP BY venue_id`, [userId]
-      );
+      // Check by user_id OR visitor_phone (anti-cheat)
+      const foxPhoneQ = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      const foxPhoneVal = foxPhoneQ.rows[0]?.phone;
+      const mmcQuery = foxPhoneVal
+        ? `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits
+           WHERE (user_id=$1 OR visitor_phone=$2) AND is_credited=TRUE
+           AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())
+           GROUP BY venue_id`
+        : `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits
+           WHERE user_id=$1 AND is_credited=TRUE
+           AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())
+           GROUP BY venue_id`;
+      const mmc = await pool.query(mmcQuery, foxPhoneVal ? [userId, foxPhoneVal] : [userId]);
       mmc.rows.forEach(r => myMonthlyCredited[r.venue_id] = r.cnt);
     }
     const tv = await pool.query(
@@ -2879,11 +2896,22 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
       const foxPhone = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (foxPhone.rows[0]?.phone) { cols.push("visitor_phone"); vals.push(foxPhone.rows[0].phone); }
       // Visit cap: max 3 credited visits per fox per venue per calendar month
-      const creditedThisMonth = await pool.query(
-        `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE
-         AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
-        [userId, venueId]
-      );
+      // Check by user_id OR visitor_phone (anti-cheat: survives account deletion)
+      const phoneForCap = foxPhone.rows[0]?.phone;
+      let creditedThisMonth;
+      if (phoneForCap) {
+        creditedThisMonth = await pool.query(
+          `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE (user_id=$1 OR visitor_phone=$3) AND venue_id=$2 AND is_credited=TRUE
+           AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
+          [userId, venueId, phoneForCap]
+        );
+      } else {
+        creditedThisMonth = await pool.query(
+          `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE
+           AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
+          [userId, venueId]
+        );
+      }
       const isCredited = creditedThisMonth.rows[0].c < 3;
       cols.push("is_credited"); vals.push(isCredited);
       await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
@@ -2930,7 +2958,10 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
 
       // Bonuses only for credited visits
       if (isCredited) {
-        const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
+        // Check total credited visits by phone (anti-cheat: includes previous accounts)
+        const tv = phoneForCap
+          ? await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE (user_id=$1 OR visitor_phone=$2) AND is_credited=TRUE`, [userId, phoneForCap])
+          : await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
         isFirstEver = tv.rows[0].c === 1;
         if (isFirstEver) {
           await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
