@@ -3771,6 +3771,39 @@ app.get("/api/promo", async (_req, res) => {
   } catch (e) { res.json({ promo: null }); }
 });
 
+// DEBUG: temporary endpoint to inspect fox data
+app.get("/api/debug/fox", async (req, res) => {
+  try {
+    const nick = req.query.nick || "";
+    const phone = req.query.phone || "";
+    let fox;
+    if (nick) fox = await pool.query(`SELECT * FROM fp1_foxes WHERE username=$1 LIMIT 1`, [nick]);
+    else if (phone) fox = await pool.query(`SELECT * FROM fp1_foxes WHERE phone=$1 LIMIT 1`, [phone]);
+    else return res.status(400).json({ error: "?nick=X or ?phone=X" });
+    if (fox.rowCount === 0) return res.json({ error: "not found" });
+    const f = fox.rows[0];
+    const visits = await pool.query(
+      `SELECT cv.venue_id, v.name, cv.created_at FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id=cv.venue_id WHERE cv.user_id=$1 ORDER BY cv.created_at ASC`,
+      [f.user_id]
+    );
+    const achievements = await pool.query(`SELECT * FROM fp1_achievements WHERE user_id=$1`, [f.user_id]);
+    const socials = { sub_instagram: f.sub_instagram, sub_tiktok: f.sub_tiktok, sub_youtube: f.sub_youtube, sub_telegram: f.sub_telegram, sub_bonus_claimed: f.sub_bonus_claimed };
+    // Calculate expected rating: 0 base + 11 per first-ever visit (10+1) + 1 per subsequent + 3 per social
+    const socialCount = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram].filter(Boolean).length;
+    const visitCount = visits.rows.length;
+    const expectedBase = visitCount > 0 ? 10 + visitCount : 0; // +10 for first-ever + 1 per visit
+    const expectedSocial = socialCount * 3;
+    const inviteBonus = f.invite_code_used ? 3 : 0;
+    res.json({
+      fox: { id: f.id, user_id: f.user_id, username: f.username, phone: f.phone, rating: f.rating, invites: f.invites, city: f.city, district: f.district, founder_number: f.founder_number, created_at: f.created_at, is_deleted: f.is_deleted, invited_by_user_id: f.invited_by_user_id, invite_code_used: f.invite_code_used, consent_version: f.consent_version, join_source: f.join_source },
+      socials,
+      visits: visits.rows,
+      achievements: achievements.rows,
+      rating_breakdown: { current: f.rating, expected_from_visits: expectedBase, expected_from_socials: expectedSocial, invite_bonus: inviteBonus, expected_total: expectedBase + expectedSocial + inviteBonus }
+    });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
 // DEBUG: temporary endpoint to inspect TOP week/month/year calculation
 app.get("/api/debug/top-week", async (req, res) => {
   try {
