@@ -450,9 +450,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
       <!-- PWA Install Button -->
       <button id="pwaInstallBtn" style="display:none;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font);margin-bottom:12px;text-align:center">📲 Dodaj FoxPot do ekranu głównego</button>
-
-      <!-- Logout button (only for non-TG users) -->
-      <button id="logoutBtn" style="display:none;width:100%;padding:10px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);margin-bottom:12px" onclick="confirmLogout()">🚪 Wyloguj się</button>
     </div>
     <div id="pError" class="err-banner"></div>
     <div id="pUnauth" style="display:none">
@@ -516,9 +513,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <a href="#" onclick="openInlinePage('/privacy','🔒 Polityka Prywatności');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Polityka Prywatności</a>
       <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
       <a href="#" onclick="openInlinePage('/faq','❓ FAQ');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">FAQ</a>
-    </div>
-    <div id="pLeaveSection" style="display:none;text-align:center;padding:8px 0 16px">
-      <button onclick="showLeaveModal()" style="background:none;border:1px solid rgba(231,76,60,.25);border-radius:var(--radius-sm);padding:10px 24px;color:rgba(231,76,60,.6);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .2s">🚪 Opuść klub</button>
     </div>
   </section>
 
@@ -886,6 +880,13 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <a href="https://t.me/thefoxpot" target="_blank" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">✈️ t.me/thefoxpot</a>
       </div>
     </div>
+    <!-- Logout + Leave (moved from profile) -->
+    <div style="margin-top:20px;display:flex;flex-direction:column;align-items:center;gap:8px">
+      <button id="logoutBtn" style="display:none;padding:8px 24px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)" onclick="confirmLogout()">🚪 Wyloguj się</button>
+      <div id="pLeaveSection" style="display:none">
+        <button onclick="showLeaveModal()" style="background:none;border:1px solid rgba(231,76,60,.2);border-radius:var(--radius-sm);padding:8px 24px;color:rgba(231,76,60,.4);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)">🚪 Opuść klub</button>
+      </div>
+    </div>
   </section>
 
   <!-- BOTTOM NAV -->
@@ -1133,7 +1134,9 @@ async function loadProfile(){
     $l.style.display='none'; $c.style.display='block';
     S.spinDone=!!d.spun_today;
     if(S.spinDone) markSpinDone(d.spin_prize);
-    if(!d.consent_given) showConsent();
+    // Show consent overlay only for TG users who haven't accepted yet
+    // Phone users already accepted during onboarding (consent_version='phone_v1')
+    if(!d.consent_given && IS_TELEGRAM) showConsent();
     // Social bonus block
     renderSocialBonus(d);
     // Show leave button only for authenticated users
@@ -1160,7 +1163,7 @@ function renderSocialBonus(d) {
   const card = q('socialBonusCard');
   if (!card) return;
   // Hide for phone-only users (no Telegram) and if bonus already claimed
-  if (d.sub_bonus_claimed || (d.user_id && Number(d.user_id) < 0)) {
+  if (d.sub_bonus_claimed || !IS_TELEGRAM || (d.user_id && Number(d.user_id) < 0)) {
     card.style.display = 'none';
     return;
   }
@@ -2072,7 +2075,7 @@ function renderStaticMap(venues, container) {
   const center = withCoords.reduce((s,v) => ({lat:s.lat+parseFloat(v.lat)/withCoords.length, lng:s.lng+parseFloat(v.lng)/withCoords.length}), {lat:0,lng:0});
   const venueParams = withCoords.slice(0,15).map(v => `${v.lat},${v.lng}`).join('|');
   const url = `${BASE}/api/static-map?center=${center.lat},${center.lng}&venues=${encodeURIComponent(venueParams)}`;
-  container.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius);cursor:pointer" alt="Mapa" onclick="openExternal('https://www.google.com/maps/search/?api=1&query=lokale+warszawa',event)" onerror="this.parentElement.innerHTML='<div style=\\'height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px\\'>🗺️ Mapa niedostępna</div>'"/>`;
+  container.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius)" alt="Mapa" onerror="this.parentElement.innerHTML='<div style=\\'height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px\\'>🗺️ Mapa niedostępna</div>'"/>`;
 }
 
 function updateMapMarkers(venues) {
