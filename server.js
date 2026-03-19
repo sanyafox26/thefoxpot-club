@@ -5278,11 +5278,17 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <div id="csvToWrap" style="display:none"><label>Do</label><input type="date" id="csvTo" value="${new Date().toISOString().slice(0,10)}"/></div>
         <div><label>Lokal</label><select id="csvVenue"><option value="">— wszystkie —</option>${venues.rows.map(v=>`<option value="${v.id}">${escapeHtml(v.name)}</option>`).join("")}</select></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <button type="button" onclick="downloadCsv('visits')" style="background:rgba(124,92,252,.8);font-size:12px;padding:10px">📊 Wizyty CSV</button>
-        <button type="button" onclick="downloadCsv('dishes')" style="background:rgba(46,204,113,.7);font-size:12px;padding:10px">🍽 Dania CSV</button>
-        <button type="button" onclick="downloadCsv('foxes')" style="background:rgba(255,138,0,.7);font-size:12px;padding:10px">🦊 Foxy CSV</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+        <button type="button" onclick="downloadCsv('visits')" style="background:rgba(124,92,252,.8);font-size:12px;padding:10px">📥 Wizyty CSV</button>
+        <button type="button" onclick="downloadCsv('dishes')" style="background:rgba(46,204,113,.7);font-size:12px;padding:10px">📥 Dania CSV</button>
+        <button type="button" onclick="downloadCsv('foxes')" style="background:rgba(255,138,0,.7);font-size:12px;padding:10px">📥 Foxy CSV</button>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <button type="button" onclick="previewData('visits')" style="background:rgba(124,92,252,.2);border:1px solid rgba(124,92,252,.4);font-size:12px;padding:10px;color:#7c5cfc">👁 Podgląd wizyt</button>
+        <button type="button" onclick="previewData('dishes')" style="background:rgba(46,204,113,.15);border:1px solid rgba(46,204,113,.3);font-size:12px;padding:10px;color:#2ecc71">👁 Podgląd dań</button>
+        <button type="button" onclick="previewData('foxes')" style="background:rgba(255,138,0,.15);border:1px solid rgba(255,138,0,.3);font-size:12px;padding:10px;color:#ff8a00">👁 Podgląd Fox</button>
+      </div>
+      <div id="previewTable" style="margin-top:12px;max-height:400px;overflow:auto;display:none"></div>
       <script>
         function updateCsvDates(){
           const p=document.getElementById('csvPeriod').value;
@@ -5307,6 +5313,17 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
           if(d) url+='&district='+encodeURIComponent(d);
           if(v) url+='&venue_id='+v;
           window.location.href=url;
+        }
+        async function previewData(type){
+          const dt=getCsvDates();
+          const d=document.getElementById('csvDistrict').value;
+          const v=document.getElementById('csvVenue').value;
+          let url='/admin/export-csv?type='+type+'&from='+dt.from+'&to='+dt.to+'&format=html';
+          if(d) url+='&district='+encodeURIComponent(d);
+          if(v) url+='&venue_id='+v;
+          const box=document.getElementById('previewTable');
+          box.style.display='block';box.innerHTML='<div style="text-align:center;padding:20px;color:#888">Ładowanie...</div>';
+          try{const r=await fetch(url);box.innerHTML=await r.text();}catch(e){box.innerHTML='<div style="color:#e74c3c">Błąd</div>';}
         }
       </script>
     </div>`, `table th,table td{padding:6px 8px;text-align:left;border-bottom:1px solid #1a1f35}`));
@@ -5386,6 +5403,17 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
       filename = `foxpot_wizyty_${dateFrom}_${dateTo}.csv`;
     }
 
+    if (req.query.format === 'html') {
+      // HTML table preview for admin panel
+      const cols = header.replace(/\n$/, '').split(',');
+      const dataRows = csvRows.split('\n').filter(r => r.trim());
+      let html = `<div style="font-size:11px;color:#888;margin-bottom:8px">${dataRows.length} wierszy</div>`;
+      html += `<table style="width:100%;border-collapse:collapse;font-size:11px"><tr style="background:#1a1f35;position:sticky;top:0">${cols.map(c=>`<th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#aaa">${c}</th>`).join('')}</tr>`;
+      html += dataRows.slice(0, 200).map(row => `<tr>${row.split(',').map(c=>`<td style="padding:4px 6px;border-bottom:1px solid #1a1f35;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis">${c}</td>`).join('')}</tr>`).join('');
+      if (dataRows.length > 200) html += `<tr><td colspan="${cols.length}" style="padding:8px;text-align:center;color:#888">...i ${dataRows.length-200} więcej (pobierz CSV)</td></tr>`;
+      html += '</table>';
+      return res.send(html);
+    }
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send("\uFEFF" + header + csvRows);
