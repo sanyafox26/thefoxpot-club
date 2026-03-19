@@ -5373,7 +5373,7 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
       const rows = await pool.query(`
         SELECT cv.created_at, cv.user_id, f.username, f.rating, f.district, f.founder_number,
                cv.venue_id, v.name AS venue_name, v.city, v.venue_type, v.cuisine,
-               r.amount, r.discount_saved
+               r.amount_paid, r.discount_saved
         FROM fp1_counted_visits cv
         LEFT JOIN fp1_foxes f ON f.user_id = cv.user_id
         LEFT JOIN fp1_venues v ON v.id = cv.venue_id
@@ -5382,7 +5382,7 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
         ORDER BY cv.created_at DESC LIMIT 10000
       `, params);
       header = "data,user_id,nick,rating,dzielnica,pionier_nr,venue_id,lokal,miasto,typ,kuchnia,rachunek,zniżka\n";
-      csvRows = rows.rows.map(r => [fmtDate(r.created_at),r.user_id,esc_csv(r.username),r.rating||0,r.district||"",r.founder_number||"",r.venue_id,esc_csv(r.venue_name),r.city||"",r.venue_type||"",esc_csv(r.cuisine),r.amount||"",r.discount_saved||""].join(",")).join("\n");
+      csvRows = rows.rows.map(r => [fmtDate(r.created_at),r.user_id,esc_csv(r.username),r.rating||0,r.district||"",r.founder_number||"",r.venue_id,esc_csv(r.venue_name),r.city||"",r.venue_type||"",esc_csv(r.cuisine),r.amount_paid||"",r.discount_saved||""].join(",")).join("\n");
       filename = `foxpot_wizyty_${dateFrom}_${dateTo}.csv`;
     }
 
