@@ -2278,16 +2278,21 @@ app.get("/api/venues", async (req, res) => {
       return topId;
     }
 
-    // P0.2: Each period finds its own top independently (venue can have multiple badges)
+    // Exclusive TOP: each venue gets only its highest badge
+    // Order: all-time > year > month > week (each excludes already-taken venues)
     const prevYearEnd = new Date(warsawNow); prevYearEnd.setMonth(0, 1); prevYearEnd.setHours(0,0,0,0);
     const hasPrevYear = await pool.query(
       `SELECT 1 FROM fp1_counted_visits WHERE created_at < $1 LIMIT 1`,
       [prevYearEnd.toISOString()]
     );
+    const excludeIds = [];
     const topAllTimeId = hasPrevYear.rowCount > 0 ? findTop(allData, []) : null;
-    const topYearId = findTop(yearlyData, []);
-    const topMonthId = findTop(monthlyData, []);
-    const topWeekId = findTop(weeklyData, []);
+    if (topAllTimeId) excludeIds.push(topAllTimeId);
+    const topYearId = findTop(yearlyData, excludeIds);
+    if (topYearId) excludeIds.push(topYearId);
+    const topMonthId = findTop(monthlyData, excludeIds);
+    if (topMonthId) excludeIds.push(topMonthId);
+    const topWeekId = findTop(weeklyData, excludeIds);
 
     // Get user's active reservations
     let myReservations = {};
@@ -3764,6 +3769,82 @@ app.get("/api/promo", async (_req, res) => {
     `);
     res.json({ promo: r.rows[0] || null });
   } catch (e) { res.json({ promo: null }); }
+});
+
+// DEBUG: temporary endpoint to inspect TOP week/month/year calculation
+app.get("/api/debug/top-week", async (req, res) => {
+  try {
+    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const dayOfWeek = warsawNow.getDay();
+    const weekStart = new Date(warsawNow);
+    weekStart.setDate(weekStart.getDate() - dayOfWeek);
+    weekStart.setHours(0,0,0,0);
+
+    const monthStart = new Date(warsawNow);
+    monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+
+    const yearStart = new Date(warsawNow);
+    yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
+
+    // Weekly visits
+    const wv = await pool.query(
+      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count, MIN(cv.created_at) AS first_visit_at
+       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
+       WHERE cv.created_at >= $1 GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC, first_visit_at ASC`,
+      [weekStart.toISOString()]
+    );
+
+    // Monthly visits
+    const mv = await pool.query(
+      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count, MIN(cv.created_at) AS first_visit_at
+       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
+       WHERE cv.created_at >= $1 GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC, first_visit_at ASC`,
+      [monthStart.toISOString()]
+    );
+
+    // Yearly visits
+    const yv = await pool.query(
+      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count, MIN(cv.created_at) AS first_visit_at
+       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
+       WHERE cv.created_at >= $1 GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC, first_visit_at ASC`,
+      [yearStart.toISOString()]
+    );
+
+    // Determine exclusive TOPs (same logic as /api/venues)
+    function findTopFromRows(rows, excludeIds) {
+      for (const r of rows) {
+        if (!excludeIds.includes(r.venue_id)) return r.venue_id;
+      }
+      return null;
+    }
+    const prevYearEnd = new Date(warsawNow); prevYearEnd.setMonth(0, 1); prevYearEnd.setHours(0,0,0,0);
+    const hasPrevYear = await pool.query(`SELECT 1 FROM fp1_counted_visits WHERE created_at < $1 LIMIT 1`, [prevYearEnd.toISOString()]);
+    const allVisits = await pool.query(
+      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC`
+    );
+    const excludeIds = [];
+    const topAllTimeId = hasPrevYear.rowCount > 0 ? findTopFromRows(allVisits.rows, []) : null;
+    if (topAllTimeId) excludeIds.push(topAllTimeId);
+    const topYearId = findTopFromRows(yv.rows, excludeIds);
+    if (topYearId) excludeIds.push(topYearId);
+    const topMonthId = findTopFromRows(mv.rows, excludeIds);
+    if (topMonthId) excludeIds.push(topMonthId);
+    const topWeekId = findTopFromRows(wv.rows, excludeIds);
+
+    res.json({
+      server_time: warsawNow.toISOString(),
+      week_start: weekStart.toISOString(),
+      month_start: monthStart.toISOString(),
+      year_start: yearStart.toISOString(),
+      visits_this_week: wv.rows,
+      visits_this_month: mv.rows,
+      visits_this_year: yv.rows,
+      top_alltime_id: topAllTimeId,
+      top_year_id: topYearId,
+      top_month_id: topMonthId,
+      top_week_id: topWeekId,
+    });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
 });
 
 /* ═══════════════════════════════════════════════════════════════
