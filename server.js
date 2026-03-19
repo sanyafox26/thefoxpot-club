@@ -3610,8 +3610,10 @@ app.post("/api/nominations", async (req, res) => {
 app.post("/api/nominations/:id/vote", async (req, res) => {
   try {
     const nomId = Number(req.params.id);
-    const fp = String(req.body.fp || req.ip || "anon").slice(0, 200);
+    const rawFp = String(req.body.fp || req.ip || "anon").slice(0, 200);
     const userId = await resolveUserId(req);
+    // Use user-based fingerprint for auth users to avoid UNIQUE conflict on shared devices
+    const fp = userId ? `user_${userId}` : rawFp;
     let isMember = false;
     if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
     if (rateLimit(`nom_vote:${fp}`, 20, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele głosów." });
@@ -3753,8 +3755,10 @@ app.post("/api/city-nominations", async (req, res) => {
 app.post("/api/city-nominations/:id/vote", async (req, res) => {
   try {
     const cityId = Number(req.params.id);
-    const fp = String(req.body.fp || req.ip || "anon").slice(0, 200);
+    const rawFp = String(req.body.fp || req.ip || "anon").slice(0, 200);
     const userId = await resolveUserId(req);
+    // Use user-based fingerprint for auth users to avoid UNIQUE conflict on shared devices
+    const fp = userId ? `user_${userId}` : rawFp;
 
     let isMember = false;
     if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
