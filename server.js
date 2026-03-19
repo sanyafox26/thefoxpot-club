@@ -789,10 +789,14 @@ async function migrate() {
       venue_id     INT,
       venue_name   TEXT,
       value        NUMERIC(10,2) NOT NULL DEFAULT 0,
+      period       TEXT,
+      achieved_at  TIMESTAMPTZ,
       extra        JSONB,
       updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await ensureColumn("fp1_leaderboard_cache", "period", "TEXT");
+  await ensureColumn("fp1_leaderboard_cache", "achieved_at", "TIMESTAMPTZ");
 
   await migrateSupport(pool);
   // One-time fix: Proba3 got inflated rating from old INSERT (rating=1 base instead of 0)
@@ -3343,11 +3347,21 @@ setInterval(async () => {
     const yearStart = new Date(warsawNow); yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
     const adminExclude = ADMIN_TG_ID ? ` AND f.user_id != '${ADMIN_TG_ID}'` : '';
 
-    // Best savings Fox of the month
+    const upsertCache = async (key, period, data) => {
+      await pool.query(`
+        INSERT INTO fp1_leaderboard_cache(key,user_id,username,venue_id,venue_name,value,period,achieved_at,extra,updated_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+        ON CONFLICT(key) DO UPDATE SET user_id=$2,username=$3,venue_id=$4,venue_name=$5,value=$6,period=$7,achieved_at=$8,extra=$9,updated_at=NOW()`,
+        [key, data.user_id||null, data.username||null, data.venue_id||null, data.venue_name||null, data.value, period, data.achieved_at||null, data.extra?JSON.stringify(data.extra):null]
+      );
+    };
+
+    // Best savings Fox of the month (by credited receipts only)
     const savingsQ = await pool.query(`
       SELECT f.user_id, f.username, f.founder_number,
              SUM(r.discount_saved)::numeric AS total_saved,
-             COUNT(DISTINCT r.venue_id)::int AS venues_count
+             COUNT(DISTINCT r.venue_id)::int AS venues_count,
+             MIN(r.created_at) AS first_receipt_at
       FROM fp1_receipts r
       JOIN fp1_counted_visits cv ON cv.user_id = r.user_id AND cv.venue_id = r.venue_id
         AND cv.war_day = r.war_day AND cv.is_credited = TRUE
@@ -3355,44 +3369,45 @@ setInterval(async () => {
       WHERE r.created_at >= $1
       GROUP BY f.user_id, f.username, f.founder_number
       HAVING SUM(r.discount_saved) > 0
-      ORDER BY total_saved DESC LIMIT 1
+      ORDER BY total_saved DESC, first_receipt_at ASC LIMIT 1
     `, [monthStart.toISOString()]);
     if (savingsQ.rowCount > 0) {
       const s = savingsQ.rows[0];
-      await pool.query(`INSERT INTO fp1_leaderboard_cache(key,user_id,username,value,extra,updated_at) VALUES('best_savings_month',$1,$2,$3,$4,NOW()) ON CONFLICT(key) DO UPDATE SET user_id=$1,username=$2,value=$3,extra=$4,updated_at=NOW()`,
-        [s.user_id, s.username, s.total_saved, JSON.stringify({venues_count:s.venues_count,founder_number:s.founder_number,month:monthStart.toISOString()})]);
+      await upsertCache('best_savings_month', 'month', {
+        user_id: s.user_id, username: s.username, value: s.total_saved,
+        achieved_at: s.first_receipt_at,
+        extra: { venues_count: s.venues_count, founder_number: s.founder_number }
+      });
     }
 
     // Top Fox by credited visits: week, month, year
-    for (const [period, start] of [['top_fox_week',weekStart],['top_fox_month',monthStart],['top_fox_year',yearStart]]) {
+    for (const [key, pLabel, start] of [['top_fox_week','week',weekStart],['top_fox_month','month',monthStart],['top_fox_year','year',yearStart]]) {
       const tq = await pool.query(`
-        SELECT f.user_id, f.username, COUNT(*)::int AS cnt
+        SELECT f.user_id, f.username, COUNT(*)::int AS cnt, MIN(cv.created_at) AS first_at
         FROM fp1_counted_visits cv
         JOIN fp1_foxes f ON f.user_id = cv.user_id AND f.is_deleted = FALSE${adminExclude}
         WHERE cv.created_at >= $1 AND cv.is_credited = TRUE
         GROUP BY f.user_id, f.username
-        ORDER BY cnt DESC, MIN(cv.created_at) ASC LIMIT 1
+        ORDER BY cnt DESC, first_at ASC LIMIT 1
       `, [start.toISOString()]);
       if (tq.rowCount > 0) {
         const t = tq.rows[0];
-        await pool.query(`INSERT INTO fp1_leaderboard_cache(key,user_id,username,value,updated_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(key) DO UPDATE SET user_id=$2,username=$3,value=$4,updated_at=NOW()`,
-          [period, t.user_id, t.username, t.cnt]);
+        await upsertCache(key, pLabel, { user_id: t.user_id, username: t.username, value: t.cnt, achieved_at: t.first_at });
       }
     }
 
-    // Top venue: week, month, year (already computed in /api/venues, cache for quick access)
-    for (const [period, start] of [['top_venue_week',weekStart],['top_venue_month',monthStart],['top_venue_year',yearStart]]) {
+    // Top venue: week, month, year
+    for (const [key, pLabel, start] of [['top_venue_week','week',weekStart],['top_venue_month','month',monthStart],['top_venue_year','year',yearStart]]) {
       const vq = await pool.query(`
-        SELECT cv.venue_id, v.name, COUNT(*)::int AS cnt
+        SELECT cv.venue_id, v.name, COUNT(*)::int AS cnt, MIN(cv.created_at) AS first_at
         FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
         WHERE cv.created_at >= $1 AND cv.is_credited = TRUE
         GROUP BY cv.venue_id, v.name
-        ORDER BY cnt DESC, MIN(cv.created_at) ASC LIMIT 1
+        ORDER BY cnt DESC, first_at ASC LIMIT 1
       `, [start.toISOString()]);
       if (vq.rowCount > 0) {
         const v = vq.rows[0];
-        await pool.query(`INSERT INTO fp1_leaderboard_cache(key,venue_id,venue_name,value,updated_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(key) DO UPDATE SET venue_id=$2,venue_name=$3,value=$4,updated_at=NOW()`,
-          [period, v.venue_id, v.name, v.cnt]);
+        await upsertCache(key, pLabel, { venue_id: v.venue_id, venue_name: v.name, value: v.cnt, achieved_at: v.first_at });
       }
     }
   } catch (e) { console.error("[LeaderboardCache] ERR", e?.message || e); }
