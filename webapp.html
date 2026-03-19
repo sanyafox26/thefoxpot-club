@@ -394,17 +394,17 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="font-size:15px;font-weight:800;color:var(--fox);margin-bottom:6px">Zrób swój pierwszy check-in!</div>
         <div style="font-size:12px;color:var(--muted);line-height:1.5">Wybierz lokal na mapie i pokaż kod personelowi.<br>Pierwszy check-in = <strong style="color:var(--fox)">+10 pkt</strong> do ratingu!</div>
       </div>
-      <!-- Best Fox of the month -->
-      <div id="bestFoxCard" style="display:none;background:linear-gradient(135deg,rgba(255,215,0,.08),rgba(245,166,35,.05));border:1px solid rgba(255,215,0,.2);border-radius:var(--radius);padding:16px;margin-bottom:12px">
+      <!-- Best Fox / info slot (never empty) -->
+      <div id="bestFoxCard" style="display:none;border:1px solid rgba(255,215,0,.2);border-radius:var(--radius);padding:16px;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="font-size:24px">🦊</div>
+          <div id="bestFoxIcon" style="font-size:24px">🦊</div>
           <div>
-            <div style="font-size:14px;font-weight:800;color:var(--gold)">Fox miesiąca</div>
+            <div id="bestFoxTitle" style="font-size:14px;font-weight:800;color:var(--gold)">Fox miesiąca</div>
             <div id="bestFoxMonth" style="font-size:11px;color:var(--muted)"></div>
           </div>
         </div>
         <div id="bestFoxContent" style="font-size:13px;color:var(--text);line-height:1.5"></div>
-        <button onclick="go('top')" style="margin-top:10px;width:100%;padding:10px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.25);border-radius:var(--radius-sm);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">Zobacz ranking →</button>
+        <button id="bestFoxCta" onclick="go('top')" style="margin-top:10px;width:100%;padding:10px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.25);border-radius:var(--radius-sm);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">Zobacz ranking →</button>
       </div>
       <!-- Social bonus (3rd position) -->
       <div class="card" id="socialBonusCard" style="display:none;margin-bottom:12px">
@@ -1256,7 +1256,7 @@ function renderSocialBonus(d) {
   }
 }
 
-// ─── Best Fox of the Month ───
+// ─── Best Fox of the Month (with fallback — slot never empty) ───
 async function loadBestFox() {
   const card = q('bestFoxCard');
   if (!card) return;
@@ -1264,12 +1264,40 @@ async function loadBestFox() {
     const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
     const r = await fetch(BASE+'/api/best-fox', {headers:h});
     const d = await r.json();
-    if (!d.best_fox) { card.style.display = 'none'; return; }
-    const b = d.best_fox;
+    if (d.best_fox) {
+      const b = d.best_fox;
+      card.style.display = 'block';
+      card.style.background = 'linear-gradient(135deg,rgba(255,215,0,.08),rgba(245,166,35,.05))';
+      card.style.borderColor = 'rgba(255,215,0,.2)';
+      q('bestFoxIcon').textContent = '🦊';
+      q('bestFoxTitle').textContent = 'Fox miesiąca';
+      q('bestFoxTitle').style.color = 'var(--gold)';
+      q('bestFoxMonth').textContent = 'Największe oszczędności w ' + b.month_name;
+      q('bestFoxContent').innerHTML = `<strong style="color:var(--fox)">@${esc(b.username)}</strong> zaoszczędził <strong style="color:var(--green)">${b.total_saved.toFixed(2)} zł</strong> w ${b.venues_count} ${b.venues_count===1?'lokalu':'lokalach'}`;
+      q('bestFoxCta').style.display = '';
+    } else {
+      // Fallback: show a system info card so slot is never empty
+      card.style.display = 'block';
+      card.style.background = 'var(--card-bg)';
+      card.style.borderColor = 'var(--card-border)';
+      q('bestFoxIcon').textContent = '🦊';
+      q('bestFoxTitle').textContent = 'FoxPot Club';
+      q('bestFoxTitle').style.color = 'var(--fox)';
+      q('bestFoxMonth').textContent = 'Program lojalnościowy';
+      q('bestFoxContent').innerHTML = 'Odwiedzaj lokale, zbieraj punkty i oszczędzaj! Najlepszy Fox miesiąca pojawi się tutaj.';
+      q('bestFoxCta').style.display = 'none';
+    }
+  } catch(e) {
     card.style.display = 'block';
-    q('bestFoxMonth').textContent = 'Największe oszczędności w ' + b.month_name;
-    q('bestFoxContent').innerHTML = `<strong style="color:var(--fox)">@${esc(b.username)}</strong> zaoszczędził <strong style="color:var(--green)">${b.total_saved.toFixed(2)} zł</strong> w ${b.venues_count} ${b.venues_count===1?'lokalu':'lokalach'}`;
-  } catch(e) { card.style.display = 'none'; }
+    card.style.background = 'var(--card-bg)';
+    card.style.borderColor = 'var(--card-border)';
+    q('bestFoxIcon').textContent = '🦊';
+    q('bestFoxTitle').textContent = 'FoxPot Club';
+    q('bestFoxTitle').style.color = 'var(--fox)';
+    q('bestFoxMonth').textContent = 'Program lojalnościowy';
+    q('bestFoxContent').innerHTML = 'Odkrywaj lokale z FoxPot Club i oszczędzaj!';
+    q('bestFoxCta').style.display = 'none';
+  }
 }
 
 function openSocialLink(platform, url) {

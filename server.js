@@ -780,6 +780,20 @@ async function migrate() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fp1_otp_phone ON fp1_otp_codes(phone, created_at DESC)`).catch(()=>{});
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_phone ON fp1_foxes(phone) WHERE phone IS NOT NULL`).catch(()=>{});
 
+  // Leaderboard cache table — pre-computed results updated by CRON
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_leaderboard_cache (
+      key          TEXT PRIMARY KEY,
+      user_id      TEXT,
+      username     TEXT,
+      venue_id     INT,
+      venue_name   TEXT,
+      value        NUMERIC(10,2) NOT NULL DEFAULT 0,
+      extra        JSONB,
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await migrateSupport(pool);
   // One-time fix: Proba3 got inflated rating from old INSERT (rating=1 base instead of 0)
   await pool.query(`UPDATE fp1_foxes SET rating=21 WHERE username='Proba3' AND rating=24`).catch(()=>{});
@@ -3319,6 +3333,71 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000); // кожні 5 хвилин
 
+// CRON: Leaderboard cache — update pre-computed results every 5 min
+setInterval(async () => {
+  try {
+    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+    const dayOfWeek = warsawNow.getDay();
+    const weekStart = new Date(warsawNow); weekStart.setDate(weekStart.getDate() - dayOfWeek); weekStart.setHours(0,0,0,0);
+    const monthStart = new Date(warsawNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const yearStart = new Date(warsawNow); yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
+    const adminExclude = ADMIN_TG_ID ? ` AND f.user_id != '${ADMIN_TG_ID}'` : '';
+
+    // Best savings Fox of the month
+    const savingsQ = await pool.query(`
+      SELECT f.user_id, f.username, f.founder_number,
+             SUM(r.discount_saved)::numeric AS total_saved,
+             COUNT(DISTINCT r.venue_id)::int AS venues_count
+      FROM fp1_receipts r
+      JOIN fp1_counted_visits cv ON cv.user_id = r.user_id AND cv.venue_id = r.venue_id
+        AND cv.war_day = r.war_day AND cv.is_credited = TRUE
+      JOIN fp1_foxes f ON f.user_id = r.user_id AND f.is_deleted = FALSE${adminExclude}
+      WHERE r.created_at >= $1
+      GROUP BY f.user_id, f.username, f.founder_number
+      HAVING SUM(r.discount_saved) > 0
+      ORDER BY total_saved DESC LIMIT 1
+    `, [monthStart.toISOString()]);
+    if (savingsQ.rowCount > 0) {
+      const s = savingsQ.rows[0];
+      await pool.query(`INSERT INTO fp1_leaderboard_cache(key,user_id,username,value,extra,updated_at) VALUES('best_savings_month',$1,$2,$3,$4,NOW()) ON CONFLICT(key) DO UPDATE SET user_id=$1,username=$2,value=$3,extra=$4,updated_at=NOW()`,
+        [s.user_id, s.username, s.total_saved, JSON.stringify({venues_count:s.venues_count,founder_number:s.founder_number,month:monthStart.toISOString()})]);
+    }
+
+    // Top Fox by credited visits: week, month, year
+    for (const [period, start] of [['top_fox_week',weekStart],['top_fox_month',monthStart],['top_fox_year',yearStart]]) {
+      const tq = await pool.query(`
+        SELECT f.user_id, f.username, COUNT(*)::int AS cnt
+        FROM fp1_counted_visits cv
+        JOIN fp1_foxes f ON f.user_id = cv.user_id AND f.is_deleted = FALSE${adminExclude}
+        WHERE cv.created_at >= $1 AND cv.is_credited = TRUE
+        GROUP BY f.user_id, f.username
+        ORDER BY cnt DESC, MIN(cv.created_at) ASC LIMIT 1
+      `, [start.toISOString()]);
+      if (tq.rowCount > 0) {
+        const t = tq.rows[0];
+        await pool.query(`INSERT INTO fp1_leaderboard_cache(key,user_id,username,value,updated_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(key) DO UPDATE SET user_id=$2,username=$3,value=$4,updated_at=NOW()`,
+          [period, t.user_id, t.username, t.cnt]);
+      }
+    }
+
+    // Top venue: week, month, year (already computed in /api/venues, cache for quick access)
+    for (const [period, start] of [['top_venue_week',weekStart],['top_venue_month',monthStart],['top_venue_year',yearStart]]) {
+      const vq = await pool.query(`
+        SELECT cv.venue_id, v.name, COUNT(*)::int AS cnt
+        FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
+        WHERE cv.created_at >= $1 AND cv.is_credited = TRUE
+        GROUP BY cv.venue_id, v.name
+        ORDER BY cnt DESC, MIN(cv.created_at) ASC LIMIT 1
+      `, [start.toISOString()]);
+      if (vq.rowCount > 0) {
+        const v = vq.rows[0];
+        await pool.query(`INSERT INTO fp1_leaderboard_cache(key,venue_id,venue_name,value,updated_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(key) DO UPDATE SET venue_id=$2,venue_name=$3,value=$4,updated_at=NOW()`,
+          [period, v.venue_id, v.name, v.cnt]);
+      }
+    }
+  } catch (e) { console.error("[LeaderboardCache] ERR", e?.message || e); }
+}, 5 * 60 * 1000);
+
 // CRON: Reservation expiry — штраф -5 за невикористану резервацію
 setInterval(async () => {
   try {
@@ -3836,36 +3915,21 @@ app.get("/api/promo", async (_req, res) => {
   } catch (e) { res.json({ promo: null }); }
 });
 
-// GET /api/best-fox — Best Fox of the month (by credited savings)
+// GET /api/best-fox — Best Fox of the month (from leaderboard cache)
 app.get("/api/best-fox", async (req, res) => {
   try {
-    const monthStart = new Date();
-    monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-    const adminExclude = ADMIN_TG_ID ? ` AND f.user_id != '${ADMIN_TG_ID}'` : '';
-    const q = await pool.query(`
-      SELECT f.user_id, f.username, f.founder_number,
-             SUM(r.discount_saved)::numeric AS total_saved,
-             COUNT(DISTINCT r.venue_id)::int AS venues_count,
-             COUNT(r.id)::int AS receipt_count
-      FROM fp1_receipts r
-      JOIN fp1_counted_visits cv ON cv.user_id = r.user_id AND cv.venue_id = r.venue_id
-        AND cv.war_day = r.war_day AND cv.is_credited = TRUE
-      JOIN fp1_foxes f ON f.user_id = r.user_id AND f.is_deleted = FALSE${adminExclude}
-      WHERE r.created_at >= $1
-      GROUP BY f.user_id, f.username, f.founder_number
-      HAVING SUM(r.discount_saved) > 0
-      ORDER BY total_saved DESC LIMIT 1
-    `, [monthStart.toISOString()]);
-    if (q.rowCount === 0) return res.json({ best_fox: null });
-    const b = q.rows[0];
+    const cached = await pool.query(`SELECT * FROM fp1_leaderboard_cache WHERE key='best_savings_month' LIMIT 1`);
+    if (cached.rowCount === 0 || !cached.rows[0].username) return res.json({ best_fox: null });
+    const c = cached.rows[0];
+    const extra = c.extra || {};
+    const monthStart = new Date(); monthStart.setDate(1);
     const monthName = monthStart.toLocaleDateString("pl-PL", { month: "long" });
     res.json({
       best_fox: {
-        username: b.username,
-        total_saved: parseFloat(parseFloat(b.total_saved).toFixed(2)),
-        venues_count: b.venues_count,
-        receipt_count: b.receipt_count,
-        founder_number: b.founder_number,
+        username: c.username,
+        total_saved: parseFloat(parseFloat(c.value).toFixed(2)),
+        venues_count: extra.venues_count || 0,
+        founder_number: extra.founder_number || null,
         month_name: monthName,
       }
     });
