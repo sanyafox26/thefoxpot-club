@@ -1220,7 +1220,7 @@ async function upsertFox(ctx) {
   const tgId = String(ctx.from.id);
   const username = tgDisplayName(ctx.from);
   await pool.query(
-    `INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,1,3,'Warszawa')
+    `INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,0,0,'Warszawa')
      ON CONFLICT(user_id) DO UPDATE SET username=COALESCE(EXCLUDED.username,fp1_foxes.username)`,
     [tgId, username]
   );
