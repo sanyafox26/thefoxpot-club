@@ -2054,6 +2054,7 @@ app.get("/api/venues", async (req, res) => {
     let userId = null;
     let isFox = false;
     let trialState = null;
+    // Extract userId from TG initData or JWT
     try {
       const init = req.headers["x-telegram-init-data"];
       if (init) {
@@ -2061,6 +2062,18 @@ app.get("/api/venues", async (req, res) => {
         if (parsed.user) userId = String(JSON.parse(parsed.user).id);
       }
     } catch(_){}
+    if (!userId) {
+      try {
+        const authH = req.headers.authorization || "";
+        if (authH.startsWith("Bearer ")) {
+          const decoded = jwt.verify(authH.slice(7), JWT_SECRET);
+          if (decoded.fox_id) {
+            const fq = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`, [decoded.fox_id]);
+            if (fq.rows.length) userId = String(fq.rows[0].user_id);
+          }
+        }
+      } catch(_){}
+    }
     if (userId) {
       const foxQ = await pool.query(`SELECT user_id, trial_active, trial_origin_venue_id, trial_expires_at, trial_blocked_venue_id, trial_blocked_until FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (foxQ.rowCount > 0) {
