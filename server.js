@@ -633,6 +633,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "sub_tiktok",            "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes",          "sub_youtube",           "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes",          "sub_telegram",          "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "sub_facebook",          "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes",          "sub_bonus_claimed",     "BOOLEAN NOT NULL DEFAULT FALSE");
 
   // Fix fp1_invite_uses if created with wrong schema
@@ -1706,7 +1707,7 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
             streak_freeze_available = 0, city = 'Warszawa', district = NULL,
             consent_at = NULL, consent_version = NULL,
             sub_instagram = FALSE, sub_tiktok = FALSE, sub_youtube = FALSE,
-            sub_telegram = FALSE, sub_bonus_claimed = FALSE,
+            sub_telegram = FALSE, sub_facebook = FALSE, sub_bonus_claimed = FALSE,
             invited_by_user_id = NULL, invite_code_used = NULL, invite_used_at = NULL
           WHERE id = $2
         `, [pseudoId, df.id]);
@@ -2063,6 +2064,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
       sub_tiktok:               !!f.sub_tiktok,
       sub_youtube:              !!f.sub_youtube,
       sub_telegram:             !!f.sub_telegram,
+      sub_facebook:             !!f.sub_facebook,
       sub_bonus_claimed:        !!f.sub_bonus_claimed,
       top_badge:                isAdmin(userId) ? null : myTopBadge,
       is_admin:                 isAdmin(userId),
@@ -2520,7 +2522,7 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
       return res.status(429).json({ error: "Zbyt wiele prób. Poczekaj." });
     }
     const { platform } = req.body;
-    const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "telegram"];
+    const VALID_PLATFORMS = ["instagram", "tiktok", "youtube", "telegram", "facebook"];
     if (!platform || !VALID_PLATFORMS.includes(platform)) {
       return res.status(400).json({ error: "nieprawidłowa platforma" });
     }
@@ -2533,7 +2535,7 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
 
     // Already verified — return success but no new reward
     if (f[col]) {
-      const count = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram].filter(Boolean).length;
+      const count = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram, f.sub_facebook].filter(Boolean).length;
       return res.json({
         ok: true,
         already_verified: true,
@@ -2547,6 +2549,7 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
         sub_tiktok: !!f.sub_tiktok,
         sub_youtube: !!f.sub_youtube,
         sub_telegram: !!f.sub_telegram,
+        sub_facebook: !!f.sub_facebook,
         sub_bonus_claimed: !!f.sub_bonus_claimed,
       });
     }
@@ -2583,9 +2586,9 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
 
     // Check if all 4 are now subscribed → bonus +1 invite (one-time)
     if (!f.sub_bonus_claimed) {
-      const updated = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram FROM fp1_foxes WHERE user_id=$1`, [userId]);
+      const updated = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram, sub_facebook FROM fp1_foxes WHERE user_id=$1`, [userId]);
       const u = updated.rows[0];
-      if (u.sub_instagram && u.sub_tiktok && u.sub_youtube && u.sub_telegram) {
+      if (u.sub_instagram && u.sub_tiktok && u.sub_youtube && u.sub_telegram && u.sub_facebook) {
         await pool.query(
           `UPDATE fp1_foxes SET sub_bonus_claimed = TRUE, invites = invites + 1 WHERE user_id=$1`,
           [userId]
@@ -2595,9 +2598,9 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
     }
 
     // Get updated fox data
-    const result = await pool.query(`SELECT rating, invites, sub_instagram, sub_tiktok, sub_youtube, sub_telegram, sub_bonus_claimed FROM fp1_foxes WHERE user_id=$1`, [userId]);
+    const result = await pool.query(`SELECT rating, invites, sub_instagram, sub_tiktok, sub_youtube, sub_telegram, sub_facebook, sub_bonus_claimed FROM fp1_foxes WHERE user_id=$1`, [userId]);
     const r = result.rows[0];
-    const count = [r.sub_instagram, r.sub_tiktok, r.sub_youtube, r.sub_telegram].filter(Boolean).length;
+    const count = [r.sub_instagram, r.sub_tiktok, r.sub_youtube, r.sub_telegram, r.sub_facebook].filter(Boolean).length;
 
     console.log(`[SOCIAL] Fox ${userId} verified ${platform} → +3 rating${invite_bonus ? ' + 1 invite (full set bonus)' : ''}`);
 
@@ -2615,6 +2618,7 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
       sub_tiktok: !!r.sub_tiktok,
       sub_youtube: !!r.sub_youtube,
       sub_telegram: !!r.sub_telegram,
+      sub_facebook: !!r.sub_facebook,
       sub_bonus_claimed: !!r.sub_bonus_claimed,
     });
   } catch (e) {
@@ -3789,7 +3793,7 @@ app.get("/api/debug/fox", async (req, res) => {
     const achievements = await pool.query(`SELECT * FROM fp1_achievements WHERE user_id=$1`, [f.user_id]);
     const socials = { sub_instagram: f.sub_instagram, sub_tiktok: f.sub_tiktok, sub_youtube: f.sub_youtube, sub_telegram: f.sub_telegram, sub_bonus_claimed: f.sub_bonus_claimed };
     // Calculate expected rating: 0 base + 11 per first-ever visit (10+1) + 1 per subsequent + 3 per social
-    const socialCount = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram].filter(Boolean).length;
+    const socialCount = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram, f.sub_facebook].filter(Boolean).length;
     const visitCount = visits.rows.length;
     const expectedBase = visitCount > 0 ? 10 + visitCount : 0; // +10 for first-ever + 1 per visit
     const expectedSocial = socialCount * 3;
@@ -5484,13 +5488,14 @@ app.post("/api/support/status-check", requireWebAppAuth, async (req, res) => {
       }
     }
     if (category === "subscription") {
-      const f = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram FROM fp1_foxes WHERE user_id=$1`, [userId]);
+      const f = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram, sub_facebook FROM fp1_foxes WHERE user_id=$1`, [userId]);
       if (f.rowCount > 0) {
         const r = f.rows[0];
         lines.push(`Instagram: ${r.sub_instagram?"✅":"❌"}`);
         lines.push(`TikTok: ${r.sub_tiktok?"✅":"❌"}`);
         lines.push(`YouTube: ${r.sub_youtube?"✅":"❌"}`);
         lines.push(`Telegram: ${r.sub_telegram?"✅":"❌"}`);
+        lines.push(`Facebook: ${r.sub_facebook?"✅":"❌"}`);
       }
     }
     res.json({ ok: true, result: lines.join("\n") || "Sprawdź ponownie za chwilę." });

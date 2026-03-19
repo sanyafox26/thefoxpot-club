@@ -887,6 +887,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <a href="#" onclick="openExternal('https://www.instagram.com/thefoxpotclub/');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">📸 Instagram</a>
         <a href="#" onclick="openExternal('https://www.tiktok.com/@thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">🎵 TikTok</a>
         <a href="#" onclick="openExternal('https://www.youtube.com/@thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">▶️ YouTube</a>
+        <a href="#" onclick="openExternal('https://www.facebook.com/thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">👍 Facebook</a>
       </div>
     </div>
     <!-- Logout + Leave (moved from profile) -->
@@ -1166,10 +1167,11 @@ const SOCIAL_PLATFORMS = [
   { key:'tiktok',    label:'TikTok',     emoji:'🎵', url:'https://www.tiktok.com/@thefoxpotclub',    color:'#00f2ea' },
   { key:'youtube',   label:'YouTube',    emoji:'▶️', url:'https://www.youtube.com/@thefoxpotclub',   color:'#FF0000' },
   { key:'telegram',  label:'Telegram',   emoji:'✈️', url:'https://t.me/thefoxpotclub',               color:'#0088cc' },
+  { key:'facebook',  label:'Facebook',   emoji:'👍', url:'https://www.facebook.com/thefoxpotclub',   color:'#1877F2' },
 ];
 
 // Track which platforms user clicked "Subskrybuj" (enables Sprawdź button)
-const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:false };
+const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:false, facebook:false };
 
 function renderSocialBonus(d) {
   const card = q('socialBonusCard');
@@ -1184,6 +1186,7 @@ function renderSocialBonus(d) {
     tiktok:    !!d.sub_tiktok,
     youtube:   !!d.sub_youtube,
     telegram:  !!d.sub_telegram,
+    facebook:  !!d.sub_facebook,
   };
   const count = Object.values(subs).filter(Boolean).length;
   card.style.display = 'block';
@@ -1221,17 +1224,18 @@ function renderSocialBonus(d) {
   }).join('');
 
   // Progress bar
-  const pct = (count / 4) * 100;
+  const total = SOCIAL_PLATFORMS.length;
+  const pct = (count / total) * 100;
   q('socialProgressBar').style.width = pct + '%';
 
   // Dynamic text
-  const left = 4 - count;
-  if (count === 4) {
+  const left = total - count;
+  if (count === total) {
     q('socialProgressText').innerHTML = '🎉 Komplet! <strong style="color:var(--green)">+1 zaproszenie zdobyte!</strong>';
   } else if (left === 1) {
     q('socialProgressText').innerHTML = '🦊 Jeszcze <strong>1</strong> subskrypcja aby zdobyć <strong style="color:var(--accent2)">zaproszenie</strong>';
   } else {
-    q('socialProgressText').innerHTML = `🔥 Postęp: <strong>${count} / 4</strong> — jeszcze ${left} aby zdobyć <strong style="color:var(--accent2)">zaproszenie</strong>`;
+    q('socialProgressText').innerHTML = `🔥 Postęp: <strong>${count} / ${total}</strong> — jeszcze ${left} aby zdobyć <strong style="color:var(--accent2)">zaproszenie</strong>`;
   }
 }
 
