@@ -388,6 +388,12 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <span class="streak-val" id="pStreakBest" style="color:var(--muted)">0 dni</span>
         </div>
       </div>
+      <!-- First check-in banner (shown only for foxes with 0 visits) -->
+      <div id="firstCheckinBanner" style="display:none;background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));border:2px solid var(--fox);border-radius:var(--radius);padding:18px 16px;margin-bottom:12px;text-align:center">
+        <div style="font-size:28px;margin-bottom:8px">🦊</div>
+        <div style="font-size:15px;font-weight:800;color:var(--fox);margin-bottom:6px">Zrób swój pierwszy check-in!</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5">Wybierz lokal na mapie i pokaż kod personelowi.<br>Pierwszy check-in = <strong style="color:var(--fox)">+10 pkt</strong> do ratingu!</div>
+      </div>
       <!-- Social bonus (3rd position) -->
       <div class="card" id="socialBonusCard" style="display:none;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -1140,6 +1146,9 @@ async function loadProfile(){
     // Show consent overlay only for TG users who haven't accepted yet
     // Phone users already accepted during onboarding (consent_version='phone_v1')
     if(!d.consent_given && IS_TELEGRAM) showConsent();
+    // First check-in banner (only for foxes with 0 visits)
+    const $fcb = q('firstCheckinBanner');
+    if ($fcb) $fcb.style.display = (d.total_visits || 0) === 0 ? 'block' : 'none';
     // Social bonus block
     renderSocialBonus(d);
     // Show leave button only for authenticated users
