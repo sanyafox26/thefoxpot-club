@@ -1737,12 +1737,21 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
       foxId = foxQ.rows[0].id;
     } else {
       // Check if deleted fox with this phone exists (re-registration after Opuść klub)
-      const deletedQ = await pool.query(`SELECT id, user_id, banned_until FROM fp1_foxes WHERE phone=$1 AND is_deleted=TRUE LIMIT 1`, [cleaned]);
+      const deletedQ = await pool.query(`SELECT id, user_id, banned_until, deleted_at FROM fp1_foxes WHERE phone=$1 AND is_deleted=TRUE LIMIT 1`, [cleaned]);
       if (deletedQ.rows.length) {
         const df = deletedQ.rows[0];
         // If banned, reject
         if (df.banned_until && new Date(df.banned_until) > new Date()) {
           return res.status(403).json({ error: "Konto zablokowane do " + new Date(df.banned_until).toLocaleDateString("pl") });
+        }
+        // 24h cooldown after account deletion
+        if (df.deleted_at) {
+          const cooldownEnd = new Date(df.deleted_at);
+          cooldownEnd.setHours(cooldownEnd.getHours() + 24);
+          if (cooldownEnd > new Date()) {
+            const hoursLeft = Math.ceil((cooldownEnd - new Date()) / 3600000);
+            return res.status(429).json({ error: `Konto zostało niedawno usunięte. Możesz założyć nowe konto za ${hoursLeft}h.` });
+          }
         }
         // Re-activate: reset ALL stats to zero, keep founder_number
         const pseudoId = -Date.now();
