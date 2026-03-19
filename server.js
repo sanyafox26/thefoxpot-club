@@ -780,6 +780,9 @@ async function migrate() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_foxes_phone ON fp1_foxes(phone) WHERE phone IS NOT NULL`).catch(()=>{});
 
   await migrateSupport(pool);
+  // One-time fix: Proba3 got inflated rating from old INSERT (rating=1 base instead of 0)
+  await pool.query(`UPDATE fp1_foxes SET rating=21 WHERE username='Proba3' AND rating=24`).catch(()=>{});
+
   console.log("✅ Migrations OK (V26 + Support)");
 }
 
@@ -3773,115 +3776,6 @@ app.get("/api/promo", async (_req, res) => {
     `);
     res.json({ promo: r.rows[0] || null });
   } catch (e) { res.json({ promo: null }); }
-});
-
-// DEBUG: temporary endpoint to inspect fox data
-app.get("/api/debug/fox", async (req, res) => {
-  try {
-    const nick = req.query.nick || "";
-    const phone = req.query.phone || "";
-    let fox;
-    if (nick) fox = await pool.query(`SELECT * FROM fp1_foxes WHERE username=$1 LIMIT 1`, [nick]);
-    else if (phone) fox = await pool.query(`SELECT * FROM fp1_foxes WHERE phone=$1 LIMIT 1`, [phone]);
-    else return res.status(400).json({ error: "?nick=X or ?phone=X" });
-    if (fox.rowCount === 0) return res.json({ error: "not found" });
-    const f = fox.rows[0];
-    const visits = await pool.query(
-      `SELECT cv.venue_id, v.name, cv.created_at FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id=cv.venue_id WHERE cv.user_id=$1 ORDER BY cv.created_at ASC`,
-      [f.user_id]
-    );
-    const achievements = await pool.query(`SELECT * FROM fp1_achievements WHERE user_id=$1`, [f.user_id]);
-    const socials = { sub_instagram: f.sub_instagram, sub_tiktok: f.sub_tiktok, sub_youtube: f.sub_youtube, sub_telegram: f.sub_telegram, sub_bonus_claimed: f.sub_bonus_claimed };
-    // Calculate expected rating: 0 base + 11 per first-ever visit (10+1) + 1 per subsequent + 3 per social
-    const socialCount = [f.sub_instagram, f.sub_tiktok, f.sub_youtube, f.sub_telegram, f.sub_facebook].filter(Boolean).length;
-    const visitCount = visits.rows.length;
-    const expectedBase = visitCount > 0 ? 10 + visitCount : 0; // +10 for first-ever + 1 per visit
-    const expectedSocial = socialCount * 3;
-    const inviteBonus = f.invite_code_used ? 3 : 0;
-    res.json({
-      fox: { id: f.id, user_id: f.user_id, username: f.username, phone: f.phone, rating: f.rating, invites: f.invites, city: f.city, district: f.district, founder_number: f.founder_number, created_at: f.created_at, is_deleted: f.is_deleted, invited_by_user_id: f.invited_by_user_id, invite_code_used: f.invite_code_used, consent_version: f.consent_version, join_source: f.join_source },
-      socials,
-      visits: visits.rows,
-      achievements: achievements.rows,
-      rating_breakdown: { current: f.rating, expected_from_visits: expectedBase, expected_from_socials: expectedSocial, invite_bonus: inviteBonus, expected_total: expectedBase + expectedSocial + inviteBonus }
-    });
-  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
-});
-
-// DEBUG: temporary endpoint to inspect TOP week/month/year calculation
-app.get("/api/debug/top-week", async (req, res) => {
-  try {
-    const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
-    const dayOfWeek = warsawNow.getDay();
-    const weekStart = new Date(warsawNow);
-    weekStart.setDate(weekStart.getDate() - dayOfWeek);
-    weekStart.setHours(0,0,0,0);
-
-    const monthStart = new Date(warsawNow);
-    monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-
-    const yearStart = new Date(warsawNow);
-    yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
-
-    // Weekly visits
-    const wv = await pool.query(
-      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count, MIN(cv.created_at) AS first_visit_at
-       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
-       WHERE cv.created_at >= $1 GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC, first_visit_at ASC`,
-      [weekStart.toISOString()]
-    );
-
-    // Monthly visits
-    const mv = await pool.query(
-      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count, MIN(cv.created_at) AS first_visit_at
-       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
-       WHERE cv.created_at >= $1 GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC, first_visit_at ASC`,
-      [monthStart.toISOString()]
-    );
-
-    // Yearly visits
-    const yv = await pool.query(
-      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count, MIN(cv.created_at) AS first_visit_at
-       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id
-       WHERE cv.created_at >= $1 GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC, first_visit_at ASC`,
-      [yearStart.toISOString()]
-    );
-
-    // Determine exclusive TOPs (same logic as /api/venues)
-    function findTopFromRows(rows, excludeIds) {
-      for (const r of rows) {
-        if (!excludeIds.includes(r.venue_id)) return r.venue_id;
-      }
-      return null;
-    }
-    const prevYearEnd = new Date(warsawNow); prevYearEnd.setMonth(0, 1); prevYearEnd.setHours(0,0,0,0);
-    const hasPrevYear = await pool.query(`SELECT 1 FROM fp1_counted_visits WHERE created_at < $1 LIMIT 1`, [prevYearEnd.toISOString()]);
-    const allVisits = await pool.query(
-      `SELECT cv.venue_id, v.name, COUNT(*)::int AS visit_count FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id = cv.venue_id GROUP BY cv.venue_id, v.name ORDER BY visit_count DESC`
-    );
-    const excludeIds = [];
-    const topAllTimeId = hasPrevYear.rowCount > 0 ? findTopFromRows(allVisits.rows, []) : null;
-    if (topAllTimeId) excludeIds.push(topAllTimeId);
-    const topYearId = findTopFromRows(yv.rows, excludeIds);
-    if (topYearId) excludeIds.push(topYearId);
-    const topMonthId = findTopFromRows(mv.rows, excludeIds);
-    if (topMonthId) excludeIds.push(topMonthId);
-    const topWeekId = findTopFromRows(wv.rows, excludeIds);
-
-    res.json({
-      server_time: warsawNow.toISOString(),
-      week_start: weekStart.toISOString(),
-      month_start: monthStart.toISOString(),
-      year_start: yearStart.toISOString(),
-      visits_this_week: wv.rows,
-      visits_this_month: mv.rows,
-      visits_this_year: yv.rows,
-      top_alltime_id: topAllTimeId,
-      top_year_id: topYearId,
-      top_month_id: topMonthId,
-      top_week_id: topWeekId,
-    });
-  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
 });
 
 /* ═══════════════════════════════════════════════════════════════
