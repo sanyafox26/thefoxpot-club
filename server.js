@@ -441,6 +441,7 @@ async function migrate() {
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "visitor_phone",         "TEXT");
+  await ensureColumn("fp1_counted_visits", "is_credited",           "BOOLEAN NOT NULL DEFAULT TRUE");
   await ensureColumn("fp1_foxes",          "invites_from_5visits",  "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "invited_by_user_id",    "BIGINT");
   await ensureColumn("fp1_foxes",          "invite_code_used",      "TEXT");
@@ -979,8 +980,8 @@ async function checkAchievements(userId, extraStats = {}) {
   const fox = await pool.query(`SELECT streak_best, data_contributions FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [uid]);
   if (fox.rowCount === 0) return [];
 
-  const totalVisits  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
-  const uniqueVenues = await pool.query(`SELECT COUNT(DISTINCT venue_id)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [uid]);
+  const totalVisits  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [uid]);
+  const uniqueVenues = await pool.query(`SELECT COUNT(DISTINCT venue_id)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [uid]);
   const invitesSent  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [uid]);
   const totalSpins   = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_daily_spins WHERE user_id=$1`, [uid]);
 
@@ -1077,9 +1078,9 @@ async function getTopFoxBadges() {
   const adminExclude = ADMIN_TG_ID ? ` AND user_id != $2` : '';
   const mkParams = (dateStr) => ADMIN_TG_ID ? [dateStr, ADMIN_TG_ID] : [dateStr];
   const [tw, tm, ty] = await Promise.all([
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(weekStart.toISOString())),
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(monthStart.toISOString())),
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(yearStart.toISOString())),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(weekStart.toISOString())),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(monthStart.toISOString())),
+    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(yearStart.toISOString())),
   ]);
 
   const badges = {};
@@ -1242,8 +1243,8 @@ async function hasCountedToday(venueId, userId) {
 }
 
 async function countXY(venueId, userId) {
-  const x = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND user_id=$2`, [venueId, String(userId)]);
-  const y = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+  const x = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND user_id=$2 AND is_credited=TRUE`, [venueId, String(userId)]);
+  const y = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [venueId]);
   return { X: x.rows[0].c, Y: y.rows[0].c };
 }
 
@@ -1261,8 +1262,8 @@ async function listPending(venueId) {
   const now = await dbNow();
   const r = await pool.query(
     `SELECT c.otp, c.expires_at, c.user_id, f.username, f.rating, f.founder_number,
-     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.user_id=c.user_id) AS fox_visits,
-     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1) AS total_visits
+     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.user_id=c.user_id AND cv.is_credited=TRUE) AS fox_visits,
+     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.is_credited=TRUE) AS total_visits
      FROM fp1_checkins c LEFT JOIN fp1_foxes f ON f.user_id=c.user_id
      WHERE c.venue_id=$1 AND c.confirmed_at IS NULL AND c.expires_at>$2
      ORDER BY c.created_at DESC LIMIT 20`,
@@ -1272,7 +1273,7 @@ async function listPending(venueId) {
 }
 
 async function awardInvitesFrom5Visits(userId) {
-  const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [String(userId)]);
+  const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [String(userId)]);
   const fox = await pool.query(`SELECT invites_from_5visits AS earned FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
   const total = tot.rows[0].c, earned = fox.rows[0]?.earned || 0, shouldEarn = Math.floor(total / 5);
   if (shouldEarn > earned) {
@@ -1920,8 +1921,8 @@ app.get("/venue/:id", async (req, res) => {
     const vr = await pool.query(`SELECT id,name,city,address,venue_type,cuisine,tags,description,is_trial,discount_percent,opening_hours,status_temporary,google_place_id FROM fp1_venues WHERE id=$1 AND approved=TRUE LIMIT 1`, [venueId]);
     const v = vr.rows[0];
     if (!v) return res.status(404).send(pageShell("Nie znaleziono",'<div class="card"><h1>Lokal nie znaleziony</h1></div>'));
-    const cv = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`,[venueId]);
-    const uf = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1`,[venueId]);
+    const cv = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`,[venueId]);
+    const uf = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`,[venueId]);
     const visits=cv.rows[0]?.cnt||0, foxes=uf.rows[0]?.cnt||0;
     const disc=parseFloat(v.discount_percent)||10;
     const tgs=v.tags?v.tags.split(",").map(t=>t.trim()).filter(Boolean):[];
@@ -2018,7 +2019,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
     const f_orig = foxRefresh.rows[0];
 
     const f = f_orig;
-    const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+    const totalVisits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
     const spunToday   = await hasSpunToday(userId);
     const savedStats = await pool.query(`SELECT COALESCE(SUM(discount_saved),0)::numeric AS total_saved, COUNT(*)::int AS receipt_count FROM fp1_receipts WHERE user_id=$1`, [userId]);
     const foxBadges = await getTopFoxBadges();
@@ -2161,14 +2162,23 @@ app.get("/api/venues", async (req, res) => {
     );
     let myVisits = {};
     let totalVisits = {};
+    let myMonthlyCredited = {};
     if (userId) {
       const mv = await pool.query(
-        `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE user_id=$1 GROUP BY venue_id`, [userId]
+        `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE GROUP BY venue_id`, [userId]
       );
       mv.rows.forEach(r => myVisits[r.venue_id] = r.cnt);
+      // Monthly credited visits per venue (for visit cap display)
+      const mmc = await pool.query(
+        `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits
+         WHERE user_id=$1 AND is_credited=TRUE
+         AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())
+         GROUP BY venue_id`, [userId]
+      );
+      mmc.rows.forEach(r => myMonthlyCredited[r.venue_id] = r.cnt);
     }
     const tv = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits GROUP BY venue_id`
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE is_credited=TRUE GROUP BY venue_id`
     );
     tv.rows.forEach(r => totalVisits[r.venue_id] = r.cnt);
 
@@ -2176,7 +2186,7 @@ app.get("/api/venues", async (req, res) => {
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
     const trialUsed = {};
     const tu = await pool.query(
-      `SELECT venue_id, COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      `SELECT venue_id, COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE GROUP BY venue_id`,
       [monthStart.toISOString()]
     );
     tu.rows.forEach(r => trialUsed[r.venue_id] = r.cnt);
@@ -2184,7 +2194,7 @@ app.get("/api/venues", async (req, res) => {
     // Weekly visits (for TOP week)
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
     const wv = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE GROUP BY venue_id`,
       [weekAgo.toISOString()]
     );
     const weeklyVisits = {};
@@ -2192,7 +2202,7 @@ app.get("/api/venues", async (req, res) => {
 
     // Monthly visits (for TOP month)
     const mv2 = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE GROUP BY venue_id`,
       [monthStart.toISOString()]
     );
     const monthlyVisits = {};
@@ -2239,7 +2249,7 @@ app.get("/api/venues", async (req, res) => {
 
     // Recount weekly from Sunday
     const wv2 = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE GROUP BY venue_id`,
       [weekStart.toISOString()]
     );
     const weeklyData = {};
@@ -2249,7 +2259,7 @@ app.get("/api/venues", async (req, res) => {
     const monthStart2 = new Date(warsawNow);
     monthStart2.setDate(1); monthStart2.setHours(0,0,0,0);
     const mv3 = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE GROUP BY venue_id`,
       [monthStart2.toISOString()]
     );
     const monthlyData = {};
@@ -2259,7 +2269,7 @@ app.get("/api/venues", async (req, res) => {
     const yearStart = new Date(warsawNow);
     yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
     const yv = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 GROUP BY venue_id`,
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE GROUP BY venue_id`,
       [yearStart.toISOString()]
     );
     const yearlyData = {};
@@ -2268,7 +2278,7 @@ app.get("/api/venues", async (req, res) => {
     // All-time with first visit tiebreak
     const allData = {};
     const av = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits GROUP BY venue_id`
+      `SELECT venue_id, COUNT(*)::int AS cnt, MIN(created_at) AS first_at FROM fp1_counted_visits WHERE is_credited=TRUE GROUP BY venue_id`
     );
     av.rows.forEach(r => allData[r.venue_id] = { cnt: r.cnt, first: r.first_at });
 
@@ -2352,6 +2362,7 @@ app.get("/api/venues", async (req, res) => {
         ...v,
         discount_percent: Math.max(parseFloat(v.discount_percent) || 10, foxDiscounts[v.id] || 0),
         my_visits: myVisits[v.id] || 0,
+        my_monthly_credited: myMonthlyCredited[v.id] || 0,
         total_visits: tv_cnt,
         weekly_visits: weeklyVisits[v.id] || 0,
         monthly_visits: monthlyVisits[v.id] || 0,
@@ -2749,7 +2760,7 @@ app.get("/api/invite/stats", requireWebAppAuth, async (req, res) => {
     );
     const active = await pool.query(
       `SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv
-       WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]
+       WHERE cv.is_credited=TRUE AND cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]
     );
     const codesGen = await pool.query(
       `SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]
@@ -2833,7 +2844,7 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
 
     // ═══ БОНУСИ (перенесені з confirmOtp) ═══
     const already = await hasCountedToday(venueId, userId);
-    let countedAdded = false, inviteAutoAdded = 0, isFirstEver = false, newAch = [];
+    let countedAdded = false, inviteAutoAdded = 0, isFirstEver = false, newAch = [], visitCapReached = false;
     if (!already) {
       const hasDK = COUNTED_DAY_COL === "day_key", hasWD = await hasColumn("fp1_counted_visits", "war_day");
       const cols = ["venue_id","user_id"], vals = [venueId, userId];
@@ -2841,8 +2852,17 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
       // Save visitor phone for anti-cheat (persists after account deletion)
       const foxPhone = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (foxPhone.rows[0]?.phone) { cols.push("visitor_phone"); vals.push(foxPhone.rows[0].phone); }
+      // Visit cap: max 3 credited visits per fox per venue per calendar month
+      const creditedThisMonth = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE
+         AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
+        [userId, venueId]
+      );
+      const isCredited = creditedThisMonth.rows[0].c < 3;
+      cols.push("is_credited"); vals.push(isCredited);
       await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
-      await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+      if (isCredited) await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+      visitCapReached = !isCredited;
       countedAdded = true;
       // Mark reservation as used (if any)
       await pool.query(
@@ -2882,21 +2902,24 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
         console.log(`[Trial] User ${userId} activated full Fox via venue ${venueId}`);
       }
 
-      const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
-      isFirstEver = tv.rows[0].c === 1;
-      if (isFirstEver) {
-        await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
-        const inv = await pool.query(`SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
-        if (inv.rows[0]?.invited_by_user_id) {
-          await pool.query(`UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`, [String(inv.rows[0].invited_by_user_id)]);
-          if (bot) { try { await bot.telegram.sendMessage(Number(inv.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 pkt dla Ciebie! 🦊`); } catch {} }
+      // Bonuses only for credited visits
+      if (isCredited) {
+        const tv = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
+        isFirstEver = tv.rows[0].c === 1;
+        if (isFirstEver) {
+          await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
+          const inv = await pool.query(`SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+          if (inv.rows[0]?.invited_by_user_id) {
+            await pool.query(`UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`, [String(inv.rows[0].invited_by_user_id)]);
+            if (bot) { try { await bot.telegram.sendMessage(Number(inv.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 pkt dla Ciebie! 🦊`); } catch {} }
+          }
         }
+        inviteAutoAdded = await awardInvitesFrom5Visits(userId);
+        await updateStreak(userId);
+        const vvc = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [venueId]);
+        const hour = warsawHour();
+        newAch = await checkAchievements(userId, { is_pioneer:vvc.rows[0].c===1, is_night:hour>=23, is_morning:hour<8 });
       }
-      inviteAutoAdded = await awardInvitesFrom5Visits(userId);
-      await updateStreak(userId);
-      const vvc = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
-      const hour = warsawHour();
-      newAch = await checkAchievements(userId, { is_pioneer:vvc.rows[0].c===1, is_night:hour>=23, is_morning:hour<8 });
     }
 
     await pool.query(`UPDATE fp1_receipts SET bonuses_awarded=TRUE WHERE user_id=$1 AND venue_id=$2 AND war_day=$3`, [userId, venueId, day]);
@@ -2917,7 +2940,7 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
 
     res.json({ ok:true,
       receipt:{ amount_paid:parseFloat(amountPaid.toFixed(2)), amount_original:parseFloat(amountOriginal.toFixed(2)), discount_percent:discountPct, discount_saved:parseFloat(discountSaved.toFixed(2)), total_saved:parseFloat(ts.rows[0].total) },
-      bonuses:{ counted:countedAdded, first_ever:isFirstEver, invites_added:inviteAutoAdded, achievements:newAch.map(a=>({code:a.code,emoji:a.emoji,label:a.label,rating:a.rating})) },
+      bonuses:{ counted:countedAdded, first_ever:isFirstEver, invites_added:inviteAutoAdded, visit_cap_reached:visitCapReached, achievements:newAch.map(a=>({code:a.code,emoji:a.emoji,label:a.label,rating:a.rating})) },
       stats:{ rating:f?.rating||0, invites:f?.invites||0, streak:f?.streak_current||0 },
     });
   } catch (e) { console.error("API_RECEIPT_ERR", e); res.status(500).json({ error: String(e?.message||e) }); }
@@ -3220,7 +3243,7 @@ setInterval(async () => {
       const topWeek = await pool.query(
         `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
          JOIN fp1_venues v ON v.id = cv.venue_id
-         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         WHERE cv.created_at >= $1 AND cv.created_at < $2 AND cv.is_credited=TRUE
          GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
         [weekStart.toISOString(), weekEnd.toISOString()]
       );
@@ -3247,7 +3270,7 @@ setInterval(async () => {
       const topMonth = await pool.query(
         `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
          JOIN fp1_venues v ON v.id = cv.venue_id
-         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         WHERE cv.created_at >= $1 AND cv.created_at < $2 AND cv.is_credited=TRUE
          GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
         [monthStart.toISOString(), monthEnd.toISOString()]
       );
@@ -3271,7 +3294,7 @@ setInterval(async () => {
       const topYear = await pool.query(
         `SELECT v.name, COUNT(*)::int AS cnt FROM fp1_counted_visits cv
          JOIN fp1_venues v ON v.id = cv.venue_id
-         WHERE cv.created_at >= $1 AND cv.created_at < $2
+         WHERE cv.created_at >= $1 AND cv.created_at < $2 AND cv.is_credited=TRUE
          GROUP BY v.id, v.name ORDER BY cnt DESC LIMIT 1`,
         [yearStartCron.toISOString(), yearEnd.toISOString()]
       );
@@ -3917,8 +3940,8 @@ app.get("/api/recommendation", async (req, res) => {
       const wNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
       const weekStart = new Date(wNow); weekStart.setDate(weekStart.getDate() - wNow.getDay()); weekStart.setHours(0,0,0,0);
       const monthStart = new Date(wNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-      const tvw = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at>=$1 GROUP BY venue_id ORDER BY cnt DESC LIMIT 1`, [weekStart.toISOString()]);
-      const tvm = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at>=$1 GROUP BY venue_id ORDER BY cnt DESC LIMIT 1`, [monthStart.toISOString()]);
+      const tvw = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at>=$1 AND is_credited=TRUE GROUP BY venue_id ORDER BY cnt DESC LIMIT 1`, [weekStart.toISOString()]);
+      const tvm = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at>=$1 AND is_credited=TRUE GROUP BY venue_id ORDER BY cnt DESC LIMIT 1`, [monthStart.toISOString()]);
 
       for (const [row, period] of [[tvw.rows[0],"week"],[tvm.rows[0],"month"]]) {
         if (!row) continue;
@@ -4210,7 +4233,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         </div>`;
       }).join("");
 
-  const xy = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1`, [venueId]);
+  const xy = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [venueId]);
 
   res.send(pageShell(`Panel — ${venue?.name || venueId}`, `
     <div class="card">
@@ -4916,9 +4939,9 @@ app.get("/admin/logout", (req, res) => { clearCookie(res); res.redirect("/admin/
 
 app.get("/admin", requireAdminAuth, async (req, res) => {
   const pending = await pool.query(`SELECT * FROM fp1_venues WHERE approved=FALSE ORDER BY created_at ASC`);
-  const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
+  const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id AND cv.is_credited=TRUE WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
   const foxes   = await pool.query(`SELECT f.user_id,f.username,f.rating,f.invites,f.city,f.district,f.founder_number,f.streak_current,f.streak_best,f.created_at,
-    (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id) AS visits_total
+    (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.is_credited=TRUE) AS visits_total
     FROM fp1_foxes f WHERE f.is_deleted=FALSE ORDER BY f.rating DESC LIMIT 50`);
   const growth  = await getGrowthLeaderboard(10);
   // Nominations
@@ -5200,8 +5223,8 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
       const rows = await pool.query(`
         SELECT f.user_id, f.username, f.city, f.district, f.rating, f.invites,
                f.founder_number, f.streak_current, f.streak_best, f.created_at,
-               (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')) AS visits_period,
-               (SELECT COUNT(*)::int FROM fp1_counted_visits cv2 WHERE cv2.user_id=f.user_id) AS visits_total
+               (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.is_credited=TRUE AND cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')) AS visits_period,
+               (SELECT COUNT(*)::int FROM fp1_counted_visits cv2 WHERE cv2.user_id=f.user_id AND cv2.is_credited=TRUE) AS visits_total
         FROM fp1_foxes f
         WHERE f.is_deleted=FALSE${fdf}
         ORDER BY f.rating DESC LIMIT 5000
@@ -5414,7 +5437,7 @@ app.post("/api/support/ticket", requireWebAppAuth, async (req, res) => {
     const f = fox.rows[0] || {};
     const username = f.username || String(userId);
 
-    const visits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+    const visits = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
     const lastCheckin = await pool.query(`SELECT venue_id, otp, created_at, confirmed_at, expires_at FROM fp1_checkins WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, [userId]);
     const lc = lastCheckin.rows[0];
 
@@ -5556,7 +5579,7 @@ if (BOT_TOKEN) {
           );
         }
 
-        const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1`, [userId]);
+        const tot = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
         const badge = founderBadge(f.founder_number);
         const spotsLeft = await founderSpotsLeft();
         const alreadySpun = await hasSpunToday(userId);
@@ -5945,7 +5968,7 @@ if (BOT_TOKEN) {
       const fox = await pool.query(`SELECT * FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (fox.rowCount === 0 || fox.rows[0].is_deleted) return ctx.reply("❌ Najpierw zarejestruj się przez /start <KOD>");
       const invited  = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_foxes WHERE invited_by_user_id=$1`, [userId]);
-      const active   = await pool.query(`SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv WHERE cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]);
+      const active   = await pool.query(`SELECT COUNT(DISTINCT cv.user_id)::int AS c FROM fp1_counted_visits cv WHERE cv.is_credited=TRUE AND cv.user_id IN (SELECT user_id FROM fp1_foxes WHERE invited_by_user_id=$1)`, [userId]);
       const codesGen = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_invites WHERE created_by_user_id=$1`, [userId]);
       const f = fox.rows[0];
       const invitedCount = invited.rows[0].c, activeCount = active.rows[0].c;

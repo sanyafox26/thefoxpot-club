@@ -1474,6 +1474,7 @@ async function submitReceipt() {
     if (d.bonuses?.achievements?.length) detail += '\n🏆 ' + d.bonuses.achievements.map(a => a.emoji + ' ' + a.label).join(', ');
     if (d.bonuses?.first_ever) detail += '\n🎉 Pierwsza wizyta! +10 pkt';
     if (d.bonuses?.invites_added > 0) detail += '\n🎁 +' + d.bonuses.invites_added + ' zaproszenie';
+    if (d.bonuses?.visit_cap_reached) detail += '\n⚠️ Limit 3 wizyt w tym lokalu w tym miesiącu osiągnięty. Kolejne wizyty nie dają punktów.';
     q('receiptDetail').textContent = detail;
    showCategoryPick();
     haptic('success');
@@ -2443,6 +2444,10 @@ async function startTrial(venueId) {
         <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--mono)">${v.discount_percent||10}%</div>
         <div style="font-size:10px;color:var(--muted);font-weight:600">Zniżka</div>
       </div>
+    </div>
+    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:12px;color:var(--muted);font-weight:600">Wizyty w tym miesiącu</span>
+      <span style="font-size:14px;font-weight:800;color:${(v.my_monthly_credited||0)>=3?'var(--red)':'var(--fox)'};font-family:var(--mono)">${v.my_monthly_credited||0}/3</span>
     </div>` : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:10px;text-align:center">
         <div style="font-size:18px;font-weight:800;color:var(--accent2);font-family:var(--mono)">${v.total_visits||0}</div>
