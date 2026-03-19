@@ -2895,9 +2895,13 @@ async function vSubmitManual() {
 async function vVoteVenue(id) {
   try {
     const h = {'Content-Type':'application/json'}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
-    await fetch(BASE+'/api/nominations/'+id+'/vote', {method:'POST', headers:h, body:JSON.stringify({fp:vGetFp()})});
+    const r = await fetch(BASE+'/api/nominations/'+id+'/vote', {method:'POST', headers:h, body:JSON.stringify({fp:vGetFp()})});
+    const d = await r.json();
+    if (d.error) { q('vVenueMsg').innerHTML = `<span style="color:var(--fox)">${esc(d.error)}</span>`; vLoadNoms(); return; }
+    q('vVenueMsg').innerHTML = '<span style="color:var(--green)">✅ Głos oddany!</span>';
+    haptic('success');
     vLoadNoms();
-  } catch(e) {}
+  } catch(e) { q('vVenueMsg').innerHTML = '<span style="color:var(--red)">Błąd połączenia</span>'; }
 }
 const V_NOM_SC = {voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',contact:'#8B5CF6',talking:'#EC4899'};
 async function vLoadNoms() {

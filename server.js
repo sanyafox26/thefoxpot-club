@@ -3638,10 +3638,11 @@ app.post("/api/nominations/:id/vote", async (req, res) => {
     if (nom.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono" });
     if (!["voting","threshold"].includes(nom.rows[0].status)) return res.status(400).json({ error: "Głosowanie zakończone" });
 
-    await pool.query(
-      `INSERT INTO fp1_nomination_votes(nomination_id,fingerprint,tg_user_id,is_member,voter_phone) VALUES($1,$2,$3,$4,$5)`,
+    const ins = await pool.query(
+      `INSERT INTO fp1_nomination_votes(nomination_id,fingerprint,tg_user_id,is_member,voter_phone) VALUES($1,$2,$3,$4,$5) ON CONFLICT(nomination_id,fingerprint) DO NOTHING RETURNING id`,
       [nomId, fp, userId || null, isMember, voterPhone]
     );
+    if (ins.rowCount === 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
     const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_nomination_votes WHERE nomination_id=$1`, [nomId]);
     if (cnt.rows[0].c >= nom.rows[0].vote_threshold && nom.rows[0].status === "voting") {
       await pool.query(`UPDATE fp1_nominations SET status='threshold', updated_at=NOW() WHERE id=$1`, [nomId]);
@@ -3772,10 +3773,11 @@ app.post("/api/city-nominations/:id/vote", async (req, res) => {
     if (nom.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono" });
     if (!["voting","threshold"].includes(nom.rows[0].status)) return res.status(400).json({ error: "Głosowanie zakończone" });
 
-    await pool.query(
-      `INSERT INTO fp1_city_votes(city_nomination_id,fingerprint,tg_user_id,is_member,voter_phone) VALUES($1,$2,$3,$4,$5)`,
+    const ins = await pool.query(
+      `INSERT INTO fp1_city_votes(city_nomination_id,fingerprint,tg_user_id,is_member,voter_phone) VALUES($1,$2,$3,$4,$5) ON CONFLICT(city_nomination_id,fingerprint) DO NOTHING RETURNING id`,
       [cityId, fp, userId || null, isMember, voterPhone]
     );
+    if (ins.rowCount === 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
 
     const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_city_votes WHERE city_nomination_id=$1`, [cityId]);
     if (cnt.rows[0].c >= nom.rows[0].vote_threshold && nom.rows[0].status === "voting") {
