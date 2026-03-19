@@ -439,6 +439,7 @@ async function migrate() {
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_venue_obligations_expires ON fp1_venue_obligations(expires_at)`);
 
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
+  await ensureColumn("fp1_checkins",       "visitor_phone",         "TEXT");
   await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "visitor_phone",         "TEXT");
   await ensureColumn("fp1_counted_visits", "is_credited",           "BOOLEAN NOT NULL DEFAULT TRUE");
@@ -1253,8 +1254,9 @@ async function upsertFox(ctx) {
 
 async function hasCountedToday(venueId, userId) {
   const day = warsawDayKey();
-  // Check by user_id OR visitor_phone (anti-cheat: survives account deletion)
   const phone = await resolveVoterPhone(userId);
+
+  // Layer 1: Check counted_visits by user_id OR visitor_phone
   let r;
   if (phone) {
     r = await pool.query(
@@ -1267,7 +1269,18 @@ async function hasCountedToday(venueId, userId) {
       [venueId, day, String(userId)]
     );
   }
-  return r.rowCount > 0;
+  if (r.rowCount > 0) return true;
+
+  // Layer 2: Check confirmed checkins by visitor_phone (survives account deletion)
+  if (phone) {
+    const c = await pool.query(
+      `SELECT 1 FROM fp1_checkins WHERE venue_id=$1 AND war_day=$2 AND confirmed_at IS NOT NULL AND visitor_phone=$3 LIMIT 1`,
+      [venueId, day, phone]
+    );
+    if (c.rowCount > 0) return true;
+  }
+
+  return false;
 }
 
 async function countXY(venueId, userId) {
@@ -1279,9 +1292,12 @@ async function countXY(venueId, userId) {
 async function createCheckin(venueId, userId) {
   const otp = otp6(), now = new Date(), warDay = warsawDayKey(now);
   const expires = new Date(now.getTime() + 10 * 60 * 1000);
+  // Save visitor phone for anti-cheat
+  const phoneQ = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
+  const visitorPhone = phoneQ.rows[0]?.phone || null;
   const r = await pool.query(
-    `INSERT INTO fp1_checkins(venue_id,user_id,otp,expires_at,war_day) VALUES($1,$2,$3,$4,$5) RETURNING *`,
-    [venueId, String(userId), otp, expires.toISOString(), warDay]
+    `INSERT INTO fp1_checkins(venue_id,user_id,otp,expires_at,war_day,visitor_phone) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [venueId, String(userId), otp, expires.toISOString(), warDay, visitorPhone]
   );
   return r.rows[0];
 }
@@ -2896,23 +2912,32 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
       const foxPhone = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       if (foxPhone.rows[0]?.phone) { cols.push("visitor_phone"); vals.push(foxPhone.rows[0].phone); }
       // Visit cap: max 3 credited visits per fox per venue per calendar month
-      // Check by user_id OR visitor_phone (anti-cheat: survives account deletion)
+      // Layer 1: counted_visits by user_id OR visitor_phone
+      // Layer 2: confirmed checkins by visitor_phone (survives deletion)
       const phoneForCap = foxPhone.rows[0]?.phone;
-      let creditedThisMonth;
+      let creditCount = 0;
       if (phoneForCap) {
-        creditedThisMonth = await pool.query(
+        const cv = await pool.query(
           `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE (user_id=$1 OR visitor_phone=$3) AND venue_id=$2 AND is_credited=TRUE
            AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
           [userId, venueId, phoneForCap]
         );
+        // Also count confirmed checkins by phone this month (in case counted_visits were deleted)
+        const cc = await pool.query(
+          `SELECT COUNT(DISTINCT war_day)::int AS c FROM fp1_checkins WHERE venue_id=$1 AND visitor_phone=$2 AND confirmed_at IS NOT NULL
+           AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
+          [venueId, phoneForCap]
+        );
+        creditCount = Math.max(cv.rows[0].c, cc.rows[0].c);
       } else {
-        creditedThisMonth = await pool.query(
+        const cv = await pool.query(
           `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE
            AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
           [userId, venueId]
         );
+        creditCount = cv.rows[0].c;
       }
-      const isCredited = creditedThisMonth.rows[0].c < 3;
+      const isCredited = creditCount < 3;
       cols.push("is_credited"); vals.push(isCredited);
       await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
       if (isCredited) await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
