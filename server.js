@@ -3836,6 +3836,42 @@ app.get("/api/promo", async (_req, res) => {
   } catch (e) { res.json({ promo: null }); }
 });
 
+// GET /api/best-fox — Best Fox of the month (by credited savings)
+app.get("/api/best-fox", async (req, res) => {
+  try {
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const adminExclude = ADMIN_TG_ID ? ` AND f.user_id != '${ADMIN_TG_ID}'` : '';
+    const q = await pool.query(`
+      SELECT f.user_id, f.username, f.founder_number,
+             SUM(r.discount_saved)::numeric AS total_saved,
+             COUNT(DISTINCT r.venue_id)::int AS venues_count,
+             COUNT(r.id)::int AS receipt_count
+      FROM fp1_receipts r
+      JOIN fp1_counted_visits cv ON cv.user_id = r.user_id AND cv.venue_id = r.venue_id
+        AND cv.war_day = r.war_day AND cv.is_credited = TRUE
+      JOIN fp1_foxes f ON f.user_id = r.user_id AND f.is_deleted = FALSE${adminExclude}
+      WHERE r.created_at >= $1
+      GROUP BY f.user_id, f.username, f.founder_number
+      HAVING SUM(r.discount_saved) > 0
+      ORDER BY total_saved DESC LIMIT 1
+    `, [monthStart.toISOString()]);
+    if (q.rowCount === 0) return res.json({ best_fox: null });
+    const b = q.rows[0];
+    const monthName = monthStart.toLocaleDateString("pl-PL", { month: "long" });
+    res.json({
+      best_fox: {
+        username: b.username,
+        total_saved: parseFloat(parseFloat(b.total_saved).toFixed(2)),
+        venues_count: b.venues_count,
+        receipt_count: b.receipt_count,
+        founder_number: b.founder_number,
+        month_name: monthName,
+      }
+    });
+  } catch (e) { res.json({ best_fox: null }); }
+});
+
 /* ═══════════════════════════════════════════════════════════════
    GET /api/recommendation — Content Rotation Engine
    ?slot=profile|map  — controls paid promo probability
