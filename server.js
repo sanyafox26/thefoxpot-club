@@ -3836,32 +3836,6 @@ app.get("/api/promo", async (_req, res) => {
   } catch (e) { res.json({ promo: null }); }
 });
 
-// DEBUG: temporary endpoint to inspect fox visits
-app.get("/api/debug/fox-visits", async (req, res) => {
-  try {
-    const nick = req.query.nick || "";
-    if (!nick) return res.status(400).json({ error: "?nick=X" });
-    const fox = await pool.query(`SELECT id, user_id, username, phone FROM fp1_foxes WHERE username=$1 LIMIT 1`, [nick]);
-    if (fox.rowCount === 0) return res.json({ error: "not found" });
-    const f = fox.rows[0];
-    const visits = await pool.query(
-      `SELECT cv.id, cv.user_id, cv.venue_id, v.name, cv.created_at, cv.is_credited, cv.visitor_phone, cv.war_day
-       FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id=cv.venue_id
-       WHERE cv.user_id=$1 ORDER BY cv.created_at DESC LIMIT 20`, [f.user_id]
-    );
-    // Show what /api/venues would return for my_visits
-    const myVisits = await pool.query(
-      `SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE GROUP BY venue_id`, [f.user_id]
-    );
-    res.json({
-      fox: { id: f.id, user_id: f.user_id, username: f.username, phone: f.phone },
-      visits: visits.rows,
-      my_visits_by_venue: myVisits.rows,
-      resolveUserId_would_return: String(f.user_id)
-    });
-  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
-});
-
 /* ═══════════════════════════════════════════════════════════════
    GET /api/recommendation — Content Rotation Engine
    ?slot=profile|map  — controls paid promo probability

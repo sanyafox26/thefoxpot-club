@@ -1631,7 +1631,10 @@ function showOtp(otp,name,expiresAt){
   q('otpVenue').textContent='🏪 '+name;
   q('otpBox').classList.add('show');
   if(S.otpTimer)clearInterval(S.otpTimer);
-  const exp=expiresAt?new Date(expiresAt):new Date(Date.now()+10*60*1000);
+  // Fallback to 10 min if expires_at is missing or invalid; cap at 10 min max
+  let exp = expiresAt ? new Date(expiresAt) : new Date(Date.now()+10*60*1000);
+  const maxExp = new Date(Date.now()+10*60*1000);
+  if (isNaN(exp.getTime()) || exp > maxExp) exp = maxExp;
   const el=q('otpTimer');
   function tick(){
     const ms=exp-Date.now();
