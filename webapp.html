@@ -2960,7 +2960,7 @@ function openInlinePage(url, title) {
     const div = document.createElement('div');
     div.innerHTML = match ? match[1] : html;
     // Limit logo/image sizes and remove scripts
-    div.querySelectorAll('img').forEach(img => { img.style.maxWidth = '80px'; img.style.height = 'auto'; });
+    div.querySelectorAll('img').forEach(img => { img.style.maxWidth = '60px'; img.style.height = 'auto'; });
     div.querySelectorAll('script').forEach(s => s.remove());
     content.innerHTML = div.innerHTML;
   }).catch(() => {

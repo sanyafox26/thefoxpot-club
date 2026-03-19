@@ -1684,15 +1684,39 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
     if (foxQ.rows.length) {
       foxId = foxQ.rows[0].id;
     } else {
-      // Create new Fox with phone (no tg_id)
-      // Use negative timestamp as pseudo user_id to avoid conflicts with TG ids
-      const pseudoId = -Date.now();
-      const ins = await pool.query(
-        `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city) VALUES($1, $2, 1, 3, 'Warszawa') RETURNING id`,
-        [pseudoId, cleaned]
-      );
-      foxId = ins.rows[0].id;
-      isNew = true;
+      // Check if deleted fox with this phone exists (re-registration after Opuść klub)
+      const deletedQ = await pool.query(`SELECT id, user_id, banned_until FROM fp1_foxes WHERE phone=$1 AND is_deleted=TRUE LIMIT 1`, [cleaned]);
+      if (deletedQ.rows.length) {
+        const df = deletedQ.rows[0];
+        // If banned, reject
+        if (df.banned_until && new Date(df.banned_until) > new Date()) {
+          return res.status(403).json({ error: "Konto zablokowane do " + new Date(df.banned_until).toLocaleDateString("pl") });
+        }
+        // Re-activate: reset stats, keep founder_number
+        const pseudoId = -Date.now();
+        await pool.query(`
+          UPDATE fp1_foxes SET
+            is_deleted = FALSE, deleted_at = NULL,
+            user_id = $1, username = NULL,
+            rating = 1, invites = 3,
+            streak_current = 0, streak_best = 0, streak_last_date = NULL,
+            streak_freeze_available = 0, city = 'Warszawa', district = NULL,
+            consent_at = NULL, consent_version = NULL
+          WHERE id = $2
+        `, [pseudoId, df.id]);
+        foxId = df.id;
+        isNew = true;
+      } else {
+        // Create new Fox with phone (no tg_id)
+        // Use negative timestamp as pseudo user_id to avoid conflicts with TG ids
+        const pseudoId = -Date.now();
+        const ins = await pool.query(
+          `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city) VALUES($1, $2, 1, 3, 'Warszawa') RETURNING id`,
+          [pseudoId, cleaned]
+        );
+        foxId = ins.rows[0].id;
+        isNew = true;
+      }
     }
 
     // Generate JWT (7 days)
@@ -1728,7 +1752,11 @@ app.post("/api/auth/onboard", express.json(), async (req, res) => {
     if (inviteCode) {
       const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [decoded.fox_id]);
       if (foxQ.rows.length) {
-        await redeemInviteCode(foxQ.rows[0].user_id, inviteCode);
+        const result = await redeemInviteCode(foxQ.rows[0].user_id, inviteCode);
+        if (result.ok) {
+          // Invited fox gets rating=3 (bonus +2 on top of base 1)
+          await pool.query(`UPDATE fp1_foxes SET rating = GREATEST(rating, 3) WHERE id=$1`, [decoded.fox_id]);
+        }
       }
     }
 
