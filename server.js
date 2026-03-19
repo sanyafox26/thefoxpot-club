@@ -1659,12 +1659,30 @@ app.post("/api/auth/send-otp", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Nieprawidłowy numer telefonu. Format: +48XXXXXXXXX" });
     }
 
-    // Rate limit: max 5 OTPs per hour per phone
-    const rateQ = await pool.query(
-      `SELECT COUNT(*)::int AS cnt FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '1 hour'`,
-      [cleaned]
+    // Soft rate limit for sending codes:
+    // 1) Min 60s between sends
+    const lastSend = await pool.query(
+      `SELECT created_at FROM fp1_otp_codes WHERE phone=$1 ORDER BY created_at DESC LIMIT 1`, [cleaned]
     );
-    if (rateQ.rows[0].cnt >= 5) {
+    if (lastSend.rows.length) {
+      const secsSince = (Date.now() - new Date(lastSend.rows[0].created_at).getTime()) / 1000;
+      if (secsSince < 60) {
+        const wait = Math.ceil(60 - secsSince);
+        return res.status(429).json({ error: `Poczekaj ${wait}s przed ponownym wysłaniem kodu.` });
+      }
+    }
+    // 2) Max 3 codes per 15 min
+    const recent15 = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '15 minutes'`, [cleaned]
+    );
+    if (recent15.rows[0].cnt >= 3) {
+      return res.status(429).json({ error: "Za dużo kodów. Poczekaj 15 minut." });
+    }
+    // 3) Max 8 codes per hour (hard spam block)
+    const recent1h = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '1 hour'`, [cleaned]
+    );
+    if (recent1h.rows[0].cnt >= 8) {
       return res.status(429).json({ error: "Za dużo prób. Spróbuj ponownie za godzinę." });
     }
 
@@ -1695,13 +1713,16 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Nieprawidłowe dane" });
     }
 
-    // Check if phone is blocked (5+ failed attempts on latest code in last hour)
+    // Check if phone is blocked (5+ failed attempts → 30 min block)
     const blockQ = await pool.query(
-      `SELECT attempts FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '1 hour' ORDER BY created_at DESC LIMIT 1`,
+      `SELECT attempts, created_at FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '30 minutes' AND attempts >= 5 ORDER BY created_at DESC LIMIT 1`,
       [cleaned]
     );
-    if (blockQ.rows.length && blockQ.rows[0].attempts >= 5) {
-      return res.status(429).json({ error: "Numer zablokowany. Spróbuj ponownie za godzinę." });
+    if (blockQ.rows.length) {
+      const unblockAt = new Date(blockQ.rows[0].created_at);
+      unblockAt.setMinutes(unblockAt.getMinutes() + 30);
+      const minsLeft = Math.ceil((unblockAt - Date.now()) / 60000);
+      return res.status(429).json({ error: `Zbyt wiele błędnych prób. Numer zablokowany na ${minsLeft} min.` });
     }
 
     // Find valid OTP: not used, < 5 min old, < 5 attempts
