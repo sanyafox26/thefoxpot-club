@@ -670,7 +670,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <button class="d-btn" style="color:var(--muted);border-color:var(--border)" onclick="pickReason('skip')">Pomiń →</button>
       </div>
     </div>
-    <div class="receipt-result" id="receiptResult">
+    <div class="receipt-result" id="receiptResult" style="position:relative">
+      <button onclick="q('receiptResult').classList.remove('show')" style="position:absolute;top:8px;right:10px;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px">✕</button>
       <span style="font-size:36px;display:block;margin-bottom:8px">💰</span>
       <div style="font-size:14px;font-weight:700;margin-bottom:4px">Rachunek zapisany!</div>
       <div class="receipt-saved" id="receiptSaved">Zaoszczędzono: 0 zł</div>
@@ -1052,6 +1053,8 @@ const S = {
 function go(name){
   if(S.cur===name)return;
   S.cur=name;
+  // Dismiss receipt result when switching tabs
+  const rr=q('receiptResult');if(rr)rr.classList.remove('show');
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
@@ -1647,6 +1650,7 @@ async function pickReason(reason) {
     haptic('success');
   } catch(e) { /* ignore */ }
   q('receiptResult').classList.add('show');
+  setTimeout(()=>q('receiptResult').classList.remove('show'),5000);
 }
 function showAlready(day){
   const b=q('crBox');
