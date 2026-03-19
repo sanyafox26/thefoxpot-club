@@ -440,6 +440,7 @@ async function migrate() {
 
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
+  await ensureColumn("fp1_counted_visits", "visitor_phone",         "TEXT");
   await ensureColumn("fp1_foxes",          "invites_from_5visits",  "INT NOT NULL DEFAULT 0");
   await ensureColumn("fp1_foxes",          "invited_by_user_id",    "BIGINT");
   await ensureColumn("fp1_foxes",          "invite_code_used",      "TEXT");
@@ -542,12 +543,14 @@ async function migrate() {
       city TEXT NOT NULL DEFAULT 'Warszawa',
       address TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'voting',
-      vote_threshold INT NOT NULL DEFAULT 10,
+      vote_threshold INT NOT NULL DEFAULT 50,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await ensureColumn("fp1_nominations", "place_id", "TEXT");
+  await ensureColumn("fp1_nomination_votes", "voter_phone", "TEXT");
+  await ensureColumn("fp1_city_votes", "voter_phone", "TEXT");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_nomination_votes (
       id SERIAL PRIMARY KEY,
@@ -566,7 +569,7 @@ async function migrate() {
       name TEXT NOT NULL UNIQUE,
       country TEXT NOT NULL DEFAULT 'Polska',
       status TEXT NOT NULL DEFAULT 'voting',
-      vote_threshold INT NOT NULL DEFAULT 500,
+      vote_threshold INT NOT NULL DEFAULT 1000,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -1692,18 +1695,24 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
         if (df.banned_until && new Date(df.banned_until) > new Date()) {
           return res.status(403).json({ error: "Konto zablokowane do " + new Date(df.banned_until).toLocaleDateString("pl") });
         }
-        // Re-activate: reset stats, keep founder_number
+        // Re-activate: reset ALL stats to zero, keep founder_number
         const pseudoId = -Date.now();
         await pool.query(`
           UPDATE fp1_foxes SET
             is_deleted = FALSE, deleted_at = NULL,
             user_id = $1, username = NULL,
-            rating = 1, invites = 3,
+            rating = 0, invites = 0,
             streak_current = 0, streak_best = 0, streak_last_date = NULL,
             streak_freeze_available = 0, city = 'Warszawa', district = NULL,
-            consent_at = NULL, consent_version = NULL
+            consent_at = NULL, consent_version = NULL,
+            sub_instagram = FALSE, sub_tiktok = FALSE, sub_youtube = FALSE,
+            sub_telegram = FALSE, sub_bonus_claimed = FALSE,
+            invited_by_user_id = NULL, invite_code_used = NULL, invite_used_at = NULL
           WHERE id = $2
         `, [pseudoId, df.id]);
+        // Clean achievements and spins (visits kept for anti-cheat)
+        await pool.query(`DELETE FROM fp1_achievements WHERE user_id = $1`, [String(df.user_id)]);
+        await pool.query(`DELETE FROM fp1_daily_spins WHERE user_id = $1`, [String(df.user_id)]);
         foxId = df.id;
         isNew = true;
       } else {
@@ -1711,7 +1720,7 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
         // Use negative timestamp as pseudo user_id to avoid conflicts with TG ids
         const pseudoId = -Date.now();
         const ins = await pool.query(
-          `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city) VALUES($1, $2, 1, 3, 'Warszawa') RETURNING id`,
+          `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city) VALUES($1, $2, 0, 0, 'Warszawa') RETURNING id`,
           [pseudoId, cleaned]
         );
         foxId = ins.rows[0].id;
@@ -2629,9 +2638,8 @@ app.post("/api/leave", requireWebAppAuth, async (req, res) => {
       WHERE user_id = $1
     `, [userId]);
 
-    // Delete achievements, counted visits, daily spins
+    // Delete achievements and spins (keep counted_visits for anti-cheat)
     await pool.query(`DELETE FROM fp1_achievements WHERE user_id = $1`, [userId]);
-    await pool.query(`DELETE FROM fp1_counted_visits WHERE user_id = $1`, [userId]);
     await pool.query(`DELETE FROM fp1_daily_spins WHERE user_id = $1`, [userId]);
 
     // Notify admin
@@ -2818,6 +2826,9 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
       const hasDK = COUNTED_DAY_COL === "day_key", hasWD = await hasColumn("fp1_counted_visits", "war_day");
       const cols = ["venue_id","user_id"], vals = [venueId, userId];
       if (hasDK) { cols.push("day_key"); vals.push(day); } if (hasWD) { cols.push("war_day"); vals.push(day); }
+      // Save visitor phone for anti-cheat (persists after account deletion)
+      const foxPhone = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+      if (foxPhone.rows[0]?.phone) { cols.push("visitor_phone"); vals.push(foxPhone.rows[0].phone); }
       await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
       await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
       countedAdded = true;
@@ -3504,15 +3515,33 @@ app.get("/api/nominations", async (req, res) => {
     `);
 
     const myVotes = new Set();
+    const voterPhone = await resolveVoterPhone(userId);
     if (userId || fp) {
-      const mv = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
-      mv.rows.forEach(r => myVotes.add(r.nomination_id));
+      let mvQ;
+      if (voterPhone) {
+        mvQ = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1 OR tg_user_id=$2 OR voter_phone=$3`, [fp, userId || "", voterPhone]);
+      } else {
+        mvQ = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
+      }
+      mvQ.rows.forEach(r => myVotes.add(r.nomination_id));
+    }
+
+    // Check cooldown for nomination votes (7 days)
+    let canVoteAfter = null;
+    const lastNomQ = voterPhone
+      ? await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
+      : await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+    if (lastNomQ.rowCount > 0) {
+      const next = new Date(lastNomQ.rows[0].created_at);
+      next.setDate(next.getDate() + NOM_VOTE_COOLDOWN_DAYS);
+      if (next > new Date()) canVoteAfter = next.toISOString();
     }
 
     res.json({
       nominations: rows.rows.map(n => ({
         ...n, status_label: NOM_STATUS_LABELS[n.status] || n.status, my_vote: myVotes.has(n.id)
-      }))
+      })),
+      can_vote_after: canVoteAfter
     });
   } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
 });
@@ -3546,10 +3575,38 @@ app.post("/api/nominations/:id/vote", async (req, res) => {
     let isMember = false;
     if (userId) { const fox = await pool.query(`SELECT user_id FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]); isMember = fox.rowCount > 0; }
     if (rateLimit(`nom_vote:${fp}`, 20, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele głosów." });
+
+    const voterPhone = await resolveVoterPhone(userId);
+
+    // Lifetime check: already voted on THIS nomination (by phone or fingerprint)
+    if (voterPhone) {
+      const already = await pool.query(`SELECT id FROM fp1_nomination_votes WHERE nomination_id=$1 AND voter_phone=$2 LIMIT 1`, [nomId, voterPhone]);
+      if (already.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
+    }
+    const alreadyFp = await pool.query(`SELECT id FROM fp1_nomination_votes WHERE nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [nomId, fp]);
+    if (alreadyFp.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
+
+    // Cooldown: 7 days since last vote on ANY nomination (by phone or fingerprint)
+    const lastQ = voterPhone
+      ? await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
+      : await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+    if (lastQ.rowCount > 0) {
+      const next = new Date(lastQ.rows[0].created_at);
+      next.setDate(next.getDate() + NOM_VOTE_COOLDOWN_DAYS);
+      if (next > new Date()) {
+        const daysLeft = Math.ceil((next - new Date()) / 86400000);
+        return res.status(429).json({ error: `Możesz zmienić głos za ${daysLeft} dni` });
+      }
+    }
+
     const nom = await pool.query(`SELECT id, status, vote_threshold FROM fp1_nominations WHERE id=$1 LIMIT 1`, [nomId]);
     if (nom.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono" });
     if (!["voting","threshold"].includes(nom.rows[0].status)) return res.status(400).json({ error: "Głosowanie zakończone" });
-    await pool.query(`INSERT INTO fp1_nomination_votes(nomination_id,fingerprint,tg_user_id,is_member) VALUES($1,$2,$3,$4) ON CONFLICT(nomination_id,fingerprint) DO NOTHING`, [nomId, fp, userId || null, isMember]);
+
+    await pool.query(
+      `INSERT INTO fp1_nomination_votes(nomination_id,fingerprint,tg_user_id,is_member,voter_phone) VALUES($1,$2,$3,$4,$5)`,
+      [nomId, fp, userId || null, isMember, voterPhone]
+    );
     const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_nomination_votes WHERE nomination_id=$1`, [nomId]);
     if (cnt.rows[0].c >= nom.rows[0].vote_threshold && nom.rows[0].status === "voting") {
       await pool.query(`UPDATE fp1_nominations SET status='threshold', updated_at=NOW() WHERE id=$1`, [nomId]);
@@ -3567,8 +3624,16 @@ const CITY_NOM_LABELS = {
   planned:"Planowane", not_now:"Nie teraz"
 };
 const BIG_CITY_THRESHOLD = 1000;
-const SMALL_CITY_THRESHOLD = 500;
+const SMALL_CITY_THRESHOLD = 1000;
 const CITY_VOTE_COOLDOWN_DAYS = 30;
+const NOM_VOTE_COOLDOWN_DAYS = 7;
+
+// Resolve voter's phone number from userId (for anti-cheat voting checks)
+async function resolveVoterPhone(userId) {
+  if (!userId) return null;
+  const q = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+  return q.rows[0]?.phone || null;
+}
 
 app.get("/api/city-nominations", async (req, res) => {
   try {
@@ -3583,20 +3648,26 @@ app.get("/api/city-nominations", async (req, res) => {
     `);
 
     const myVotes = new Set();
+    const voterPhone = await resolveVoterPhone(userId);
     if (userId || fp) {
-      const mv = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
-      mv.rows.forEach(r => myVotes.add(r.city_nomination_id));
+      let mvQ;
+      if (voterPhone) {
+        mvQ = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1 OR tg_user_id=$2 OR voter_phone=$3`, [fp, userId || "", voterPhone]);
+      } else {
+        mvQ = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
+      }
+      mvQ.rows.forEach(r => myVotes.add(r.city_nomination_id));
     }
 
-    // Check cooldown: last vote time
+    // Check cooldown: last vote time (by phone or fingerprint)
     let canVoteAfter = null;
-    if (fp) {
-      const lastVote = await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
-      if (lastVote.rowCount > 0) {
-        const next = new Date(lastVote.rows[0].created_at);
-        next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
-        if (next > new Date()) canVoteAfter = next.toISOString();
-      }
+    const lastQ = voterPhone
+      ? await pool.query(`SELECT created_at FROM fp1_city_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
+      : await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+    if (lastQ.rowCount > 0) {
+      const next = new Date(lastQ.rows[0].created_at);
+      next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
+      if (next > new Date()) canVoteAfter = next.toISOString();
     }
 
     res.json({
@@ -3639,14 +3710,22 @@ app.post("/api/city-nominations/:id/vote", async (req, res) => {
 
     if (rateLimit(`citynom_vote:${fp}`, 10, 60*60*1000)) return res.status(429).json({ error: "Zbyt wiele głosów." });
 
-    // Check already voted on THIS city (lifetime)
-    const already = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [cityId, fp]);
-    if (already.rowCount > 0) return res.status(409).json({ error: "Już zagłosowałeś na to miasto" });
+    const voterPhone = await resolveVoterPhone(userId);
 
-    // Check cooldown (30 days since last vote on ANY city)
-    const lastVote = await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
-    if (lastVote.rowCount > 0) {
-      const next = new Date(lastVote.rows[0].created_at);
+    // Lifetime check: already voted on THIS city (by phone or fingerprint)
+    if (voterPhone) {
+      const already = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND voter_phone=$2 LIMIT 1`, [cityId, voterPhone]);
+      if (already.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
+    }
+    const alreadyFp = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [cityId, fp]);
+    if (alreadyFp.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
+
+    // Cooldown: 30 days since last vote on ANY city (by phone or fingerprint)
+    const lastQ = voterPhone
+      ? await pool.query(`SELECT created_at FROM fp1_city_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
+      : await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+    if (lastQ.rowCount > 0) {
+      const next = new Date(lastQ.rows[0].created_at);
       next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
       if (next > new Date()) {
         const daysLeft = Math.ceil((next - new Date()) / 86400000);
@@ -3658,7 +3737,10 @@ app.post("/api/city-nominations/:id/vote", async (req, res) => {
     if (nom.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono" });
     if (!["voting","threshold"].includes(nom.rows[0].status)) return res.status(400).json({ error: "Głosowanie zakończone" });
 
-    await pool.query(`INSERT INTO fp1_city_votes(city_nomination_id,fingerprint,tg_user_id,is_member) VALUES($1,$2,$3,$4)`, [cityId, fp, userId || null, isMember]);
+    await pool.query(
+      `INSERT INTO fp1_city_votes(city_nomination_id,fingerprint,tg_user_id,is_member,voter_phone) VALUES($1,$2,$3,$4,$5)`,
+      [cityId, fp, userId || null, isMember, voterPhone]
+    );
 
     const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_city_votes WHERE city_nomination_id=$1`, [cityId]);
     if (cnt.rows[0].c >= nom.rows[0].vote_threshold && nom.rows[0].status === "voting") {
@@ -4823,7 +4905,9 @@ app.get("/admin/logout", (req, res) => { clearCookie(res); res.redirect("/admin/
 app.get("/admin", requireAdminAuth, async (req, res) => {
   const pending = await pool.query(`SELECT * FROM fp1_venues WHERE approved=FALSE ORDER BY created_at ASC`);
   const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
-  const foxes   = await pool.query(`SELECT user_id,username,rating,invites,city,district,founder_number,streak_current,streak_best,created_at FROM fp1_foxes ORDER BY rating DESC LIMIT 50`);
+  const foxes   = await pool.query(`SELECT f.user_id,f.username,f.rating,f.invites,f.city,f.district,f.founder_number,f.streak_current,f.streak_best,f.created_at,
+    (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id) AS visits_total
+    FROM fp1_foxes f WHERE f.is_deleted=FALSE ORDER BY f.rating DESC LIMIT 50`);
   const growth  = await getGrowthLeaderboard(10);
   // Nominations
   const noms = await pool.query(`
@@ -4869,7 +4953,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       </div>`).join("");
 
   const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td></tr>`).join("");
-  const foxesHtml  = foxes.rows.map(f => `<tr><td>${f.user_id}</td><td>${escapeHtml(f.username||"—")}</td><td>${f.rating}</td><td>${f.invites}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td>${f.streak_current||0} 🔥 (rek: ${f.streak_best||0})</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td></tr>`).join("");
+  const foxesHtml  = foxes.rows.map(f => `<tr><td>${escapeHtml(f.username||"—")}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td><b>${f.rating}</b></td><td>${f.invites}</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td><td>${f.visits_total||0}</td><td>${new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"})}</td></tr>`).join("");
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
   const achHtml  = achStats.rows.map(a => { const ach = ACHIEVEMENTS[a.achievement_code]; return `<tr><td>${ach?ach.emoji:"?"} ${escapeHtml(a.achievement_code)}</td><td><b>${a.cnt}</b></td></tr>`; }).join("");
@@ -5009,7 +5093,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card">
       <h2>Fox (top 50)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>TG ID</th><th>Nick</th><th>Punkty</th><th>Zapr.</th><th>Miasto</th><th>Dzielnica</th><th>Streak</th><th>Pionier</th></tr>${foxesHtml}
+        <tr style="opacity:.6"><th>Nick</th><th>Miasto</th><th>Dzielnica</th><th>Rating</th><th>Zapr.</th><th>Pionier</th><th>Wizyty</th><th>Rejestracja</th></tr>${foxesHtml}
       </table>
     </div>
     <div class="card" style="border:1px solid rgba(124,92,252,.3);background:rgba(124,92,252,.06)">
@@ -5648,13 +5732,8 @@ if (BOT_TOKEN) {
         WHERE user_id = $1
       `, [userId]);
 
-      // Delete achievements
+      // Delete achievements and spins (keep counted_visits for anti-cheat)
       await pool.query(`DELETE FROM fp1_achievements WHERE user_id = $1`, [userId]);
-
-      // Delete counted visits
-      await pool.query(`DELETE FROM fp1_counted_visits WHERE user_id = $1`, [userId]);
-
-      // Delete daily spins
       await pool.query(`DELETE FROM fp1_daily_spins WHERE user_id = $1`, [userId]);
 
       // Notify admin
