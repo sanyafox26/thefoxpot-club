@@ -1833,6 +1833,24 @@ app.get("/api/venue-photo/:id", async (req, res) => {
 });
 
 
+// GET /api/static-map — proxy for Google Static Maps API (bypasses referrer restrictions)
+app.get("/api/static-map", async (req, res) => {
+  try {
+    const key = process.env.GOOGLE_MAPS_KEY || "";
+    if (!key) return res.status(503).send("Maps key not configured");
+    const venues = (req.query.venues || "").split("|").filter(Boolean).slice(0, 20);
+    const markers = venues.map(v => `markers=color:0xFF8A00%7C${v}`).join("&");
+    const center = req.query.center || "52.2297,21.0122";
+    const url = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=12&size=600x300&scale=2&maptype=roadmap&style=feature:all|element:geometry|color:0x0a0b14&style=feature:road|element:geometry|color:0x1a1b2e&style=feature:water|element:geometry|color:0x0d1020&style=feature:all|element:labels.text.fill|color:0x6a6a7a&style=feature:poi|visibility:off&style=feature:transit|visibility:off&${markers}&key=${key}`;
+    const https = require("https");
+    https.get(url, (proxyRes) => {
+      res.setHeader("Content-Type", proxyRes.headers["content-type"] || "image/png");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      proxyRes.pipe(res);
+    }).on("error", () => res.status(500).send("map error"));
+  } catch(e) { res.status(500).send("error"); }
+});
+
 // PUBLIC VENUE TEASER PAGE
 app.get("/venue/:id", async (req, res) => {
   try {
@@ -3674,6 +3692,9 @@ setInterval(() => {
   }
 }, 10*60*1000);
 
+// ── Promo round-robin: equal rotation across active promotions ──
+let _promoRoundRobinIdx = 0;
+
 app.get("/api/recommendation", async (req, res) => {
   const FALLBACK = { type:"system", card_type:"fallback", title:"🦊 FoxPot poleca dziś", name:"FoxPot Club", text:"🦊 Odkrywaj lokale z FoxPot Club!", discount:null, district:null, status_badge:null, venue_id:null, is_promo:false };
   try {
@@ -3695,7 +3716,7 @@ app.get("/api/recommendation", async (req, res) => {
     let card = null;
 
     if (Math.random() < promoChance) {
-      // Try paid promo — fetch a few to allow anti-repeat filtering
+      // Paid promo — round-robin for equal distribution
       const promoQ = await pool.query(`
         SELECT p.id, p.venue_id, p.promo_text, v.name AS venue_name, v.city,
                v.address, v.discount_percent, v.pioneer_number
@@ -3703,21 +3724,26 @@ app.get("/api/recommendation", async (req, res) => {
         JOIN fp1_venues v ON v.id = p.venue_id
         WHERE p.status='active' AND p.starts_at <= NOW() AND p.ends_at > NOW()
           ${excludeVenueId ? 'AND p.venue_id != $1' : ''}
-        ORDER BY CASE p.package WHEN 'premium' THEN 0 WHEN 'boost' THEN 1 ELSE 2 END, RANDOM()
-        LIMIT 5
+        ORDER BY p.id ASC
       `, excludeVenueId ? [excludeVenueId] : []);
-      for (const p of promoQ.rows) {
-        const disc = parseFloat(p.discount_percent) || 10;
-        const candidate = {
-          type:"paid", card_type:"promo", title: pickOne(REC_TITLES_VENUE),
-          name: p.venue_name,
-          text: p.promo_text || `🦊 The FoxPot Club poleca: ${p.venue_name}`,
-          discount: disc > 0 ? disc : null,
-          district: null,
-          status_badge: null,
-          venue_id: p.venue_id, is_promo: true
-        };
-        if (!isBlocked(foxId, candidate)) { card = candidate; break; }
+      if (promoQ.rows.length) {
+        // Round-robin: cycle through all promos equally
+        const startIdx = _promoRoundRobinIdx % promoQ.rows.length;
+        _promoRoundRobinIdx++;
+        for (let i = 0; i < promoQ.rows.length; i++) {
+          const p = promoQ.rows[(startIdx + i) % promoQ.rows.length];
+          const disc = parseFloat(p.discount_percent) || 10;
+          const candidate = {
+            type:"paid", card_type:"promo", title: pickOne(REC_TITLES_VENUE),
+            name: p.venue_name,
+            text: p.promo_text || `🦊 The FoxPot Club poleca: ${p.venue_name}`,
+            discount: disc > 0 ? disc : null,
+            district: null,
+            status_badge: null,
+            venue_id: p.venue_id, is_promo: true
+          };
+          if (!isBlocked(foxId, candidate)) { card = candidate; break; }
+        }
       }
     }
 

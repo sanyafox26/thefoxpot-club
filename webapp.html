@@ -450,6 +450,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 
       <!-- PWA Install Button -->
       <button id="pwaInstallBtn" style="display:none;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font);margin-bottom:12px;text-align:center">📲 Dodaj FoxPot do ekranu głównego</button>
+
+      <!-- Logout button (only for non-TG users) -->
+      <button id="logoutBtn" style="display:none;width:100%;padding:10px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);margin-bottom:12px" onclick="confirmLogout()">🚪 Wyloguj się</button>
     </div>
     <div id="pError" class="err-banner"></div>
     <div id="pUnauth" style="display:none">
@@ -497,10 +500,10 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
             <option value="">— Wybierz dzielnicę —</option>
           </select>
           <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:14px;cursor:pointer">
-            <input type="checkbox" id="obConsent" style="margin-top:3px;accent-color:var(--fox)"/>
-            <span style="font-size:11px;color:var(--muted);line-height:1.5">Akceptuję <a href="/rules" target="_blank" style="color:var(--fox)">Regulamin</a> i <a href="/privacy" target="_blank" style="color:var(--fox)">Politykę Prywatności</a></span>
+            <input type="checkbox" id="obConsent" style="margin-top:3px;accent-color:var(--fox)" onchange="q('obJoinBtn').disabled=!this.checked;q('obJoinBtn').style.opacity=this.checked?'1':'0.4'"/>
+            <span style="font-size:11px;color:var(--muted);line-height:1.5">Akceptuję <a href="#" onclick="openInlinePage('/rules','📋 Regulamin');event.stopPropagation();return false" style="color:var(--fox)">Regulamin</a> i <a href="#" onclick="openInlinePage('/privacy','🔒 Polityka Prywatności');event.stopPropagation();return false" style="color:var(--fox)">Politykę Prywatności</a></span>
           </label>
-          <button id="obJoinBtn" onclick="loginOnboard()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">🦊 Dołącz do FoxPot Club!</button>
+          <button id="obJoinBtn" onclick="loginOnboard()" disabled style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font);opacity:0.4">🦊 Dołącz do FoxPot Club!</button>
           <div id="loginErr3" style="display:none;margin-top:8px;font-size:12px;color:#EF4444;text-align:center"></div>
         </div>
       </div>
@@ -522,16 +525,44 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   <!-- LEAVE CLUB MODAL -->
   <div id="leaveModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(6px)">
     <div style="background:#12131f;border:1px solid rgba(231,76,60,.3);border-radius:20px;padding:28px 24px;max-width:380px;width:100%;text-align:center">
-      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-      <div style="font-size:18px;font-weight:800;margin-bottom:8px;color:var(--text)">Opuścić The FoxPot Club?</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px">
-        Utracisz wszystkie wizyty, punkty, osiągnięcia i zaproszenia.<br><br>
-        Możesz wrócić z nowym zaproszeniem — ale zaczniesz <strong style="color:var(--text)">od zera</strong>.<br><br>
-        <span style="color:var(--fox)">🦊 Pionier Fox — Twój status pozostaje na zawsze.</span>
+      <!-- Step 1 -->
+      <div id="leaveStep1">
+        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+        <div style="font-size:18px;font-weight:800;margin-bottom:8px;color:var(--text)">Opuścić The FoxPot Club?</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px">
+          Utracisz wszystkie wizyty, punkty, osiągnięcia i zaproszenia.<br><br>
+          Możesz wrócić z nowym zaproszeniem — ale zaczniesz <strong style="color:var(--text)">od zera</strong>.
+        </div>
+        <div style="display:flex;gap:10px">
+          <button onclick="hideLeaveModal()" style="flex:1;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">← Zostań</button>
+          <button onclick="leaveStep(2)" style="flex:1;padding:12px;background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.4);border-radius:var(--radius-sm);color:#e74c3c;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">Tak, opuszczam</button>
+        </div>
       </div>
-      <div style="display:flex;gap:10px">
-        <button onclick="hideLeaveModal()" style="flex:1;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">← Zostań</button>
-        <button onclick="confirmLeave()" id="leaveConfirmBtn" style="flex:1;padding:12px;background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.4);border-radius:var(--radius-sm);color:#e74c3c;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">❌ Opuszczam</button>
+      <!-- Step 2 -->
+      <div id="leaveStep2" style="display:none">
+        <div style="font-size:40px;margin-bottom:12px">🦊</div>
+        <div style="font-size:16px;font-weight:800;margin-bottom:8px;color:#e74c3c">Na pewno? To nieodwracalne!</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px">
+          <span style="color:var(--fox)">🦊 Pionier Fox — Twój status pozostaje na zawsze.</span><br><br>
+          Ale wszystko inne zostanie usunięte.
+        </div>
+        <div style="display:flex;gap:10px">
+          <button onclick="hideLeaveModal()" style="flex:1;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">← Zostań</button>
+          <button onclick="leaveStep(3)" style="flex:1;padding:12px;background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.4);border-radius:var(--radius-sm);color:#e74c3c;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">Kontynuuj</button>
+        </div>
+      </div>
+      <!-- Step 3: type nickname -->
+      <div id="leaveStep3" style="display:none">
+        <div style="font-size:40px;margin-bottom:12px">❌</div>
+        <div style="font-size:16px;font-weight:800;margin-bottom:8px;color:#e74c3c">Ostatni krok</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:12px">
+          Wpisz swój nick aby potwierdzić:
+        </div>
+        <input id="leaveNickInput" type="text" placeholder="" style="width:100%;padding:12px;background:var(--bg3);border:1px solid rgba(231,76,60,.3);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--mono);text-align:center;outline:none;margin-bottom:12px" oninput="leaveCheckNick()"/>
+        <div style="display:flex;gap:10px">
+          <button onclick="hideLeaveModal()" style="flex:1;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">← Zostań</button>
+          <button onclick="confirmLeave()" id="leaveConfirmBtn" disabled style="flex:1;padding:12px;background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.2);border-radius:var(--radius-sm);color:rgba(231,76,60,.4);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">❌ Opuszczam</button>
+        </div>
       </div>
     </div>
   </div>
@@ -837,9 +868,11 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
   <!-- INLINE PAGE MODAL (Regulamin, FAQ, Privacy) -->
   <div class="modal-overlay" id="inlinePageModal" onclick="if(event.target===this)this.classList.remove('open')">
     <div class="modal-sheet" style="max-height:85vh;overflow-y:auto">
-      <div id="inlinePageTitle" style="font-size:18px;font-weight:800;margin-bottom:12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;position:sticky;top:0;background:var(--bg2);padding:4px 0;z-index:1">
+        <div id="inlinePageTitle" style="font-size:16px;font-weight:800"></div>
+        <button onclick="q('inlinePageModal').classList.remove('open')" style="background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:4px 8px">✕</button>
+      </div>
       <div id="inlinePageContent" style="font-size:13px;line-height:1.6;color:var(--muted)"></div>
-      <button onclick="q('inlinePageModal').classList.remove('open')" style="width:100%;margin-top:16px;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
     </div>
   </div>
 
@@ -1753,10 +1786,37 @@ function copyTgId(){
 
 function showLeaveModal(){
   const m=q('leaveModal');if(m){m.style.display='flex'}
+  // Reset to step 1
+  q('leaveStep1').style.display=''; q('leaveStep2').style.display='none'; q('leaveStep3').style.display='none';
   haptic('impact','heavy');
 }
 function hideLeaveModal(){
   const m=q('leaveModal');if(m){m.style.display='none'}
+}
+function leaveStep(n) {
+  q('leaveStep1').style.display = n===1 ? '' : 'none';
+  q('leaveStep2').style.display = n===2 ? '' : 'none';
+  q('leaveStep3').style.display = n===3 ? '' : 'none';
+  if (n===3) {
+    const nick = S.profile?.username || '';
+    q('leaveNickInput').placeholder = nick;
+    q('leaveNickInput').value = '';
+    q('leaveConfirmBtn').disabled = true;
+    q('leaveConfirmBtn').style.color = 'rgba(231,76,60,.4)';
+    q('leaveConfirmBtn').style.borderColor = 'rgba(231,76,60,.2)';
+    q('leaveConfirmBtn').style.background = 'rgba(231,76,60,.1)';
+  }
+  haptic('impact','heavy');
+}
+function leaveCheckNick() {
+  const input = (q('leaveNickInput').value || '').trim().toLowerCase();
+  const nick = (S.profile?.username || '').toLowerCase();
+  const match = nick && input === nick;
+  const btn = q('leaveConfirmBtn');
+  btn.disabled = !match;
+  btn.style.color = match ? '#e74c3c' : 'rgba(231,76,60,.4)';
+  btn.style.borderColor = match ? 'rgba(231,76,60,.4)' : 'rgba(231,76,60,.2)';
+  btn.style.background = match ? 'rgba(231,76,60,.15)' : 'rgba(231,76,60,.1)';
 }
 async function confirmLeave(){
   const btn=q('leaveConfirmBtn');
@@ -2002,16 +2062,16 @@ function initGMap(venues) {
   updateMapMarkers(withCoords);
 }
 
-// Static map fallback (Capacitor / Maps JS blocked)
+// Static map fallback via server proxy (Capacitor / Maps JS blocked)
 function renderStaticMap(venues, container) {
   const withCoords = venues.filter(v => v.lat && v.lng);
-  if (!withCoords.length || !S_map._mapsKey) {
+  if (!withCoords.length) {
     container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">🗺️ Mapa niedostępna</div>';
     return;
   }
   const center = withCoords.reduce((s,v) => ({lat:s.lat+parseFloat(v.lat)/withCoords.length, lng:s.lng+parseFloat(v.lng)/withCoords.length}), {lat:0,lng:0});
-  const markers = withCoords.slice(0,15).map(v => `markers=color:orange%7C${v.lat},${v.lng}`).join('&');
-  const url = `https://maps.googleapis.com/maps/api/staticmap?center=${center.lat},${center.lng}&zoom=12&size=600x300&scale=2&maptype=roadmap&style=feature:all|element:geometry|color:0x0a0b14&style=feature:road|element:geometry|color:0x1a1b2e&style=feature:water|element:geometry|color:0x0d1020&style=feature:all|element:labels.text.fill|color:0x6a6a7a&${markers}&key=${S_map._mapsKey}`;
+  const venueParams = withCoords.slice(0,15).map(v => `${v.lat},${v.lng}`).join('|');
+  const url = `${BASE}/api/static-map?center=${center.lat},${center.lng}&venues=${encodeURIComponent(venueParams)}`;
   container.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius);cursor:pointer" alt="Mapa" onclick="openExternal('https://www.google.com/maps/search/?api=1&query=lokale+warszawa',event)" onerror="this.parentElement.innerHTML='<div style=\\'height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px\\'>🗺️ Mapa niedostępna</div>'"/>`;
 }
 
@@ -2714,6 +2774,20 @@ async function supSendTicket() {
   }
 }
 
+// ── Logout ──
+function confirmLogout() {
+  if (confirm('Czy na pewno chcesz się wylogować?')) {
+    localStorage.removeItem('fp1_jwt');
+    localStorage.removeItem('fp1_pending_invite');
+    location.reload();
+  }
+}
+// Show logout button for non-TG authenticated users
+if (IS_AUTHENTICATED && !IS_TELEGRAM) {
+  const lb = q('logoutBtn');
+  if (lb) lb.style.display = '';
+}
+
 // ── Inline Voting ──
 let _votingLoaded = false;
 function toggleVoting() {
@@ -2876,9 +2950,13 @@ function openInlinePage(url, title) {
   content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)"><div class="spinner"></div></div>';
   modal.classList.add('open');
   fetch(BASE + url).then(r => r.text()).then(html => {
-    // Extract body content from the HTML page
     const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    content.innerHTML = match ? match[1] : html;
+    const div = document.createElement('div');
+    div.innerHTML = match ? match[1] : html;
+    // Limit logo/image sizes and remove scripts
+    div.querySelectorAll('img').forEach(img => { img.style.maxWidth = '80px'; img.style.height = 'auto'; });
+    div.querySelectorAll('script').forEach(s => s.remove());
+    content.innerHTML = div.innerHTML;
   }).catch(() => {
     content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">Nie udało się załadować</div>';
   });
