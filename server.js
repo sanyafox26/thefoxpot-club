@@ -3551,13 +3551,16 @@ app.get("/api/nominations", async (req, res) => {
 
     const myVotes = new Set();
     const voterPhone = await resolveVoterPhone(userId);
-    if (userId || fp) {
-      let mvQ;
-      if (voterPhone) {
-        mvQ = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1 OR tg_user_id=$2 OR voter_phone=$3`, [fp, userId || "", voterPhone]);
-      } else {
-        mvQ = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
-      }
+    // For authenticated users: check by userId/phone only (not fingerprint — shared across accounts on same device)
+    // For anonymous: check by fingerprint
+    if (userId) {
+      const conditions = [`tg_user_id=$1`];
+      const params = [String(userId)];
+      if (voterPhone) { conditions.push(`voter_phone=$${params.length+1}`); params.push(voterPhone); }
+      const mvQ = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE ${conditions.join(' OR ')}`, params);
+      mvQ.rows.forEach(r => myVotes.add(r.nomination_id));
+    } else if (fp) {
+      const mvQ = await pool.query(`SELECT nomination_id FROM fp1_nomination_votes WHERE fingerprint=$1`, [fp]);
       mvQ.rows.forEach(r => myVotes.add(r.nomination_id));
     }
 
@@ -3565,7 +3568,9 @@ app.get("/api/nominations", async (req, res) => {
     let canVoteAfter = null;
     const lastNomQ = voterPhone
       ? await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
-      : await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+      : userId
+        ? await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE tg_user_id=$1 ORDER BY created_at DESC LIMIT 1`, [String(userId)])
+        : await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
     if (lastNomQ.rowCount > 0) {
       const next = new Date(lastNomQ.rows[0].created_at);
       next.setDate(next.getDate() + NOM_VOTE_COOLDOWN_DAYS);
@@ -3613,18 +3618,24 @@ app.post("/api/nominations/:id/vote", async (req, res) => {
 
     const voterPhone = await resolveVoterPhone(userId);
 
-    // Lifetime check: already voted on THIS nomination (by phone or fingerprint)
+    // Lifetime check: already voted on THIS nomination (by phone/userId for auth users, fingerprint for anon)
     if (voterPhone) {
       const already = await pool.query(`SELECT id FROM fp1_nomination_votes WHERE nomination_id=$1 AND voter_phone=$2 LIMIT 1`, [nomId, voterPhone]);
       if (already.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
+    } else if (userId) {
+      const already = await pool.query(`SELECT id FROM fp1_nomination_votes WHERE nomination_id=$1 AND tg_user_id=$2 LIMIT 1`, [nomId, String(userId)]);
+      if (already.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
+    } else {
+      const alreadyFp = await pool.query(`SELECT id FROM fp1_nomination_votes WHERE nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [nomId, fp]);
+      if (alreadyFp.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
     }
-    const alreadyFp = await pool.query(`SELECT id FROM fp1_nomination_votes WHERE nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [nomId, fp]);
-    if (alreadyFp.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za ten lokal" });
 
-    // Cooldown: 7 days since last vote on ANY nomination (by phone or fingerprint)
+    // Cooldown: 7 days since last vote on ANY nomination
     const lastQ = voterPhone
       ? await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
-      : await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+      : userId
+        ? await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE tg_user_id=$1 ORDER BY created_at DESC LIMIT 1`, [String(userId)])
+        : await pool.query(`SELECT created_at FROM fp1_nomination_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
     if (lastQ.rowCount > 0) {
       const next = new Date(lastQ.rows[0].created_at);
       next.setDate(next.getDate() + NOM_VOTE_COOLDOWN_DAYS);
@@ -3685,13 +3696,15 @@ app.get("/api/city-nominations", async (req, res) => {
 
     const myVotes = new Set();
     const voterPhone = await resolveVoterPhone(userId);
-    if (userId || fp) {
-      let mvQ;
-      if (voterPhone) {
-        mvQ = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1 OR tg_user_id=$2 OR voter_phone=$3`, [fp, userId || "", voterPhone]);
-      } else {
-        mvQ = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1 OR tg_user_id=$2`, [fp, userId || ""]);
-      }
+    // For authenticated users: check by userId/phone only (not fingerprint)
+    if (userId) {
+      const conditions = [`tg_user_id=$1`];
+      const params = [String(userId)];
+      if (voterPhone) { conditions.push(`voter_phone=$${params.length+1}`); params.push(voterPhone); }
+      const mvQ = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE ${conditions.join(' OR ')}`, params);
+      mvQ.rows.forEach(r => myVotes.add(r.city_nomination_id));
+    } else if (fp) {
+      const mvQ = await pool.query(`SELECT city_nomination_id FROM fp1_city_votes WHERE fingerprint=$1`, [fp]);
       mvQ.rows.forEach(r => myVotes.add(r.city_nomination_id));
     }
 
@@ -3699,7 +3712,9 @@ app.get("/api/city-nominations", async (req, res) => {
     let canVoteAfter = null;
     const lastQ = voterPhone
       ? await pool.query(`SELECT created_at FROM fp1_city_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
-      : await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+      : userId
+        ? await pool.query(`SELECT created_at FROM fp1_city_votes WHERE tg_user_id=$1 ORDER BY created_at DESC LIMIT 1`, [String(userId)])
+        : await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
     if (lastQ.rowCount > 0) {
       const next = new Date(lastQ.rows[0].created_at);
       next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
@@ -3748,18 +3763,24 @@ app.post("/api/city-nominations/:id/vote", async (req, res) => {
 
     const voterPhone = await resolveVoterPhone(userId);
 
-    // Lifetime check: already voted on THIS city (by phone or fingerprint)
+    // Lifetime check: already voted on THIS city (by phone/userId for auth users, fingerprint for anon)
     if (voterPhone) {
       const already = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND voter_phone=$2 LIMIT 1`, [cityId, voterPhone]);
       if (already.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
+    } else if (userId) {
+      const already = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND tg_user_id=$2 LIMIT 1`, [cityId, String(userId)]);
+      if (already.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
+    } else {
+      const alreadyFp = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [cityId, fp]);
+      if (alreadyFp.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
     }
-    const alreadyFp = await pool.query(`SELECT id FROM fp1_city_votes WHERE city_nomination_id=$1 AND fingerprint=$2 LIMIT 1`, [cityId, fp]);
-    if (alreadyFp.rowCount > 0) return res.status(409).json({ error: "Już głosowałeś za to miasto" });
 
-    // Cooldown: 30 days since last vote on ANY city (by phone or fingerprint)
+    // Cooldown: 30 days since last vote on ANY city
     const lastQ = voterPhone
       ? await pool.query(`SELECT created_at FROM fp1_city_votes WHERE voter_phone=$1 ORDER BY created_at DESC LIMIT 1`, [voterPhone])
-      : await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
+      : userId
+        ? await pool.query(`SELECT created_at FROM fp1_city_votes WHERE tg_user_id=$1 ORDER BY created_at DESC LIMIT 1`, [String(userId)])
+        : await pool.query(`SELECT created_at FROM fp1_city_votes WHERE fingerprint=$1 ORDER BY created_at DESC LIMIT 1`, [fp]);
     if (lastQ.rowCount > 0) {
       const next = new Date(lastQ.rows[0].created_at);
       next.setDate(next.getDate() + CITY_VOTE_COOLDOWN_DAYS);
