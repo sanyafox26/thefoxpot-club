@@ -508,11 +508,11 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <!-- Social bonus moved to socialBonusSlot in profile -->
 
     <div style="display:flex;justify-content:center;gap:16px;padding:16px 0 8px">
-      <a href="/rules" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
+      <a href="#" onclick="openInlinePage('/rules','📋 Regulamin');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
       <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
-      <a href="/privacy" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Polityka Prywatności</a>
+      <a href="#" onclick="openInlinePage('/privacy','🔒 Polityka Prywatności');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Polityka Prywatności</a>
       <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
-      <a href="/faq" target="_blank" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">FAQ</a>
+      <a href="#" onclick="openInlinePage('/faq','❓ FAQ');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">FAQ</a>
     </div>
     <div id="pLeaveSection" style="display:none;text-align:center;padding:8px 0 16px">
       <button onclick="showLeaveModal()" style="background:none;border:1px solid rgba(231,76,60,.25);border-radius:var(--radius-sm);padding:10px 24px;color:rgba(231,76,60,.6);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .2s">🚪 Opuść klub</button>
@@ -544,8 +544,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           Aby korzystać z programu, zaakceptuj regulamin i politykę prywatności.
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-          <a href="/rules" target="_blank" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">📋 Regulamin →</a>
-          <a href="/privacy" target="_blank" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">🔒 Polityka Prywatności →</a>
+          <a href="#" onclick="openInlinePage('/rules','📋 Regulamin');return false" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">📋 Regulamin →</a>
+          <a href="#" onclick="openInlinePage('/privacy','🔒 Polityka Prywatności');return false" style="color:#f5a623;font-size:14px;font-weight:700;text-decoration:none">🔒 Polityka Prywatności →</a>
         </div>
         <button id="consentAcceptBtn" onclick="acceptConsent()" style="width:100%;padding:14px;background:linear-gradient(135deg,#f5a623,#e8842a);border:none;border-radius:12px;color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">✅ Akceptuję i kontynuuję</button>
       </div>
@@ -794,15 +794,53 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div id="mapLoading" class="loading" style="display:none"><div class="spinner"></div></div>
     <div id="mapList"></div>
 
-    <!-- Link to voting page -->
-    <div class="card" style="margin-top:12px;text-align:center">
-      <a href="#" onclick="openExternal(BASE+'/voting',event);return false" style="display:block;padding:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:var(--radius-sm);color:#3B82F6;font-weight:700;font-size:14px;text-decoration:none">🗳️ Głosuj na lokale i miasta →</a>
+    <!-- Inline Voting Section -->
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleVoting()">
+        <div style="font-size:15px;font-weight:800">🗳️ Głosuj na lokale i miasta</div>
+        <span id="votingToggleIcon" style="font-size:18px;color:var(--muted);transition:transform .2s">▾</span>
+      </div>
+      <div id="votingInline" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:4px;margin-bottom:10px">
+          <button class="map-filter-btn active" id="vTabVenue" onclick="vSwitchTab('venue')" style="flex:1;padding:8px;text-align:center;border-radius:var(--radius-sm);font-size:12px;font-weight:700;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:#3B82F6;cursor:pointer;font-family:var(--font)">🍽 Lokale</button>
+          <button class="map-filter-btn" id="vTabCity" onclick="vSwitchTab('city')" style="flex:1;padding:8px;text-align:center;border-radius:var(--radius-sm);font-size:12px;font-weight:700;background:var(--bg3);border:1px solid var(--border2);color:var(--muted);cursor:pointer;font-family:var(--font)">🏙️ Miasta</button>
+        </div>
+        <!-- Venue voting -->
+        <div id="vVenueTab">
+          <input id="vVenueSearch" type="text" placeholder="🔍 Wpisz nazwę lokalu..." style="width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:var(--font);outline:none;margin-bottom:8px" oninput="vSearchPlaces()" autocomplete="off"/>
+          <div id="vPlaceResults"></div>
+          <div id="vManualFallback" style="display:none;margin-top:8px;padding:10px;border-radius:var(--radius-sm);border:1px solid rgba(255,138,0,.2);background:rgba(255,138,0,.06)">
+            <div style="font-size:11px;color:var(--fox);font-weight:700;margin-bottom:6px">Nie ma tego lokalu? Dodaj go!</div>
+            <input id="vManualName" type="text" maxlength="100" placeholder="Nazwa lokalu" style="margin-bottom:4px;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font)"/>
+            <input id="vManualAddr" type="text" maxlength="200" placeholder="Adres (opcjonalnie)" style="margin-bottom:6px;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font)"/>
+            <button onclick="vSubmitManual()" style="width:100%;padding:8px;background:var(--fox);border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;font-size:12px;cursor:pointer;font-family:var(--font)">🗳️ Zaproponuj lokal</button>
+          </div>
+          <div id="vVenueMsg" style="font-size:11px;margin-top:4px"></div>
+          <div id="vNomList" style="margin-top:8px"><div style="font-size:11px;color:var(--muted)">Ładowanie...</div></div>
+        </div>
+        <!-- City voting -->
+        <div id="vCityTab" style="display:none">
+          <input id="vCitySearch" type="text" maxlength="100" placeholder="🔍 Wpisz nazwę miasta..." style="width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:var(--font);outline:none;margin-bottom:8px" oninput="vFilterCities()" autocomplete="off"/>
+          <div id="vCitySuggestions"></div>
+          <div id="vCityMsg" style="font-size:11px;margin-top:4px"></div>
+          <div id="vCityNomList" style="margin-top:8px"><div style="font-size:11px;color:var(--muted)">Ładowanie...</div></div>
+        </div>
+      </div>
     </div>
   </section>
 
   <!-- VENUE DETAIL MODAL -->
   <div class="modal-overlay" id="venueModal" onclick="if(event.target===this)this.classList.remove('open')">
     <div class="modal-sheet" id="venueModalContent"></div>
+  </div>
+
+  <!-- INLINE PAGE MODAL (Regulamin, FAQ, Privacy) -->
+  <div class="modal-overlay" id="inlinePageModal" onclick="if(event.target===this)this.classList.remove('open')">
+    <div class="modal-sheet" style="max-height:85vh;overflow-y:auto">
+      <div id="inlinePageTitle" style="font-size:18px;font-weight:800;margin-bottom:12px"></div>
+      <div id="inlinePageContent" style="font-size:13px;line-height:1.6;color:var(--muted)"></div>
+      <button onclick="q('inlinePageModal').classList.remove('open')" style="width:100%;margin-top:16px;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
+    </div>
   </div>
 
   <!-- SUPPORT / POMOC -->
@@ -1926,9 +1964,16 @@ function filterVenueMap(type, btn) {
 let gMap = null;
 let gMarkers = [];
 
+let _mapRetries = 0;
 function initGMap(venues) {
   const container = q('mapContainer');
   if (!window.google?.maps) {
+    _mapRetries++;
+    // After 6 retries (3s) — fallback to static map (Capacitor/blocked JS API)
+    if (_mapRetries > 6) {
+      renderStaticMap(venues, container);
+      return;
+    }
     container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">⏳ Ładowanie mapy…</div>';
     setTimeout(() => initGMap(venues), 500);
     return;
@@ -1955,6 +2000,19 @@ function initGMap(venues) {
     gMap.setCenter(center);
   }
   updateMapMarkers(withCoords);
+}
+
+// Static map fallback (Capacitor / Maps JS blocked)
+function renderStaticMap(venues, container) {
+  const withCoords = venues.filter(v => v.lat && v.lng);
+  if (!withCoords.length || !S_map._mapsKey) {
+    container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">🗺️ Mapa niedostępna</div>';
+    return;
+  }
+  const center = withCoords.reduce((s,v) => ({lat:s.lat+parseFloat(v.lat)/withCoords.length, lng:s.lng+parseFloat(v.lng)/withCoords.length}), {lat:0,lng:0});
+  const markers = withCoords.slice(0,15).map(v => `markers=color:orange%7C${v.lat},${v.lng}`).join('&');
+  const url = `https://maps.googleapis.com/maps/api/staticmap?center=${center.lat},${center.lng}&zoom=12&size=600x300&scale=2&maptype=roadmap&style=feature:all|element:geometry|color:0x0a0b14&style=feature:road|element:geometry|color:0x1a1b2e&style=feature:water|element:geometry|color:0x0d1020&style=feature:all|element:labels.text.fill|color:0x6a6a7a&${markers}&key=${S_map._mapsKey}`;
+  container.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius);cursor:pointer" alt="Mapa" onclick="openExternal('https://www.google.com/maps/search/?api=1&query=lokale+warszawa',event)" onerror="this.parentElement.innerHTML='<div style=\\'height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px\\'>🗺️ Mapa niedostępna</div>'"/>`;
 }
 
 function updateMapMarkers(venues) {
@@ -2423,6 +2481,7 @@ async function loadMap() {
     S_map.venues = data.venues || [];
     S_map.isFox = !!data.is_fox;
     S_map.trialState = data.trial_state || null;
+    S_map._mapsKey = data.maps_key || '';
     if (data.maps_key && !window.google?.maps) {
       const sc = document.createElement('script');
       sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + data.maps_key;
@@ -2653,6 +2712,176 @@ async function supSendTicket() {
   } catch(e) {
     alert('Błąd: ' + (e.message || 'Spróbuj ponownie'));
   }
+}
+
+// ── Inline Voting ──
+let _votingLoaded = false;
+function toggleVoting() {
+  const el = q('votingInline');
+  const icon = q('votingToggleIcon');
+  if (el.style.display === 'none') {
+    el.style.display = '';
+    icon.style.transform = 'rotate(180deg)';
+    if (!_votingLoaded) { _votingLoaded = true; vLoadNoms(); vLoadCityNoms(); }
+  } else {
+    el.style.display = 'none';
+    icon.style.transform = '';
+  }
+}
+function vSwitchTab(t) {
+  q('vVenueTab').style.display = t==='venue' ? '' : 'none';
+  q('vCityTab').style.display = t==='city' ? '' : 'none';
+  q('vTabVenue').style.background = t==='venue' ? 'rgba(59,130,246,.15)' : 'var(--bg3)';
+  q('vTabVenue').style.color = t==='venue' ? '#3B82F6' : 'var(--muted)';
+  q('vTabVenue').style.borderColor = t==='venue' ? 'rgba(59,130,246,.3)' : 'var(--border2)';
+  q('vTabCity').style.background = t==='city' ? 'rgba(59,130,246,.15)' : 'var(--bg3)';
+  q('vTabCity').style.color = t==='city' ? '#3B82F6' : 'var(--muted)';
+  q('vTabCity').style.borderColor = t==='city' ? 'rgba(59,130,246,.3)' : 'var(--border2)';
+}
+function vGetFp() { return (TG_USER ? 'tg_'+TG_USER.id : 'fp_'+navigator.userAgent.slice(0,60)).slice(0,200); }
+
+let vSearchTimer = null;
+function vSearchPlaces() {
+  clearTimeout(vSearchTimer);
+  const input = q('vVenueSearch').value.trim();
+  if (input.length < 2) { q('vPlaceResults').innerHTML = ''; q('vManualFallback').style.display = 'none'; return; }
+  vSearchTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(BASE+'/api/places-autocomplete?input='+encodeURIComponent(input)+'&city=Warszawa');
+      const d = await r.json();
+      const preds = d.predictions || [];
+      if (!preds.length) {
+        q('vPlaceResults').innerHTML = '<div style="font-size:11px;color:var(--muted);padding:4px">Brak wyników</div>';
+        q('vManualFallback').style.display = ''; q('vManualName').value = input;
+        return;
+      }
+      q('vPlaceResults').innerHTML = preds.map(p =>
+        `<div onclick="vSelectPlace(this)" data-name="${esc(p.name)}" data-addr="${esc(p.address)}" data-pid="${esc(p.place_id||'')}" style="padding:6px;margin:2px 0;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);cursor:pointer;font-size:12px">
+          <b>${esc(p.name)}</b><div style="font-size:10px;color:var(--muted)">${esc(p.address)}</div>
+        </div>`
+      ).join('');
+      q('vManualFallback').style.display = ''; q('vManualName').value = input;
+    } catch(e) { q('vPlaceResults').innerHTML = ''; q('vManualFallback').style.display = ''; }
+  }, 400);
+}
+async function vSelectPlace(el) {
+  const name = el.dataset.name, addr = el.dataset.addr, pid = el.dataset.pid;
+  try {
+    const r = await fetch(BASE+'/api/nominations', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, city:'Warszawa', address:addr, place_id:pid, fp:vGetFp()})});
+    const d = await r.json();
+    if (d.error && d.nomination_id) { vVoteVenue(d.nomination_id); q('vVenueMsg').innerHTML = `<span style="color:var(--fox)">${esc(d.error)}</span>`; return; }
+    if (d.error) { q('vVenueMsg').innerHTML = `<span style="color:var(--red)">${esc(d.error)}</span>`; return; }
+    q('vVenueMsg').innerHTML = '<span style="color:var(--green)">✅ Dodano!</span>';
+    q('vVenueSearch').value = ''; q('vPlaceResults').innerHTML = ''; q('vManualFallback').style.display = 'none';
+    vLoadNoms();
+  } catch(e) { q('vVenueMsg').innerHTML = '<span style="color:var(--red)">Błąd</span>'; }
+}
+async function vSubmitManual() {
+  const name = q('vManualName').value.trim(), addr = q('vManualAddr').value.trim();
+  if (!name || name.length < 2) { q('vVenueMsg').innerHTML = '<span style="color:var(--red)">Min. 2 znaki</span>'; return; }
+  try {
+    const r = await fetch(BASE+'/api/nominations', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, city:'Warszawa', address:addr, fp:vGetFp()})});
+    const d = await r.json();
+    if (d.error && d.nomination_id) { vVoteVenue(d.nomination_id); return; }
+    if (d.error) { q('vVenueMsg').innerHTML = `<span style="color:var(--red)">${esc(d.error)}</span>`; return; }
+    q('vVenueMsg').innerHTML = '<span style="color:var(--green)">✅ Dodano!</span>';
+    q('vManualName').value = ''; q('vManualAddr').value = ''; q('vManualFallback').style.display = 'none';
+    vLoadNoms();
+  } catch(e) { q('vVenueMsg').innerHTML = '<span style="color:var(--red)">Błąd</span>'; }
+}
+async function vVoteVenue(id) {
+  try {
+    const h = {'Content-Type':'application/json'}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    await fetch(BASE+'/api/nominations/'+id+'/vote', {method:'POST', headers:h, body:JSON.stringify({fp:vGetFp()})});
+    vLoadNoms();
+  } catch(e) {}
+}
+const V_NOM_SC = {voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',contact:'#8B5CF6',talking:'#EC4899'};
+async function vLoadNoms() {
+  try {
+    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const r = await fetch(BASE+'/api/nominations?fp='+encodeURIComponent(vGetFp()), {headers:h});
+    const d = await r.json();
+    const list = d.nominations || [];
+    if (!list.length) { q('vNomList').innerHTML = '<div style="font-size:11px;color:var(--muted)">Brak propozycji — wyszukaj lokal!</div>'; return; }
+    q('vNomList').innerHTML = list.map(n => {
+      const c = V_NOM_SC[n.status]||'#888', pct = Math.min(100,Math.round(n.votes/n.vote_threshold*100));
+      return `<div style="padding:6px;margin:3px 0;border-radius:6px;border:1px solid ${c}30;background:${c}08">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:12px"><b>${esc(n.name)}</b> · <span style="color:var(--muted)">${esc(n.city)}</span></div><span style="font-size:9px;color:${c};font-weight:700">${esc(n.status_label)}</span></div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px"><div style="flex:1;height:3px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${c};border-radius:2px"></div></div><span style="font-size:10px;color:var(--muted)">${n.votes}/${n.vote_threshold}</span>
+        ${n.my_vote?'<span style="font-size:10px">✅</span>':`<button onclick="vVoteVenue(${n.id})" style="background:${c}15;border:1px solid ${c}30;border-radius:5px;padding:2px 8px;color:${c};font-size:10px;font-weight:700;cursor:pointer;font-family:var(--font)">👍</button>`}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { q('vNomList').innerHTML = '<div style="font-size:11px;color:var(--muted)">Błąd</div>'; }
+}
+
+// City voting
+const V_KNOWN_PL = ["Warszawa","Kraków","Wrocław","Gdańsk","Poznań","Łódź","Szczecin","Bydgoszcz","Lublin","Białystok","Katowice","Gdynia","Częstochowa","Radom","Toruń","Kielce","Rzeszów","Olsztyn","Opole"];
+function vFilterCities() {
+  const v = q('vCitySearch').value.trim().toLowerCase();
+  if (!v) { q('vCitySuggestions').innerHTML = ''; return; }
+  const m = V_KNOWN_PL.filter(c => c.toLowerCase().includes(v)).slice(0,5);
+  q('vCitySuggestions').innerHTML = m.map(c => `<button onclick="vSubmitCity('${c.replace(/'/g,"\\'")}')" style="display:inline-block;margin:2px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:1px solid var(--border2);background:var(--bg3);color:var(--text)">${esc(c)}</button>`).join('');
+  if (!m.some(c=>c.toLowerCase()===v)) {
+    q('vCitySuggestions').innerHTML += `<button onclick="vSubmitCity('${esc(q('vCitySearch').value.trim())}')" style="display:inline-block;margin:2px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);border:1px solid rgba(255,138,0,.3);background:rgba(255,138,0,.08);color:var(--fox)">+ ${esc(q('vCitySearch').value.trim())}</button>`;
+  }
+}
+async function vSubmitCity(name) {
+  try {
+    const r = await fetch(BASE+'/api/city-nominations', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, fp:vGetFp()})});
+    const d = await r.json();
+    if (d.error && d.city_id) { vVoteCity(d.city_id); return; }
+    if (d.error) { q('vCityMsg').innerHTML = `<span style="color:var(--red)">${esc(d.error)}</span>`; return; }
+    vVoteCity(d.city_id);
+  } catch(e) { q('vCityMsg').innerHTML = '<span style="color:var(--red)">Błąd</span>'; }
+}
+async function vVoteCity(id) {
+  try {
+    const h = {'Content-Type':'application/json'}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const r = await fetch(BASE+'/api/city-nominations/'+id+'/vote', {method:'POST', headers:h, body:JSON.stringify({fp:vGetFp()})});
+    const d = await r.json();
+    if (d.error) { q('vCityMsg').innerHTML = `<span style="color:var(--fox)">${esc(d.error)}</span>`; vLoadCityNoms(); return; }
+    q('vCityMsg').innerHTML = '<span style="color:var(--green)">✅ Zagłosowano!</span>';
+    q('vCitySearch').value = ''; q('vCitySuggestions').innerHTML = '';
+    vLoadCityNoms();
+  } catch(e) { q('vCityMsg').innerHTML = '<span style="color:var(--red)">Błąd</span>'; }
+}
+const V_CITY_SC = {voting:'#3B82F6',threshold:'#22C55E',review:'#FF8A00',planned:'#8B5CF6',not_now:'#EF4444'};
+async function vLoadCityNoms() {
+  try {
+    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const r = await fetch(BASE+'/api/city-nominations?fp='+encodeURIComponent(vGetFp()), {headers:h});
+    const d = await r.json();
+    const list = (d.cities||[]).slice(0,10);
+    if (!list.length) { q('vCityNomList').innerHTML = '<div style="font-size:11px;color:var(--muted)">Zaproponuj miasto!</div>'; return; }
+    q('vCityNomList').innerHTML = list.map(n => {
+      const c = V_CITY_SC[n.status]||'#888', pct = Math.min(100,Math.round(n.votes/n.vote_threshold*100));
+      return `<div style="padding:5px 6px;margin:2px 0;border-radius:5px;border:1px solid ${c}25;background:${c}06;display:flex;align-items:center;gap:6px">
+        <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.name)}</div>
+        <div style="display:flex;align-items:center;gap:4px;margin-top:2px"><div style="flex:1;height:3px;background:#1a1f35;border-radius:2px"><div style="width:${pct}%;height:100%;background:${c};border-radius:2px"></div></div><span style="font-size:9px;color:var(--muted)">${n.votes}/${n.vote_threshold}</span></div></div>
+        ${n.my_vote?'<span style="font-size:10px">✅</span>':`<button onclick="vVoteCity(${n.id})" style="background:${c}18;border:1px solid ${c}30;border-radius:4px;padding:2px 6px;color:${c};font-size:9px;font-weight:700;cursor:pointer;font-family:var(--font)">👍</button>`}
+      </div>`;
+    }).join('');
+  } catch(e) { q('vCityNomList').innerHTML = '<div style="font-size:11px;color:var(--muted)">Błąd</div>'; }
+}
+
+// ── Inline Page Viewer (Regulamin, FAQ, Privacy) ──
+function openInlinePage(url, title) {
+  const modal = q('inlinePageModal');
+  const content = q('inlinePageContent');
+  const titleEl = q('inlinePageTitle');
+  titleEl.textContent = title;
+  content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)"><div class="spinner"></div></div>';
+  modal.classList.add('open');
+  fetch(BASE + url).then(r => r.text()).then(html => {
+    // Extract body content from the HTML page
+    const match = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    content.innerHTML = match ? match[1] : html;
+  }).catch(() => {
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">Nie udało się załadować</div>';
+  });
 }
 
 // ── Phone OTP Login Flow ──
