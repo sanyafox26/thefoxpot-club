@@ -1770,8 +1770,11 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
           const cooldownEnd = new Date(df.deleted_at);
           cooldownEnd.setHours(cooldownEnd.getHours() + 24);
           if (cooldownEnd > new Date()) {
-            const hoursLeft = Math.ceil((cooldownEnd - new Date()) / 3600000);
-            return res.status(429).json({ error: `Konto zostało niedawno usunięte. Możesz założyć nowe konto za ${hoursLeft}h.` });
+            const msLeft = cooldownEnd - new Date();
+            const h = Math.floor(msLeft / 3600000);
+            const m = Math.ceil((msLeft % 3600000) / 60000);
+            const timeStr = h > 0 ? `${h}h ${m}min` : `${m} min`;
+            return res.status(429).json({ error: `Możesz ponownie dołączyć za ${timeStr}.` });
           }
         }
         // Re-activate: reset ALL stats to zero, keep founder_number
