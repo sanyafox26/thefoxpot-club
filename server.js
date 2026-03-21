@@ -440,6 +440,17 @@ async function migrate() {
 
   await ensureColumn("fp1_checkins",       "war_day",               "TEXT");
   await ensureColumn("fp1_checkins",       "visitor_phone",         "TEXT");
+  await ensureColumn("fp1_checkins",       "visitor_lat",           "NUMERIC(10,7)");
+  await ensureColumn("fp1_checkins",       "visitor_lng",           "NUMERIC(10,7)");
+  await ensureColumn("fp1_checkins",       "distance_km",           "NUMERIC(10,3)");
+  await ensureColumn("fp1_checkins",       "suspicious_distance",   "BOOLEAN NOT NULL DEFAULT FALSE");
+
+  // Proximity promo fields for venues
+  await ensureColumn("fp1_venues",          "promo_radius",          "INT");
+  await ensureColumn("fp1_venues",          "promo_message",         "TEXT");
+  await ensureColumn("fp1_venues",          "promo_active",          "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_venues",          "promo_start",           "TIMESTAMPTZ");
+  await ensureColumn("fp1_venues",          "promo_end",             "TIMESTAMPTZ");
   await ensureColumn("fp1_counted_visits", "war_day",               "TEXT");
   await ensureColumn("fp1_counted_visits", "visitor_phone",         "TEXT");
   await ensureColumn("fp1_counted_visits", "is_credited",           "BOOLEAN NOT NULL DEFAULT TRUE");
@@ -1289,15 +1300,31 @@ async function countXY(venueId, userId) {
   return { X: x.rows[0].c, Y: y.rows[0].c };
 }
 
-async function createCheckin(venueId, userId) {
+function haversineKm(lat1, lng1, lat2, lng2) {
+  if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+async function createCheckin(venueId, userId, foxLat, foxLng) {
   const otp = otp6(), now = new Date(), warDay = warsawDayKey(now);
   const expires = new Date(now.getTime() + 10 * 60 * 1000);
-  // Save visitor phone for anti-cheat
   const phoneQ = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [String(userId)]);
   const visitorPhone = phoneQ.rows[0]?.phone || null;
+  // Calculate distance to venue (soft anti-fraud)
+  let distKm = null, suspicious = false;
+  if (foxLat && foxLng) {
+    const vq = await pool.query(`SELECT lat, lng FROM fp1_venues WHERE id=$1`, [venueId]);
+    if (vq.rows[0]?.lat && vq.rows[0]?.lng) {
+      distKm = haversineKm(foxLat, foxLng, parseFloat(vq.rows[0].lat), parseFloat(vq.rows[0].lng));
+      if (distKm !== null) distKm = parseFloat(distKm.toFixed(3));
+      suspicious = distKm !== null && distKm > 5;
+    }
+  }
   const r = await pool.query(
-    `INSERT INTO fp1_checkins(venue_id,user_id,otp,expires_at,war_day,visitor_phone) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [venueId, String(userId), otp, expires.toISOString(), warDay, visitorPhone]
+    `INSERT INTO fp1_checkins(venue_id,user_id,otp,expires_at,war_day,visitor_phone,visitor_lat,visitor_lng,distance_km,suspicious_distance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [venueId, String(userId), otp, expires.toISOString(), warDay, visitorPhone, foxLat||null, foxLng||null, distKm, suspicious]
   );
   return r.rows[0];
 }
@@ -2235,7 +2262,7 @@ app.get("/api/venues", async (req, res) => {
       }
     }
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number, promo_radius, promo_message, promo_active, promo_start, promo_end FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -2537,7 +2564,9 @@ app.post("/api/checkin", requireWebAppAuth, async (req, res) => {
       }
     }
 
-    const checkin = await createCheckin(venueId, userId);
+    const foxLat = parseFloat(req.body.lat) || null;
+    const foxLng = parseFloat(req.body.lng) || null;
+    const checkin = await createCheckin(venueId, userId, foxLat, foxLng);
     res.json({
       already_today: alreadyToday,
       otp:        checkin.otp,
@@ -4118,9 +4147,40 @@ app.get("/api/recommendation", async (req, res) => {
       foxDistrict = fq.rows[0]?.district || null;
     }
 
+    // ── Step 0: Proximity promo (highest priority) ──
+    const foxLat = parseFloat(req.query.lat) || null;
+    const foxLng = parseFloat(req.query.lng) || null;
+    let card = null;
+
+    if (foxLat && foxLng) {
+      const proxyQ = await pool.query(
+        `SELECT id, name, discount_percent, promo_radius, promo_message FROM fp1_venues
+         WHERE approved=TRUE AND promo_active=TRUE AND promo_start<=NOW() AND promo_end>NOW()
+         AND lat IS NOT NULL AND lng IS NOT NULL
+         ${excludeVenueId ? 'AND id != $1' : ''}
+         LIMIT 20`,
+        excludeVenueId ? [excludeVenueId] : []
+      );
+      for (const v of proxyQ.rows) {
+        const dist = haversineKm(foxLat, foxLng, parseFloat(v.lat), parseFloat(v.lng));
+        const radius = (v.promo_radius || 500) / 1000;
+        if (dist !== null && dist <= radius) {
+          card = {
+            type: "proximity_promo", card_type: "proximity_promo",
+            title: "📍 Promocja w pobliżu!",
+            name: v.name,
+            text: v.promo_message || `🦊 ${v.name} czeka na Ciebie! Sprawdź ofertę.`,
+            discount: parseFloat(v.discount_percent) || 10,
+            district: `📍 ${Math.round(dist*1000)} m od Ciebie`,
+            status_badge: null, venue_id: v.id, is_promo: true
+          };
+          break;
+        }
+      }
+    }
+
     // ── Step 1: Paid or system? ──
     const promoChance = slot === "map" ? 0.7 : 0.5;
-    let card = null;
 
     if (Math.random() < promoChance) {
       // Paid promo — round-robin for equal distribution

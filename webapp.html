@@ -406,6 +406,11 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div id="bestFoxContent" style="font-size:13px;color:var(--text);line-height:1.5"></div>
         <button id="bestFoxCta" onclick="go('top')" style="margin-top:10px;width:100%;padding:10px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.25);border-radius:var(--radius-sm);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">Zobacz ranking →</button>
       </div>
+      <!-- Nearby venues (geo-based) -->
+      <div id="nearbyCard" style="display:none;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:8px;padding:0 2px">📍 Lokale w pobliżu</div>
+        <div id="nearbyList"></div>
+      </div>
       <!-- Social bonus (3rd position) -->
       <div class="card" id="socialBonusCard" style="display:none;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -974,10 +979,39 @@ function inviteUrl(code) {
 }
 const INVITE_SHARE_TEXT = 'Dołącz do The FoxPot Club! Zniżki w najlepszych lokalach w Warszawie 🦊';
 
+// ── Geolocation ──
+let _foxLat = null, _foxLng = null, _geoWatchId = null;
+function initGeo() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    pos => { _foxLat = pos.coords.latitude; _foxLng = pos.coords.longitude; },
+    () => {}, { enableHighAccuracy: false, timeout: 10000 }
+  );
+  // Update every 5 min
+  _geoWatchId = setInterval(() => {
+    navigator.geolocation.getCurrentPosition(
+      pos => { _foxLat = pos.coords.latitude; _foxLng = pos.coords.longitude; },
+      () => {}, { enableHighAccuracy: false, timeout: 10000 }
+    );
+  }, 5 * 60 * 1000);
+}
+function distanceKm(lat1, lng1, lat2, lng2) {
+  if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function formatDist(km) {
+  if (km === null) return '';
+  if (km < 0.1) return Math.round(km*1000) + ' m';
+  if (km < 1) return (km*1000).toFixed(0) + ' m';
+  return km.toFixed(1) + ' km';
+}
+
 // ── App Ready ──
 function appReady() {
   if(IS_TELEGRAM && TG) { TG.ready(); }
-  // Standalone/Capacitor — nothing extra needed
+  initGeo();
 }
 appReady();
 
@@ -1169,6 +1203,8 @@ async function loadProfile(){
     renderSocialBonus(d);
     // Best Fox of the month
     loadBestFox();
+    // Nearby venues
+    renderNearby();
     // Show leave button only for authenticated users
     const $leave=q('pLeaveSection');if($leave)$leave.style.display='block';
   }catch(e){
@@ -1298,6 +1334,54 @@ async function loadBestFox() {
     q('bestFoxContent').innerHTML = 'Odkrywaj lokale z FoxPot Club i oszczędzaj!';
     q('bestFoxCta').style.display = 'none';
   }
+}
+
+// ─── Nearby Venues (geo-based) ───
+async function renderNearby() {
+  const card = q('nearbyCard');
+  const list = q('nearbyList');
+  if (!card || !list || !_foxLat || !_foxLng) { if(card) card.style.display='none'; return; }
+  await ensureVenuesForNearby();
+  if (!S.venues?.length) { card.style.display='none'; return; }
+  const nearby = S.venues
+    .map(v => ({ ...v, dist: distanceKm(_foxLat, _foxLng, parseFloat(v.lat), parseFloat(v.lng)) }))
+    .filter(v => v.dist !== null && v.dist < 5)
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, 5);
+  if (!nearby.length) { card.style.display='none'; return; }
+  card.style.display = 'block';
+  list.innerHTML = nearby.map(v => {
+    const d = formatDist(v.dist);
+    const visits = v.my_visits || 0;
+    const monthLeft = 3 - (v.my_monthly_credited || 0);
+    let context = '';
+    if (visits === 0) context = `<span style="color:var(--fox)">Nowy dla Ciebie!</span>`;
+    else if (monthLeft > 0) context = `<span style="color:var(--green)">Jeszcze ${monthLeft} ${monthLeft===1?'wizyta':'wizyty'} w tym miesiącu</span>`;
+    else context = `<span style="color:var(--muted)">Limit wizyt osiągnięty</span>`;
+    const isClose = v.dist < 0.5;
+    return `<div onclick="go('map');setTimeout(()=>openVenueDetail(${v.id}),300)" style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:4px;background:${isClose?'rgba(46,204,113,.06)':'var(--card-bg)'};border:1px solid ${isClose?'rgba(46,204,113,.15)':'var(--card-border)'};border-radius:var(--radius-sm);cursor:pointer">
+      <div style="font-size:18px;width:32px;text-align:center">${isClose?'📍':'🏪'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.name)}</div>
+        <div style="font-size:11px">${context}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:12px;font-weight:700;color:var(--green)">${d}</div>
+        <div style="font-size:10px;color:var(--muted)">${v.discount_percent||10}% zniżki</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Load venues data for nearby (if not loaded via map yet)
+async function ensureVenuesForNearby() {
+  if (S.venues?.length) return;
+  try {
+    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const r = await fetch(BASE+'/api/venues', {headers:h});
+    const d = await r.json();
+    S.venues = d.venues || d || [];
+  } catch(e) {}
 }
 
 function openSocialLink(platform, url) {
@@ -1455,7 +1539,7 @@ async function doCheckin(){
   q('otpBox').classList.remove('show');
   if(S.otpTimer){clearInterval(S.otpTimer);S.otpTimer=null}
   try{
-    const d=await api('/api/checkin','POST',{venue_id:Number(vId)});
+    const d=await api('/api/checkin','POST',{venue_id:Number(vId), lat:_foxLat, lng:_foxLng});
     const venue=S.venues.find(v=>v.id===Number(vId));
     if(d.already_today){
       // Repeat visit - still show OTP for discount, but mark as repeat
@@ -2597,6 +2681,8 @@ async function fetchRec(slot, exclude) {
     const params = new URLSearchParams();
     params.set('slot', slot);
     if (exclude) params.set('exclude', exclude);
+    if (_foxLat) params.set('lat', _foxLat);
+    if (_foxLng) params.set('lng', _foxLng);
     const h = {};
     if (INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA;
     if (_jwtToken) h['Authorization'] = 'Bearer ' + _jwtToken;
