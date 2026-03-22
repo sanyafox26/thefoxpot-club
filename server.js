@@ -811,6 +811,9 @@ async function migrate() {
   await ensureColumn("fp1_leaderboard_cache", "achieved_at", "TIMESTAMPTZ");
 
   await migrateSupport(pool);
+  // Set Praga Street Food coordinates to Szwedzka 30, Warszawa (for geo testing)
+  await pool.query(`UPDATE fp1_venues SET lat=52.2563, lng=21.0412, address='Szwedzka 30, Warszawa' WHERE name='Praga Street Food' AND (lat IS NULL OR lat != 52.2563)`).catch(()=>{});
+
   // One-time fix: Proba3 got inflated rating from old INSERT (rating=1 base instead of 0)
   await pool.query(`UPDATE fp1_foxes SET rating=21 WHERE username='Proba3' AND rating=24`).catch(()=>{});
 
