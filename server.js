@@ -1487,7 +1487,7 @@ async function confirmOtp(venueId, otp) {
     // Auto invite every 5 visits
     inviteAutoAdded = await awardInvitesFrom5Visits(userId);
     // Achievements
-    newAch = await checkAndAwardAchievements(userId);
+    newAch = await checkAchievements(userId);
     // Mark reservation as used
     await pool.query(`UPDATE fp1_reservations SET used=TRUE WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`, [userId, venueId]);
     // Demo fox upgrade
