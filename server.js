@@ -2105,17 +2105,182 @@ app.get("/venue/:id", async (req, res) => {
   } catch(e) { console.error("venue teaser err:",e); res.status(500).send("Error"); }
 });
 
-// Public venue page by slug: /lokal/zloty-kebab → same as /venue/:id
+// Public venue page by slug: /lokal/zloty-kebab
 app.get("/lokal/:slug", async (req, res) => {
   try {
     const slug = String(req.params.slug).toLowerCase().trim();
-    const v = await pool.query(`SELECT id FROM fp1_venues WHERE slug=$1 AND approved=TRUE LIMIT 1`, [slug]);
-    if (v.rowCount === 0) return res.status(404).send("Nie znaleziono lokalu");
-    // Reuse existing /venue/:id handler by redirecting internally
-    req.params.id = String(v.rows[0].id);
-    req.url = `/venue/${v.rows[0].id}`;
-    return app._router.handle(req, res, () => res.status(404).send("Not found"));
-  } catch(e) { res.status(500).send("Błąd"); }
+    const vr = await pool.query(
+      `SELECT id,name,slug,city,address,lat,lng,venue_type,cuisine,tags,description,is_trial,
+              discount_percent,opening_hours,status_temporary,google_place_id,pioneer_number,
+              instagram_url,facebook_url,tiktok_url
+       FROM fp1_venues WHERE slug=$1 AND approved=TRUE LIMIT 1`, [slug]
+    );
+    if (vr.rowCount === 0) return res.status(404).send(pageShell("Nie znaleziono",'<div style="text-align:center;padding:60px 20px"><h1 style="font-size:24px;margin-bottom:12px">Lokal nie znaleziony</h1><a href="/" style="color:#E8751A">← Strona główna</a></div>'));
+    const v = vr.rows[0];
+    const e = escapeHtml;
+    const disc = parseFloat(v.discount_percent) || 10;
+    const cv = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [v.id]);
+    const uf = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [v.id]);
+    const visits = cv.rows[0]?.cnt || 0, foxes = uf.rows[0]?.cnt || 0;
+    const photos = await pool.query(`SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 10`, [v.id]);
+    const menuItems = await pool.query(`SELECT name,category,price,photo_url FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [v.id]);
+    const tgs = v.tags ? v.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
+    const firstPhoto = photos.rows[0]?.url || (v.google_place_id ? `/api/venue-photo/${v.id}?w=800` : null);
+    const canonicalUrl = `${PUBLIC_URL}/lokal/${v.slug}`;
+    const tpL = [v.venue_type, v.cuisine].filter(Boolean).join(" · ");
+    const metaTitle = `${v.name}${tpL ? ' — ' + tpL : ''}, ${v.city || 'Warszawa'} | FoxPot Club`.slice(0, 60);
+    const metaDesc = `Odkryj ${v.name} w ${e(v.address || v.city || 'Warszawa')}. ${tpL ? tpL + '. ' : ''}Sprawdź menu i dołącz do FoxPot Club — zniżka min. ${disc}%!`.slice(0, 160);
+
+    // Group menu by category
+    const menuCats = {};
+    const catLabels = {main:'Dania główne',snack:'Przekąski',soup:'Zupy',dessert:'Desery',drink:'Napoje',alcohol:'Alkohole'};
+    menuItems.rows.forEach(m => { const c = m.category || 'main'; if (!menuCats[c]) menuCats[c] = []; menuCats[c].push(m); });
+
+    // Social links
+    const socials = [
+      v.instagram_url ? `<a href="${e(v.instagram_url)}" target="_blank" rel="noopener noreferrer" style="color:#E1306C;font-size:24px;text-decoration:none">📸</a>` : '',
+      v.facebook_url ? `<a href="${e(v.facebook_url)}" target="_blank" rel="noopener noreferrer" style="color:#1877F2;font-size:24px;text-decoration:none">👍</a>` : '',
+      v.tiktok_url ? `<a href="${e(v.tiktok_url)}" target="_blank" rel="noopener noreferrer" style="color:#00f2ea;font-size:24px;text-decoration:none">🎵</a>` : '',
+    ].filter(Boolean).join(' ');
+
+    // JSON-LD Schema
+    const schema = JSON.stringify({
+      "@context": "https://schema.org", "@type": "Restaurant",
+      name: v.name, image: firstPhoto || undefined,
+      address: { "@type": "PostalAddress", streetAddress: v.address || '', addressLocality: v.city || 'Warszawa', addressCountry: "PL" },
+      geo: v.lat && v.lng ? { "@type": "GeoCoordinates", latitude: parseFloat(v.lat), longitude: parseFloat(v.lng) } : undefined,
+      url: canonicalUrl,
+      servesCuisine: v.cuisine || undefined,
+      openingHours: v.opening_hours || undefined,
+    });
+
+    // Menu HTML
+    const menuH = Object.keys(menuCats).length > 0 ? `<div style="margin-bottom:24px">
+      <h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>
+      ${Object.entries(menuCats).map(([cat, items]) => `
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#E8751A;margin-bottom:8px">${e(catLabels[cat] || cat)}</div>
+          ${items.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+            ${m.photo_url ? `<img src="${m.photo_url}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0"/>` : ''}
+            <div style="flex:1"><div style="font-size:14px;font-weight:600">${e(m.name)}</div></div>
+            ${m.price ? `<div style="font-size:14px;font-weight:700;color:#E8751A;flex-shrink:0">${parseFloat(m.price).toFixed(0)} zł</div>` : ''}
+          </div>`).join('')}
+        </div>
+      `).join('')}
+    </div>` : '';
+
+    // Photos gallery
+    const galleryH = photos.rowCount > 1 ? `<div style="margin-bottom:24px">
+      <h2 style="font-size:18px;font-weight:800;margin-bottom:12px">📸 Zdjęcia</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">
+        ${photos.rows.map(p => `<div style="aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04)"><img src="${p.url}" style="width:100%;height:100%;object-fit:cover" loading="lazy"/></div>`).join('')}
+      </div>
+    </div>` : '';
+
+    // Map
+    const mapH = v.lat && v.lng ? `<div style="margin-bottom:24px">
+      <h2 style="font-size:18px;font-weight:800;margin-bottom:12px">📍 Lokalizacja</h2>
+      <div style="border-radius:12px;overflow:hidden;height:200px;margin-bottom:8px">
+        <iframe src="https://maps.google.com/maps?q=${v.lat},${v.lng}&z=16&output=embed" style="width:100%;height:100%;border:0" loading="lazy" allowfullscreen></iframe>
+      </div>
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener noreferrer" style="display:block;padding:12px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#fff;font-weight:600;font-size:14px;text-decoration:none">🗺️ Otwórz w Mapach Google</a>
+    </div>` : '';
+
+    res.send(`<!DOCTYPE html><html lang="pl"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>${e(metaTitle)}</title>
+<meta name="description" content="${e(metaDesc)}"/>
+<meta property="og:title" content="${e(metaTitle)}"/>
+<meta property="og:description" content="${e(metaDesc)}"/>
+<meta property="og:url" content="${canonicalUrl}"/>
+<meta property="og:type" content="restaurant"/>
+${firstPhoto ? `<meta property="og:image" content="${firstPhoto}"/>` : ''}
+<meta name="twitter:card" content="summary_large_image"/>
+<link rel="canonical" href="${canonicalUrl}"/>
+<script type="application/ld+json">${schema}</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#f0f0f5;line-height:1.6}
+.wrap{max-width:640px;margin:0 auto}
+.hero{position:relative;height:280px;overflow:hidden;background:#12121f}
+.hero img{width:100%;height:100%;object-fit:cover}
+.hero-overlay{position:absolute;inset:0;background:linear-gradient(transparent 40%,rgba(26,26,46,.95))}
+.hero-text{position:absolute;bottom:20px;left:20px;right:20px;z-index:1}
+.hero-text h1{font-size:28px;font-weight:800;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.hero-text p{font-size:14px;color:rgba(255,255,255,.7)}
+.section{padding:16px 20px}
+.badge-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.info-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px;color:rgba(255,255,255,.7)}
+.cta-box{background:linear-gradient(135deg,rgba(232,117,26,.15),rgba(232,117,26,.05));border:1px solid rgba(232,117,26,.3);border-radius:16px;padding:24px 20px;text-align:center;margin:16px 20px 32px}
+.cta-btn{display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#E8751A,#f5a623);color:#000;font-weight:700;border-radius:12px;font-size:15px;text-decoration:none}
+.nav-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.nav-bar a{color:#E8751A;text-decoration:none;font-weight:700;font-size:14px}
+.verified{display:flex;align-items:center;gap:6px;padding:10px 16px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:10px;font-size:13px;color:#2ecc71;font-weight:600}
+</style></head><body>
+<div class="wrap">
+  <div class="nav-bar"><a href="/">🦊 FoxPot Club</a>${socials ? `<div style="display:flex;gap:12px">${socials}</div>` : ''}</div>
+  <div class="hero">${firstPhoto ? `<img src="${firstPhoto}" alt="${e(v.name)}"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:64px">🏪</div>`}<div class="hero-overlay"></div><div class="hero-text"><h1>${e(v.name)}</h1>${tpL ? `<p>${e(tpL)}</p>` : ''}</div></div>
+
+  <div class="section">
+    ${v.address ? `<div class="info-row">📍 ${e(v.address)}${v.city ? ', ' + e(v.city) : ''}</div>` : ''}
+    ${v.opening_hours ? `<div class="info-row">🕐 ${e(v.opening_hours.split('\n')[0])}</div>` : ''}
+    ${v.status_temporary ? `<div class="info-row" style="color:#FBBF24">⚠️ ${e(v.status_temporary)}</div>` : ''}
+    <div style="display:flex;gap:8px;margin:12px 0">
+      ${v.lat && v.lng ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener noreferrer" style="flex:1;padding:10px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none">🗺️ Nawiguj</a>` : ''}
+    </div>
+  </div>
+
+  <div class="section"><div class="verified">✓ ${visits > 0 ? `${visits} zweryfikowanych wizyt w FoxPot Club` : 'Nowy lokal w FoxPot Club!'}</div></div>
+
+  <div class="section">
+    <div class="badge-bar">
+      <span class="badge" style="background:rgba(232,117,26,.15);color:#E8751A">🎁 ${disc}% zniżki</span>
+      ${tgs.includes('vegan') ? '<span class="badge" style="background:#1a3a1a;color:#4ade80">🌱 Vegan</span>' : ''}
+      ${tgs.includes('gluten-free') ? '<span class="badge" style="background:#3a2a0a;color:#fbbf24">Gluten-free</span>' : ''}
+      ${v.pioneer_number ? `<span class="badge" style="background:rgba(255,215,0,.1);color:#ffd700">👑 Pionier #${v.pioneer_number}</span>` : ''}
+    </div>
+    ${v.description ? `<p style="font-size:14px;color:rgba(255,255,255,.7);line-height:1.7">${e(v.description)}</p>` : ''}
+  </div>
+
+  <div class="section">${menuH}</div>
+  <div class="section">${galleryH}</div>
+  <div class="section">${mapH}</div>
+
+  <div class="cta-box">
+    <div style="font-size:28px;margin-bottom:8px">🦊</div>
+    <h2 style="font-size:18px;font-weight:800;margin-bottom:8px;color:#E8751A">Dołącz do FoxPot Club</h2>
+    <p style="font-size:13px;color:rgba(255,255,255,.6);margin-bottom:16px;line-height:1.5">Zniżki w najlepszych lokalach. Sprawdź ${e(v.name)} i oszczędzaj!</p>
+    <a class="cta-btn" href="https://t.me/thefoxpot_club_bot?start=venue_${v.id}">🦊 Dołącz teraz</a>
+  </div>
+
+  <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.2)">
+    <a href="/" style="color:rgba(255,255,255,.3);text-decoration:none">thefoxpot.club</a> · <a href="/rules" style="color:rgba(255,255,255,.3);text-decoration:none">Regulamin</a> · <a href="/privacy" style="color:rgba(255,255,255,.3);text-decoration:none">Prywatność</a>
+  </div>
+</div></body></html>`);
+  } catch(e) { console.error("lokal page err:", e); res.status(500).send("Błąd"); }
+});
+
+// Dynamic sitemap
+app.get("/sitemap.xml", async (_req, res) => {
+  try {
+    const venues = await pool.query(`SELECT slug FROM fp1_venues WHERE approved=TRUE AND slug IS NOT NULL ORDER BY id`);
+    const urls = [
+      `<url><loc>${PUBLIC_URL}/</loc><priority>1.0</priority></url>`,
+      `<url><loc>${PUBLIC_URL}/faq</loc></url>`,
+      `<url><loc>${PUBLIC_URL}/rules</loc></url>`,
+      `<url><loc>${PUBLIC_URL}/privacy</loc></url>`,
+      `<url><loc>${PUBLIC_URL}/partners</loc></url>`,
+      ...venues.rows.map(v => `<url><loc>${PUBLIC_URL}/lokal/${v.slug}</loc></url>`)
+    ];
+    res.setHeader("Content-Type", "application/xml");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`);
+  } catch(e) { res.status(500).send("Error"); }
+});
+
+app.get("/robots.txt", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain");
+  res.send(`User-agent: *\nAllow: /\nSitemap: ${PUBLIC_URL}/sitemap.xml\n`);
 });
 
 app.get("/health", async (_req, res) => {
