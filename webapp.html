@@ -2753,7 +2753,7 @@ async function loadVenueMenu(venueId, btn) {
       const isPdf = mfUrl.toLowerCase().endsWith('.pdf');
       html += '<div style="margin-top:10px">' + (isPdf
         ? '<a href="' + esc(mfUrl) + '" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;color:var(--fox);font-weight:600;font-size:13px;text-decoration:none">📄 Zobacz pełne menu (PDF)</a>'
-        : '<img src="' + esc(mfUrl) + '" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1)" loading="lazy"/>') + '</div>';
+        : '<div style="text-align:center"><img src="' + esc(mfUrl) + '" onclick="window.open(this.src,\'_blank\')" style="max-width:280px;width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/><div style="font-size:10px;color:var(--muted);margin-top:4px">Kliknij aby powiększyć</div></div>') + '</div>';
     }
     el.innerHTML = html;
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }

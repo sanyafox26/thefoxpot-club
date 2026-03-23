@@ -2179,7 +2179,7 @@ app.get("/lokal/:slug", async (req, res) => {
     const mfHeader = !menuH ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : '';
     const menuFileH = mfUrl ? `<div style="margin-bottom:24px">${mfHeader}${mfIsPdf
       ? `<div style="border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-bottom:8px"><iframe src="${e(mfUrl)}" style="width:100%;height:500px;border:0" loading="lazy"></iframe></div><a href="${e(mfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:8px;text-align:center;font-size:12px;color:#f5a623;text-decoration:none">📄 Otwórz menu (PDF)</a>`
-      : `<img src="${e(mfUrl)}" alt="Menu" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src=this.src" style="width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/>`
+      : `<div style="text-align:center"><img src="${e(mfUrl)}" alt="Menu" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src=this.src" style="max-width:400px;width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/><div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">Kliknij aby powiększyć</div></div>`
     }</div>` : '';
 
     // Photos gallery
