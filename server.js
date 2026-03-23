@@ -3653,7 +3653,7 @@ app.get("/api/venue/:id/reviews", async (req, res) => {
     const venueId = Number(req.params.id);
     const reviews = await pool.query(
       `SELECT r.id, f.username, r.rating, r.text, r.venue_reply, r.venue_reply_at, r.created_at
-       FROM fp1_reviews r LEFT JOIN fp1_foxes f ON f.user_id = r.user_id
+       FROM fp1_reviews r LEFT JOIN fp1_foxes f ON f.user_id::text = r.user_id
        WHERE r.venue_id = $1 ORDER BY r.created_at DESC LIMIT 50`,
       [venueId]
     );
@@ -4835,7 +4835,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   // Reviews
   const venueReviews = await pool.query(
     `SELECT r.id, f.username, r.rating, r.text, r.venue_reply, r.venue_reply_at, r.created_at
-     FROM fp1_reviews r LEFT JOIN fp1_foxes f ON f.user_id = r.user_id
+     FROM fp1_reviews r LEFT JOIN fp1_foxes f ON f.user_id::text = r.user_id
      WHERE r.venue_id = $1 ORDER BY r.created_at DESC LIMIT 30`, [venueId]
   );
   const reviewStats = await pool.query(
