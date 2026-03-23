@@ -2175,18 +2175,18 @@ app.get("/lokal/:slug", async (req, res) => {
       `).join('')}
     </div>` : '';
     const mfUrl = v.menu_file_url || '';
-    const mfIsPdf = mfUrl.toLowerCase().endsWith('.pdf') || mfUrl.includes('/raw/upload/');
+    const mfIsPdf = mfUrl.toLowerCase().endsWith('.pdf');
     const mfHeader = !menuH ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : '';
     const menuFileH = mfUrl ? `<div style="margin-bottom:24px">${mfHeader}${mfIsPdf
       ? `<div style="border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-bottom:8px"><iframe src="${e(mfUrl)}" style="width:100%;height:500px;border:0" loading="lazy"></iframe></div><a href="${e(mfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:8px;text-align:center;font-size:12px;color:#f5a623;text-decoration:none">📄 Otwórz menu (PDF)</a>`
-      : `<img src="${e(mfUrl)}" alt="Menu" style="width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1)" loading="lazy"/>`
+      : `<img src="${e(mfUrl)}" alt="Menu" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src=this.src" style="width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/>`
     }</div>` : '';
 
     // Photos gallery
     const galleryH = photos.rowCount > 1 ? `<div style="margin-bottom:24px">
       <h2 style="font-size:18px;font-weight:800;margin-bottom:12px">📸 Zdjęcia</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">
-        ${photos.rows.map(p => `<div style="aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04)"><img src="${p.url}" style="width:100%;height:100%;object-fit:cover" loading="lazy"/></div>`).join('')}
+        ${photos.rows.map(p => `<div style="aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04);cursor:pointer" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src='${p.url}'"><img src="${p.url}" style="width:100%;height:100%;object-fit:cover" loading="lazy"/></div>`).join('')}
       </div>
     </div>` : '';
 
@@ -2271,6 +2271,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.2)">
     <a href="/" style="color:rgba(255,255,255,.3);text-decoration:none">thefoxpot.club</a> · <a href="/rules" style="color:rgba(255,255,255,.3);text-decoration:none">Regulamin</a> · <a href="/privacy" style="color:rgba(255,255,255,.3);text-decoration:none">Prywatność</a>
   </div>
+<div id="foxLightbox" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.9);align-items:center;justify-content:center;cursor:pointer"><img id="foxLightboxImg" src="" style="max-width:95%;max-height:90vh;border-radius:12px;object-fit:contain"/><div style="position:fixed;top:16px;right:20px;font-size:28px;color:#fff;font-weight:700">✕</div></div>
 </div></body></html>`);
   } catch(e) { console.error("lokal page err:", e); res.status(500).send("Błąd"); }
 });
