@@ -486,6 +486,8 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "instagram_url",         "TEXT");
   await ensureColumn("fp1_venues",         "facebook_url",          "TEXT");
   await ensureColumn("fp1_venues",         "tiktok_url",            "TEXT");
+  await ensureColumn("fp1_venues",         "youtube_url",           "TEXT");
+  await ensureColumn("fp1_venues",         "website_url",           "TEXT");
   // Venue slug for public page
   await ensureColumn("fp1_venues",         "slug",                  "TEXT");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_slug ON fp1_venues(slug) WHERE slug IS NOT NULL`).catch(()=>{});
@@ -2112,7 +2114,7 @@ app.get("/lokal/:slug", async (req, res) => {
     const vr = await pool.query(
       `SELECT id,name,slug,city,address,lat,lng,venue_type,cuisine,tags,description,is_trial,
               discount_percent,opening_hours,status_temporary,google_place_id,pioneer_number,
-              instagram_url,facebook_url,tiktok_url
+              instagram_url,facebook_url,tiktok_url,youtube_url,website_url
        FROM fp1_venues WHERE slug=$1 AND approved=TRUE LIMIT 1`, [slug]
     );
     if (vr.rowCount === 0) return res.status(404).send(pageShell("Nie znaleziono",'<div style="text-align:center;padding:60px 20px"><h1 style="font-size:24px;margin-bottom:12px">Lokal nie znaleziony</h1><a href="/" style="color:#E8751A">← Strona główna</a></div>'));
@@ -2141,6 +2143,8 @@ app.get("/lokal/:slug", async (req, res) => {
       v.instagram_url ? `<a href="${e(v.instagram_url)}" target="_blank" rel="noopener noreferrer" style="color:#E1306C;font-size:24px;text-decoration:none">📸</a>` : '',
       v.facebook_url ? `<a href="${e(v.facebook_url)}" target="_blank" rel="noopener noreferrer" style="color:#1877F2;font-size:24px;text-decoration:none">👍</a>` : '',
       v.tiktok_url ? `<a href="${e(v.tiktok_url)}" target="_blank" rel="noopener noreferrer" style="color:#00f2ea;font-size:24px;text-decoration:none">🎵</a>` : '',
+      v.youtube_url ? `<a href="${e(v.youtube_url)}" target="_blank" rel="noopener noreferrer" style="color:#FF0000;font-size:24px;text-decoration:none">▶️</a>` : '',
+      v.website_url ? `<a href="${e(v.website_url)}" target="_blank" rel="noopener noreferrer" style="color:#f5a623;font-size:24px;text-decoration:none">🌐</a>` : '',
     ].filter(Boolean).join(' ');
 
     // JSON-LD Schema
@@ -4878,6 +4882,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       <div class="topbar"><h1>🦊 ${escapeHtml(venue?.name||venueId)} ${statusHtml}</h1><a href="/panel/logout">Wyloguj</a></div>
       ${flash(req)}
       <div style="margin-top:10px;opacity:.7;font-size:13px">Kod lokalu: <b>${escapeHtml(venue.ref_code||'brak')}</b> | Łącznie wizyt: <b>${xy.rows[0].c}</b></div>
+      ${venue.slug ? `<div style="margin-top:8px;display:flex;align-items:center;gap:6px"><a href="https://thefoxpot.club/lokal/${escapeHtml(venue.slug)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.25);border-radius:8px;color:#f5a623;font-size:12px;font-weight:700;text-decoration:none">🌐 Zobacz stronę</a><button onclick="navigator.clipboard.writeText('https://thefoxpot.club/lokal/${escapeHtml(venue.slug)}');this.textContent='✅';setTimeout(()=>this.textContent='📋',1500)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:rgba(255,255,255,.5);padding:4px 8px;cursor:pointer;font-size:12px">📋</button></div>` : ''}
     </div>
     <div class="card">
       <h2>📊 Nowi Fox przez twój kod</h2>
@@ -4941,7 +4946,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       }).join("")}
     </div>` : ""}
     <div class="card">
-      <h2>📸 Zdjęcia lokalu (max 3)</h2>
+      <h2>📸 Zdjęcia lokalu (max 10)</h2>
       <p class="muted" style="margin-bottom:12px">Wybierz zdjęcia z telefonu lub komputera. Automatycznie zostaną zapisane.</p>
       <div id="photosGrid" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
       <div id="photosMsg" style="margin-bottom:8px"></div>
@@ -4964,7 +4969,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
               <button onclick="deletePhoto(\${p.id})" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;color:#ef4444;font-size:16px;width:28px;height:28px;border-radius:50%;cursor:pointer">✕</button>
             </div>\`;
           });
-          if(venuePhotos.length<3){
+          if(venuePhotos.length<10){
             html+=\`<label style="display:flex;align-items:center;justify-content:center;width:120px;height:120px;border-radius:12px;border:2px dashed rgba(255,255,255,.2);cursor:pointer;flex-direction:column;gap:4px">
               <input type="file" accept="image/jpeg,image/png,image/webp" onchange="uploadPhoto(this)" style="display:none"/>
               <span style="font-size:28px">+</span>
@@ -5176,8 +5181,8 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       }).join('')}
     </div>
     <div class="card">
-      <h2>⚙️ Ustawienia lokalu</h2>
-      <form method="POST" action="/panel/settings">
+      <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">⚙️ Ustawienia lokalu ▾</button>
+      <form method="POST" action="/panel/settings" style="display:none">
         <div class="grid2">
           <div><label>Typ lokalu</label><select name="venue_type">
             <option value=""${!venue.venue_type?' selected':''}>— wybierz —</option>
@@ -5209,19 +5214,15 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
             <div><label>Facebook URL</label><input name="facebook_url" value="${escapeHtml(venue.facebook_url||'')}" maxlength="200" placeholder="https://facebook.com/..."/></div>
           </div>
           <div><label>TikTok URL</label><input name="tiktok_url" value="${escapeHtml(venue.tiktok_url||'')}" maxlength="200" placeholder="https://tiktok.com/@..."/></div>
+          <div class="grid2">
+            <div><label>YouTube URL</label><input name="youtube_url" value="${escapeHtml(venue.youtube_url||'')}" maxlength="200" placeholder="https://youtube.com/@..."/></div>
+            <div><label>Website URL</label><input name="website_url" value="${escapeHtml(venue.website_url||'')}" maxlength="200" placeholder="https://..."/></div>
+          </div>
         </div>
         <button type="submit" style="margin-top:12px;width:100%">💾 Zapisz ustawienia</button>
       </form>
     </div>
-    <div class="card">
-      <h2>🌐 Twoja strona w internecie</h2>
-      <p class="muted" style="margin-bottom:8px">Twój lokal ma publiczną stronę, którą możesz udostępniać w social media i Google.</p>
-      <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <input id="venueUrl" readonly value="${PUBLIC_URL}/lokal/${escapeHtml(venue.slug||'')}" style="flex:1;background:transparent;border:none;color:#f0f0f5;font-size:13px;font-family:monospace;outline:none"/>
-        <button onclick="navigator.clipboard.writeText(document.getElementById('venueUrl').value);this.textContent='✅';setTimeout(()=>this.textContent='📋',2000)" style="background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);color:#f5a623;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px">📋</button>
-      </div>
-      <p class="muted" style="font-size:11px">Udostępnij ten link na Instagramie, Facebooku, Google Maps lub wydrukuj QR kod.</p>
-    </div>`));
+    `));
   } catch (e) {
     console.error("DASHBOARD ERROR:", e);
     res.status(500).send(pageShell("Panel — Błąd", `<div class="card"><h2>❌ Błąd ładowania panelu</h2><p class="muted">${escapeHtml(String(e?.message || e).slice(0, 200))}</p><a href="/panel/dashboard">Spróbuj ponownie</a></div>`));
@@ -5422,7 +5423,8 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
     await pool.query(
       `UPDATE fp1_venues SET venue_type=$1, cuisine=$2, description=$3, recommended=$4,
        opening_hours=$5, status_temporary=$6, tags=$7, google_place_id=$8,
-       instagram_url=$10, facebook_url=$11, tiktok_url=$12 WHERE id=$9`,
+       instagram_url=$10, facebook_url=$11, tiktok_url=$12,
+       youtube_url=$13, website_url=$14 WHERE id=$9`,
       [
         String(b.venue_type||"").trim().slice(0,60),
         String(b.cuisine||"").trim().slice(0,60),
@@ -5436,6 +5438,8 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
         String(b.instagram_url||"").trim().slice(0,200),
         String(b.facebook_url||"").trim().slice(0,200),
         String(b.tiktok_url||"").trim().slice(0,200),
+        String(b.youtube_url||"").trim().slice(0,200),
+        String(b.website_url||"").trim().slice(0,200),
       ]
     );
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Ustawienia zapisane ✅")}`);
