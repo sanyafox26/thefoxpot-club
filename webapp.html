@@ -2608,6 +2608,7 @@ async function startTrial(venueId) {
       </div>
     </div>`}
     ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${menuBlock}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
+    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"></div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
@@ -2624,7 +2625,102 @@ async function startTrial(venueId) {
   q('venueModal').classList.add('open');
   haptic('selection');
   initVenuePhotos(v.id);
+  if (S_map.isFox) loadVenueReviewBlock(v.id);
 }
+
+// ─── Venue Review Block ───
+async function loadVenueReviewBlock(venueId) {
+  const block = q('venueReviewBlock' + venueId);
+  if (!block) return;
+  try {
+    // Check if Fox has unreviewd check-in at this venue
+    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const myR = await fetch(BASE+'/api/my-reviews', {headers:h});
+    const myD = await myR.json();
+    const myReviews = (myD.reviews||[]).filter(r => r.venue_id === venueId);
+
+    // Find last confirmed checkin without review
+    const profile = S.profile;
+    let canReview = false, lastCheckinId = null;
+    // We check by trying to find a checkin_id not in existing reviews
+    // For simplicity, show form if Fox has visited and has fewer reviews than visits
+    const v = S.venues.find(x => x.id === venueId);
+    if (v && (v.my_visits||0) > myReviews.length) {
+      canReview = true;
+    }
+
+    let html = '';
+    // Show existing reviews from this Fox
+    if (myReviews.length > 0) {
+      html += `<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Twoje opinie</div>`;
+      html += myReviews.map(r => {
+        const stars = '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating);
+        const date = new Date(r.created_at).toLocaleDateString("pl-PL");
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--fox)">${stars}</span><span style="font-size:10px;color:var(--muted)">${date}</span></div>
+          ${r.text?`<div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4">${esc(r.text)}</div>`:''}
+          ${r.venue_reply?`<div style="margin-top:6px;padding:6px 8px;background:rgba(46,204,113,.06);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--muted)"><span style="color:var(--green);font-weight:700">Odpowiedź lokalu:</span> ${esc(r.venue_reply)}</div>`:''}
+        </div>`;
+      }).join('');
+    }
+    // Review form
+    if (canReview) {
+      html += `<div style="margin-top:8px;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">💬 Zostaw opinię</div>
+        <div id="reviewStars${venueId}" style="display:flex;gap:4px;margin-bottom:8px;font-size:24px;cursor:pointer">
+          ${[1,2,3,4,5].map(i=>`<span onclick="setReviewStars(${venueId},${i})" style="color:var(--border2);transition:color .15s" data-star="${i}">★</span>`).join('')}
+        </div>
+        <textarea id="reviewText${venueId}" maxlength="500" rows="2" placeholder="Podziel się wrażeniami z wizyty..." style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font);resize:none"></textarea>
+        <button id="reviewBtn${venueId}" onclick="submitReview(${venueId})" disabled style="margin-top:6px;width:100%;padding:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);opacity:.4">Wyślij opinię</button>
+        <div id="reviewMsg${venueId}" style="font-size:11px;margin-top:4px;text-align:center"></div>
+      </div>`;
+    }
+    block.innerHTML = html;
+  } catch(e) { block.innerHTML = ''; }
+}
+
+let _reviewRating = {};
+function setReviewStars(venueId, rating) {
+  _reviewRating[venueId] = rating;
+  const container = q('reviewStars' + venueId);
+  if (!container) return;
+  container.querySelectorAll('span').forEach(s => {
+    s.style.color = parseInt(s.dataset.star) <= rating ? 'var(--fox)' : 'var(--border2)';
+  });
+  const btn = q('reviewBtn' + venueId);
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  haptic('selection');
+}
+
+async function submitReview(venueId) {
+  const rating = _reviewRating[venueId];
+  if (!rating) return;
+  const text = q('reviewText' + venueId)?.value?.trim() || null;
+  const btn = q('reviewBtn' + venueId);
+  const msg = q('reviewMsg' + venueId);
+  btn.disabled = true; btn.textContent = '⏳...';
+  try {
+    // Find the latest confirmed checkin_id for this venue
+    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const cq = await fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h});
+    const cd = await cq.json();
+    const checkinId = cd.last_confirmed_id;
+    if (!checkinId) { msg.innerHTML = '<span style="color:var(--red)">Brak potwierdzonego check-inu</span>'; btn.textContent = 'Wyślij opinię'; btn.disabled = false; return; }
+    const d = await api('/api/review', 'POST', { checkin_id: checkinId, rating, text });
+    if (d.ok) {
+      msg.innerHTML = '<span style="color:var(--green)">✅ Dziękujemy za opinię!</span>';
+      haptic('success');
+      setTimeout(() => loadVenueReviewBlock(venueId), 1500);
+    } else {
+      msg.innerHTML = `<span style="color:var(--fox)">${esc(d.error||'Błąd')}</span>`;
+      btn.textContent = 'Wyślij opinię'; btn.disabled = false;
+    }
+  } catch(e) {
+    msg.innerHTML = `<span style="color:var(--red)">${esc(e.message||'Błąd')}</span>`;
+    btn.textContent = 'Wyślij opinię'; btn.disabled = false;
+  }
+}
+
 async function loadVenueMenu(venueId, btn) {
   const el = q('venueMenu_' + venueId);
   if (!el) return;

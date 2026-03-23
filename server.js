@@ -514,6 +514,23 @@ async function migrate() {
   `);
   await ensureColumn("fp1_menu_items",     "photo_url",             "TEXT");
 
+  // Reviews (private — visible only to venue in panel)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_reviews (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      venue_id INT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      checkin_id BIGINT UNIQUE,
+      rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      text TEXT,
+      venue_reply TEXT,
+      venue_reply_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reviews_venue ON fp1_reviews(venue_id, created_at DESC)`);
+  await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reviews_user ON fp1_reviews(user_id)`);
+
   // Promotions
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_promotions (
@@ -2081,6 +2098,7 @@ app.get("/venue/:id", async (req, res) => {
       <div class="card" style="text-align:center"><h1 style="font-size:24px;margin-bottom:6px">${escapeHtml(v.name)}</h1>${tpL?`<p style="color:rgba(255,255,255,.5);font-size:13px;margin-bottom:10px">${escapeHtml(tpL)}</p>`:""}<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${vB}${gB}</div><p style="font-size:14px;color:rgba(255,255,255,.7)">${escapeHtml(v.address||"")}${v.city?", "+escapeHtml(v.city):""}</p>${v.description?`<p style="font-size:13px;color:rgba(255,255,255,.5);margin-top:10px;line-height:1.5">${escapeHtml(v.description)}</p>`:""}</div>
       ${stH}${hrH}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 0"><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#f5a623">${disc}%</div><div style="font-size:11px;color:rgba(255,255,255,.4)">zni&#380;ka</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#7c5cfc">${visits}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">wizyt</div></div><div class="card" style="text-align:center;padding:14px 8px"><div style="font-size:24px;font-weight:800;color:#2ecc71">${foxes}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">Fox'&#243;w</div></div></div>
+      <div style="text-align:center;margin:4px 0 8px;font-size:12px;color:rgba(255,255,255,.4)">${visits > 0 ? `&#10003; ${visits} zweryfikowanych wizyt w tym lokalu` : 'Nowy lokal w FoxPot Club!'}</div>
       <div class="card" style="text-align:center;padding:24px 16px;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)"><div style="font-size:28px;margin-bottom:8px">&#128274;</div><h2 style="font-size:16px;margin-bottom:6px;color:#f5a623">Odblokuj zni&#380;k&#281; ${disc}% jako Fox</h2><p style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:16px;line-height:1.5">The FoxPot Club to prywatny klub dla smakoszy.<br/>Odwied&#378; ${escapeHtml(v.name)} i aktywuj dost&#281;p!</p><a href="https://t.me/thefoxpot_club_bot?start=venue_${v.id}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f5a623,#e8842a);color:#000;font-weight:700;border-radius:14px;font-size:15px;text-decoration:none">&#129418; Do&#322;&#261;cz przez ${escapeHtml(v.name)}</a><p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:12px">Masz 60 minut aby zrobi&#263; check-in i aktywowa&#263; konto Fox</p></div>
       <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.25)"><a href="/" style="color:rgba(255,255,255,.35)">thefoxpot.club</a></div>
     `,`body{background:#0a0b14}.card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}`));
@@ -3400,6 +3418,108 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
   }
 });
 
+/* ═══════════════════════════════════════════════════════════════
+   REVIEWS — Private feedback from Fox to Venue
+═══════════════════════════════════════════════════════════════ */
+
+// GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
+app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = req.query.venue_id ? Number(req.query.venue_id) : null;
+    if (!venueId) return res.json({ last_confirmed_id: null });
+    // Find latest confirmed checkin at this venue that doesn't have a review yet
+    const r = await pool.query(
+      `SELECT c.id FROM fp1_checkins c
+       WHERE c.user_id=$1 AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id)
+       ORDER BY c.confirmed_at DESC LIMIT 1`,
+      [userId, venueId]
+    );
+    res.json({ last_confirmed_id: r.rows[0]?.id || null });
+  } catch(e) { res.json({ last_confirmed_id: null }); }
+});
+
+// POST /api/review — Fox leaves a review after credited check-in
+app.post("/api/review", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const { checkin_id, rating, text } = req.body;
+    if (!checkin_id || !rating) return res.status(400).json({ error: "Brak danych" });
+    const r = parseInt(rating);
+    if (r < 1 || r > 5) return res.status(400).json({ error: "Ocena musi być od 1 do 5" });
+    const cleanText = text ? String(text).trim().slice(0, 500) : null;
+    // Verify: checkin belongs to this fox, is confirmed, is credited
+    const ci = await pool.query(
+      `SELECT c.id, c.venue_id FROM fp1_checkins c
+       JOIN fp1_counted_visits cv ON cv.user_id = c.user_id AND cv.venue_id = c.venue_id AND cv.war_day = c.war_day AND cv.is_credited = TRUE
+       WHERE c.id = $1 AND c.user_id = $2 AND c.confirmed_at IS NOT NULL LIMIT 1`,
+      [checkin_id, userId]
+    );
+    if (ci.rowCount === 0) return res.status(403).json({ error: "Brak potwierdzonego check-inu" });
+    // Check duplicate
+    const dup = await pool.query(`SELECT 1 FROM fp1_reviews WHERE checkin_id=$1`, [checkin_id]);
+    if (dup.rowCount > 0) return res.status(409).json({ error: "Opinia już wystawiona dla tej wizyty" });
+    const ins = await pool.query(
+      `INSERT INTO fp1_reviews(user_id, venue_id, checkin_id, rating, text) VALUES($1,$2,$3,$4,$5) RETURNING id, created_at`,
+      [userId, ci.rows[0].venue_id, checkin_id, r, cleanText]
+    );
+    res.json({ ok: true, review_id: ins.rows[0].id });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// GET /api/my-reviews — Fox's own reviews + venue replies
+app.get("/api/my-reviews", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const reviews = await pool.query(
+      `SELECT r.id, r.venue_id, v.name AS venue_name, r.rating, r.text, r.venue_reply, r.venue_reply_at, r.created_at
+       FROM fp1_reviews r JOIN fp1_venues v ON v.id = r.venue_id
+       WHERE r.user_id = $1 ORDER BY r.created_at DESC LIMIT 50`,
+      [userId]
+    );
+    res.json({ reviews: reviews.rows });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// GET /api/venue/:id/reviews — venue reviews (for panel only, but no auth enforced — filtered by venue)
+app.get("/api/venue/:id/reviews", async (req, res) => {
+  try {
+    const venueId = Number(req.params.id);
+    const reviews = await pool.query(
+      `SELECT r.id, f.username, r.rating, r.text, r.venue_reply, r.venue_reply_at, r.created_at
+       FROM fp1_reviews r LEFT JOIN fp1_foxes f ON f.user_id = r.user_id
+       WHERE r.venue_id = $1 ORDER BY r.created_at DESC LIMIT 50`,
+      [venueId]
+    );
+    const stats = await pool.query(
+      `SELECT COUNT(*)::int AS count, COALESCE(AVG(rating),0)::numeric AS avg_rating FROM fp1_reviews WHERE venue_id=$1`,
+      [venueId]
+    );
+    res.json({
+      reviews: reviews.rows,
+      review_count: stats.rows[0].count,
+      avg_rating: parseFloat(parseFloat(stats.rows[0].avg_rating).toFixed(1)),
+    });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
+// POST /panel/review/:id/reply — Venue replies to a review
+app.post("/panel/review/:id/reply", requirePanelAuth, async (req, res) => {
+  try {
+    const venueId = String(req.panel.venue_id);
+    const reviewId = Number(req.params.id);
+    const reply = String(req.body.reply || "").trim().slice(0, 500);
+    if (!reply) return res.status(400).json({ error: "Treść odpowiedzi jest wymagana" });
+    const r = await pool.query(
+      `UPDATE fp1_reviews SET venue_reply=$1, venue_reply_at=NOW() WHERE id=$2 AND venue_id=$3 AND venue_reply IS NULL RETURNING id`,
+      [reply, reviewId, venueId]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono opinii lub już odpowiedziano" });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+});
+
 // P0.1: Obligation CRON вимкнено (штрафна система схована)
 // setInterval(async () => { ... }, 15 * 60 * 1000);
 
@@ -4546,6 +4666,15 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   const newFoxMonth = await countNewFoxThisMonth(venueId);
   const newFoxTotal = await countNewFoxTotal(venueId);
   const growth  = await getGrowthLeaderboard(50);
+  // Reviews
+  const venueReviews = await pool.query(
+    `SELECT r.id, f.username, r.rating, r.text, r.venue_reply, r.venue_reply_at, r.created_at
+     FROM fp1_reviews r LEFT JOIN fp1_foxes f ON f.user_id = r.user_id
+     WHERE r.venue_id = $1 ORDER BY r.created_at DESC LIMIT 30`, [venueId]
+  );
+  const reviewStats = await pool.query(
+    `SELECT COUNT(*)::int AS cnt, COALESCE(AVG(rating),0)::numeric AS avg FROM fp1_reviews WHERE venue_id=$1`, [venueId]
+  );
   const myPos   = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
 
   let statusHtml = `<span class="badge badge-ok">● Aktywny</span>`;
@@ -4861,6 +4990,22 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         </div>
       </div>
       <div id="promoOrderMsg"></div>
+    </div>
+    <div class="card">
+      <h2>💬 Opinie Fox'ów</h2>
+      ${reviewStats.rows[0].cnt > 0 ? `<div style="margin-bottom:12px;padding:12px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:10px;text-align:center"><span style="font-size:24px;font-weight:800;color:#f5a623">${parseFloat(reviewStats.rows[0].avg).toFixed(1)}</span><span style="font-size:14px;color:rgba(255,255,255,.5)"> / 5</span><div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Średnia ocena na podstawie ${reviewStats.rows[0].cnt} opinii</div></div>` : `<div class="muted" style="margin-bottom:8px">Brak opinii</div>`}
+      ${venueReviews.rows.map(r => {
+        const stars = '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating);
+        const date = new Date(r.created_at).toLocaleDateString("pl-PL", { timeZone: "Europe/Warsaw" });
+        return `<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div><span style="font-weight:700">@${escapeHtml(r.username||'Fox')}</span> <span style="color:#f5a623;font-size:13px">${stars}</span></div>
+            <span style="font-size:11px;color:rgba(255,255,255,.3)">${date}</span>
+          </div>
+          ${r.text ? `<div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.5;margin-bottom:4px">${escapeHtml(r.text)}</div>` : ''}
+          ${r.venue_reply ? `<div style="margin-top:6px;padding:8px;background:rgba(46,204,113,.08);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:12px;color:rgba(255,255,255,.5)"><span style="color:#2ecc71;font-weight:700">Odpowiedź:</span> ${escapeHtml(r.venue_reply)}</div>` : `<form method="POST" action="/panel/review/${r.id}/reply" style="margin-top:4px;display:flex;gap:4px"><input name="reply" placeholder="Odpowiedz..." maxlength="500" style="flex:1;padding:6px 8px;font-size:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#f0f0f5;font-family:inherit"/><button type="submit" style="padding:6px 12px;font-size:11px;background:rgba(46,204,113,.15);border:1px solid rgba(46,204,113,.3);color:#2ecc71;border-radius:6px;cursor:pointer;font-weight:700">Wyślij</button></form>`}
+        </div>`;
+      }).join('')}
     </div>
     <div class="card">
       <h2>⚙️ Ustawienia lokalu</h2>
