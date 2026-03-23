@@ -1059,6 +1059,26 @@ function openExternal(url, event) {
   }
 }
 
+function callVenue(phone) {
+  const clean = phone.replace(/\s/g, '');
+  const tel = 'tel:' + clean;
+  // Try all methods — Telegram WebApp blocks some
+  try { window.open(tel, '_self'); } catch(e) {}
+  setTimeout(function() {
+    try { location.href = tel; } catch(e) {}
+  }, 300);
+  setTimeout(function() {
+    // Fallback: copy number
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(clean).then(function() {
+        alert('Numer skopiowany: ' + phone + '\nWklej w aplikacji telefonu');
+      });
+    } else {
+      prompt('Skopiuj numer telefonu:', phone);
+    }
+  }, 800);
+}
+
 // ── Share Abstraction ──
 function shareLink(url, text) {
   if (IS_TELEGRAM && TG) {
@@ -2645,7 +2665,7 @@ async function startTrial(venueId) {
            <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:-4px">Niewykorzystana rezerwacja: miejsce wraca do puli, −5 pkt</div>`)
       : ''}
       ${joinBlock}
-      ${v.phone ? `<button onclick="location.href='tel:${esc(v.phone.replace(/\s/g,''))}'" style="display:block;width:100%;padding:14px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:600;text-align:center;cursor:pointer;font-family:var(--font)">📞 Zadzwoń</button>` : ''}
+      ${v.phone ? `<button onclick="callVenue('${esc(v.phone.replace(/'/g,''))}')" style="display:block;width:100%;padding:14px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:600;text-align:center;cursor:pointer;font-family:var(--font)">📞 Zadzwoń · ${esc(v.phone)}</button>` : ''}
       <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" onclick="openExternal('${mapsUrl}',event)" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
       <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
     </div>
