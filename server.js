@@ -2440,6 +2440,7 @@ app.get("/api/profile", requireWebAppAuth, async (req, res) => {
     );
 
     res.json({
+      fox_id:                   f.id,
       user_id:                  f.user_id,
       username:                 f.username,
       rating:                   f.rating,

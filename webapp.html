@@ -1045,6 +1045,7 @@ function getUserTag(profile) {
   return profile?.username ? '@'+profile.username : 'Fox #'+String(profile?.user_id||'').slice(-4);
 }
 function getUserId(profile) {
+  if (profile?.fox_id) return String(profile.fox_id);
   if (TG_USER) return String(TG_USER.id);
   return String(profile?.user_id || '');
 }
