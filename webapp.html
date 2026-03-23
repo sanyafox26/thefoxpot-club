@@ -2790,11 +2790,16 @@ async function loadVenueMenu(venueId, btn, append) {
       if (listEl) listEl.insertAdjacentHTML('beforeend', html);
     } else {
       let full = '<div id="menuItems_' + venueId + '">' + html + '</div>';
-      if (mfUrl) {
-        const isPdf = mfUrl.toLowerCase().endsWith('.pdf');
-        full += '<div style="margin-top:10px">' + (isPdf
-          ? '<a href="' + esc(mfUrl) + '" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;color:var(--fox);font-weight:600;font-size:13px;text-decoration:none">📄 Zobacz pełne menu (PDF)</a>'
-          : '<div style="text-align:center"><img src="' + esc(mfUrl) + '" onclick="window.open(this.src,\'_blank\')" style="max-width:280px;width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/><div style="font-size:10px;color:var(--muted);margin-top:4px">Kliknij aby powiększyć</div></div>') + '</div>';
+      const files = d.menu_files || (mfUrl ? [{url:mfUrl}] : []);
+      if (files.length) {
+        full += '<div style="margin-top:10px">';
+        files.forEach(function(f) {
+          const isPdf = f.url.toLowerCase().endsWith('.pdf');
+          full += isPdf
+            ? '<a href="' + esc(f.url) + '" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;margin-bottom:6px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;color:var(--fox);font-weight:600;font-size:13px;text-decoration:none">📄 Zobacz menu (PDF)</a>'
+            : '<div style="text-align:center;margin-bottom:6px"><img src="' + esc(f.url) + '" onclick="window.open(this.src,\'_blank\')" style="max-width:280px;width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/></div>';
+        });
+        full += '</div>';
       }
       el.innerHTML = full;
     }

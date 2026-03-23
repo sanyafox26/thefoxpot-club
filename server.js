@@ -490,6 +490,24 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "website_url",           "TEXT");
   await ensureColumn("fp1_venues",         "menu_file_url",         "TEXT");
   await ensureColumn("fp1_venues",         "phone",                 "TEXT");
+  // Venue menu files (multiple images/PDFs)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_venue_menu_files (
+      id SERIAL PRIMARY KEY,
+      venue_id INT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // Migrate legacy single menu_file_url to new table
+  try {
+    const legacy = await pool.query(`SELECT id, menu_file_url FROM fp1_venues WHERE menu_file_url IS NOT NULL AND menu_file_url != ''`);
+    for (const v of legacy.rows) {
+      const exists = await pool.query(`SELECT 1 FROM fp1_venue_menu_files WHERE venue_id=$1 AND url=$2`, [v.id, v.menu_file_url]);
+      if (exists.rowCount === 0) await pool.query(`INSERT INTO fp1_venue_menu_files(venue_id,url,sort_order) VALUES($1,$2,0)`, [v.id, v.menu_file_url]);
+    }
+  } catch(e) { console.warn("Menu file migration:", e.message); }
   // Venue slug for public page
   await ensureColumn("fp1_venues",         "slug",                  "TEXT");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_slug ON fp1_venues(slug) WHERE slug IS NOT NULL`).catch(()=>{});
@@ -2128,6 +2146,7 @@ app.get("/lokal/:slug", async (req, res) => {
     const visits = cv.rows[0]?.cnt || 0, foxes = uf.rows[0]?.cnt || 0;
     const photos = await pool.query(`SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 10`, [v.id]);
     const menuItems = await pool.query(`SELECT name,category,price,photo_url FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [v.id]);
+    const menuFiles = await pool.query(`SELECT url FROM fp1_venue_menu_files WHERE venue_id=$1 ORDER BY sort_order ASC`, [v.id]);
     const tgs = v.tags ? v.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
     const firstPhoto = photos.rows[0]?.url || (v.google_place_id ? `/api/venue-photo/${v.id}?w=800` : null);
     const canonicalUrl = `${PUBLIC_URL}/lokal/${v.slug}`;
@@ -2174,13 +2193,14 @@ app.get("/lokal/:slug", async (req, res) => {
         </div>
       `).join('')}
     </div>` : '';
-    const mfUrl = v.menu_file_url || '';
-    const mfIsPdf = mfUrl.toLowerCase().endsWith('.pdf');
-    const mfHeader = !menuH ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : '';
-    const menuFileH = mfUrl ? `<div style="margin-bottom:24px">${mfHeader}${mfIsPdf
-      ? `<div style="border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-bottom:8px"><iframe src="${e(mfUrl)}" style="width:100%;height:500px;border:0" loading="lazy"></iframe></div><a href="${e(mfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:8px;text-align:center;font-size:12px;color:#f5a623;text-decoration:none">📄 Otwórz menu (PDF)</a>`
-      : `<div style="text-align:center"><img src="${e(mfUrl)}" alt="Menu" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src=this.src" style="max-width:400px;width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/><div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">Kliknij aby powiększyć</div></div>`
-    }</div>` : '';
+    const mfFiles = menuFiles.rows.length ? menuFiles.rows : (v.menu_file_url ? [{ url: v.menu_file_url }] : []);
+    const mfHeader = !menuH && mfFiles.length ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : '';
+    const menuFileH = mfFiles.length ? `<div style="margin-bottom:24px">${mfHeader}${mfFiles.map(f => {
+      const isPdf = f.url.toLowerCase().endsWith('.pdf');
+      return isPdf
+        ? `<div style="margin-bottom:8px"><div style="border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1)"><iframe src="${e(f.url)}" style="width:100%;height:500px;border:0" loading="lazy"></iframe></div><a href="${e(f.url)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:8px;text-align:center;font-size:12px;color:#f5a623;text-decoration:none">📄 Otwórz menu (PDF)</a></div>`
+        : `<div style="text-align:center;margin-bottom:8px"><img src="${e(f.url)}" alt="Menu" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src=this.src" style="max-width:400px;width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/></div>`;
+    }).join('')}${mfFiles.length ? '<div style="font-size:11px;color:rgba(255,255,255,.3);text-align:center">Kliknij aby powiększyć</div>' : ''}</div>` : '';
 
     // Photos gallery
     const galleryH = photos.rowCount > 1 ? `<div style="margin-bottom:24px">
@@ -2237,7 +2257,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
   <div class="section">
     ${v.address ? `<div class="info-row">📍 ${e(v.address)}${v.city ? ', ' + e(v.city) : ''}</div>` : ''}
-    ${v.opening_hours ? `<div class="info-row">🕐 ${e(v.opening_hours.split('\n')[0])}</div>` : ''}
+    ${v.opening_hours ? `<div class="info-row" style="white-space:pre-line">🕐 ${e(v.opening_hours)}</div>` : ''}
     ${v.status_temporary ? `<div class="info-row" style="color:#FBBF24">⚠️ ${e(v.status_temporary)}</div>` : ''}
     <div style="display:flex;gap:8px;margin:12px 0">
       ${v.lat && v.lng ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener noreferrer" style="flex:1;padding:10px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none">🗺️ Nawiguj</a>` : ''}
@@ -5073,17 +5093,24 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         loadMenu();
       </script>
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)">
-        <div style="font-size:12px;font-weight:700;color:#f5a623;margin-bottom:8px">📄 Lub wgraj gotowe menu jako zdjęcie lub PDF</div>
-        <div id="menuFileArea">
-          ${venue.menu_file_url ? `<div id="menuFilePreview" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px"><a href="${escapeHtml(venue.menu_file_url)}" target="_blank" style="color:#f5a623;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 Plik menu</a><button onclick="deleteMenuFile()" style="background:transparent;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;padding:2px 10px;cursor:pointer">✕</button></div>` : ''}
-        </div>
-        <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.15);border-radius:8px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.6)">
-          <input type="file" accept="image/jpeg,image/png,application/pdf" onchange="uploadMenuFile(this)" style="display:none"/>
-          + Wybierz plik (JPG, PNG, PDF, max 10 MB)
-        </label>
+        <div style="font-size:12px;font-weight:700;color:#f5a623;margin-bottom:8px">📄 Lub wgraj gotowe menu jako zdjęcia lub PDF (max 5)</div>
+        <div id="menuFilesList"></div>
+        <div id="menuFileUploadArea"></div>
         <div id="menuFileMsg" style="font-size:12px;margin-top:6px"></div>
       </div>
       <script>
+        let _menuFiles=[];
+        async function loadMenuFiles(){
+          try{const r=await fetch('/panel/venue/menu-files',{credentials:'same-origin'});const d=await r.json();_menuFiles=d.files||[];renderMenuFiles();}catch(e){console.error(e)}
+        }
+        function renderMenuFiles(){
+          const list=document.getElementById('menuFilesList');
+          list.innerHTML=_menuFiles.map(f=>'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px"><a href="'+f.url+'" target="_blank" style="color:#f5a623;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 Plik #'+(f.sort_order+1)+'</a><button onclick="deleteMenuFile('+f.id+')" style="background:transparent;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;padding:2px 10px;cursor:pointer">✕</button></div>').join('');
+          const area=document.getElementById('menuFileUploadArea');
+          if(_menuFiles.length<5){
+            area.innerHTML='<label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.15);border-radius:8px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.6)"><input type="file" accept="image/jpeg,image/png,application/pdf" onchange="uploadMenuFile(this)" style="display:none"/>+ Dodaj plik (JPG, PNG, PDF, max 10 MB)</label>';
+          } else { area.innerHTML='<div class="muted" style="font-size:12px">Osiągnięto limit 5 plików</div>'; }
+        }
         async function uploadMenuFile(input){
           const file=input.files[0];if(!file)return;
           if(file.size>10*1024*1024){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">Max 10 MB</span>';return}
@@ -5094,20 +5121,23 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
               const r=await fetch('/panel/venue/menu-file',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:reader.result})});
               const d=await r.json();
               if(d.error){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">'+d.error+'</span>';return}
-              document.getElementById('menuFileMsg').innerHTML='<span style="color:#2ecc71">✅ Menu wgrane!</span>';
-              document.getElementById('menuFileArea').innerHTML='<div id="menuFilePreview" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px"><a href="'+d.url+'" target="_blank" style="color:#f5a623;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 Plik menu</a><button onclick="deleteMenuFile()" style="background:transparent;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;padding:2px 10px;cursor:pointer">✕</button></div>';
+              document.getElementById('menuFileMsg').innerHTML='<span style="color:#2ecc71">✅ Dodano!</span>';
+              _menuFiles.push({id:d.id,url:d.url,sort_order:_menuFiles.length});
+              renderMenuFiles();
             }catch(e){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">Błąd</span>'}
           };
           reader.readAsDataURL(file);
         }
-        async function deleteMenuFile(){
+        async function deleteMenuFile(id){
           if(!confirm('Usunąć plik menu?'))return;
           try{
-            await fetch('/panel/venue/menu-file',{method:'DELETE',credentials:'same-origin'});
-            document.getElementById('menuFileArea').innerHTML='';
+            await fetch('/panel/venue/menu-file/'+id,{method:'DELETE',credentials:'same-origin'});
+            _menuFiles=_menuFiles.filter(f=>f.id!==id);
+            renderMenuFiles();
             document.getElementById('menuFileMsg').innerHTML='<span style="color:#2ecc71">✅ Usunięto</span>';
           }catch(e){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">Błąd</span>'}
         }
+        loadMenuFiles();
       </script>
     </div>
     <div class="card">
@@ -5464,19 +5494,35 @@ app.post("/panel/venue/menu-file", requirePanelAuth, async (req, res) => {
     const venueId = Number(req.panel.venue_id);
     const { file } = req.body;
     if (!file) return res.status(400).json({ error: "Brak pliku" });
+    const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_venue_menu_files WHERE venue_id=$1`, [venueId]);
+    if (cnt.rows[0].c >= 5) return res.status(400).json({ error: "Maksymalnie 5 plików menu" });
     const result = await uploadToCloudinary(file, `foxpot/venues/${venueId}/menu`);
     const url = result.secure_url || result.url;
     if (!url) return res.status(500).json({ error: "Błąd uploadu" });
-    await pool.query(`UPDATE fp1_venues SET menu_file_url=$1 WHERE id=$2`, [url, venueId]);
-    res.json({ ok: true, url });
+    const nextOrder = cnt.rows[0].c;
+    const ins = await pool.query(`INSERT INTO fp1_venue_menu_files(venue_id,url,sort_order) VALUES($1,$2,$3) RETURNING id`, [venueId, url, nextOrder]);
+    // Keep legacy field in sync (first file)
+    if (nextOrder === 0) await pool.query(`UPDATE fp1_venues SET menu_file_url=$1 WHERE id=$2`, [url, venueId]);
+    res.json({ ok: true, id: ins.rows[0].id, url });
   } catch (e) { res.status(500).json({ error: String(e?.message || e).slice(0, 120) }); }
 });
 
 // Panel: delete menu file
-app.delete("/panel/venue/menu-file", requirePanelAuth, async (req, res) => {
+app.delete("/panel/venue/menu-file/:id", requirePanelAuth, async (req, res) => {
   const venueId = Number(req.panel.venue_id);
-  await pool.query(`UPDATE fp1_venues SET menu_file_url=NULL WHERE id=$1`, [venueId]);
+  const fileId = Number(req.params.id);
+  await pool.query(`DELETE FROM fp1_venue_menu_files WHERE id=$1 AND venue_id=$2`, [fileId, venueId]);
+  // Update legacy field
+  const first = await pool.query(`SELECT url FROM fp1_venue_menu_files WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 1`, [venueId]);
+  await pool.query(`UPDATE fp1_venues SET menu_file_url=$1 WHERE id=$2`, [first.rows[0]?.url || null, venueId]);
   res.json({ ok: true });
+});
+
+// Panel: get menu files list
+app.get("/panel/venue/menu-files", requirePanelAuth, async (req, res) => {
+  const venueId = Number(req.panel.venue_id);
+  const files = await pool.query(`SELECT id, url, sort_order FROM fp1_venue_menu_files WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]);
+  res.json({ files: files.rows });
 });
 
 // Public: get menu for venue
@@ -5487,8 +5533,9 @@ app.get("/api/venue/:id/menu", async (req, res) => {
   const offset = (page - 1) * limit;
   const items = await pool.query(`SELECT name,category,price FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name LIMIT $2 OFFSET $3`, [venueId, limit, offset]);
   const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_menu_items WHERE venue_id=$1`, [venueId]);
+  const mf = await pool.query(`SELECT id, url FROM fp1_venue_menu_files WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]);
   const vq = await pool.query(`SELECT menu_file_url FROM fp1_venues WHERE id=$1`, [venueId]);
-  res.json({ items: items.rows, total_count: cnt.rows[0].c, page, limit, menu_file_url: vq.rows[0]?.menu_file_url || null });
+  res.json({ items: items.rows, total_count: cnt.rows[0].c, page, limit, menu_file_url: vq.rows[0]?.menu_file_url || null, menu_files: mf.rows });
 });
 
 // ── PANEL: Save venue settings ──
