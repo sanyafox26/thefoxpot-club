@@ -543,7 +543,7 @@ async function migrate() {
       user_id TEXT NOT NULL,
       venue_id INT NOT NULL REFERENCES fp1_venues(id) ON DELETE CASCADE,
       checkin_id BIGINT UNIQUE,
-      rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      rating INT CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5)),
       text TEXT,
       venue_reply TEXT,
       venue_reply_at TIMESTAMPTZ,
@@ -552,6 +552,10 @@ async function migrate() {
   `);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reviews_venue ON fp1_reviews(venue_id, created_at DESC)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reviews_user ON fp1_reviews(user_id)`);
+  // Migration: make rating nullable (was NOT NULL)
+  await pool.query(`ALTER TABLE fp1_reviews ALTER COLUMN rating DROP NOT NULL`).catch(()=>{});
+  await pool.query(`ALTER TABLE fp1_reviews DROP CONSTRAINT IF EXISTS fp1_reviews_rating_check`).catch(()=>{});
+  await pool.query(`ALTER TABLE fp1_reviews ADD CONSTRAINT fp1_reviews_rating_check CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))`).catch(()=>{});
 
   // Promotions
   await pool.query(`
@@ -1402,7 +1406,8 @@ async function listPending(venueId) {
   const r = await pool.query(
     `SELECT c.otp, c.expires_at, c.user_id, f.username, f.rating, f.founder_number,
      (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.user_id=c.user_id AND cv.is_credited=TRUE) AS fox_visits,
-     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.is_credited=TRUE) AS total_visits
+     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=$1 AND cv.is_credited=TRUE) AS total_visits,
+     (SELECT rv.rating FROM fp1_reviews rv WHERE rv.user_id=c.user_id::text AND rv.venue_id=$1 ORDER BY rv.created_at DESC LIMIT 1) AS last_review_rating
      FROM fp1_checkins c LEFT JOIN fp1_foxes f ON f.user_id=c.user_id
      WHERE c.venue_id=$1 AND c.confirmed_at IS NULL AND c.expires_at>$2
      ORDER BY c.created_at DESC LIMIT 20`,
@@ -2144,6 +2149,10 @@ app.get("/lokal/:slug", async (req, res) => {
     const cv = await pool.query(`SELECT COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [v.id]);
     const uf = await pool.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM fp1_counted_visits WHERE venue_id=$1 AND is_credited=TRUE`, [v.id]);
     const visits = cv.rows[0]?.cnt || 0, foxes = uf.rows[0]?.cnt || 0;
+    // Review stats for public page
+    const pubReviewStats = await pool.query(`SELECT COUNT(rating)::int AS rated_cnt, COALESCE(AVG(rating),0)::numeric AS avg_rating, COUNT(*)::int AS total_cnt FROM fp1_reviews WHERE venue_id=$1`, [v.id]);
+    const pubRated = pubReviewStats.rows[0].rated_cnt;
+    const pubAvg = pubRated > 0 ? parseFloat(parseFloat(pubReviewStats.rows[0].avg_rating).toFixed(1)) : null;
     const photos = await pool.query(`SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 10`, [v.id]);
     const menuItems = await pool.query(`SELECT name,category,price,photo_url FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [v.id]);
     const menuFiles = await pool.query(`SELECT url FROM fp1_venue_menu_files WHERE venue_id=$1 ORDER BY sort_order ASC`, [v.id]);
@@ -2177,6 +2186,7 @@ app.get("/lokal/:slug", async (req, res) => {
       url: canonicalUrl,
       servesCuisine: v.cuisine || undefined,
       openingHours: v.opening_hours || undefined,
+      aggregateRating: pubRated > 0 ? { "@type": "AggregateRating", ratingValue: pubAvg, reviewCount: pubRated, bestRating: 5, worstRating: 1 } : undefined,
     });
 
     // Menu HTML
@@ -2257,7 +2267,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style></head><body>
 <div class="wrap">
   <div class="nav-bar"><a href="/">🦊 FoxPot Club</a>${socials ? `<div style="display:flex;gap:12px">${socials}</div>` : ''}</div>
-  <div class="hero">${firstPhoto ? `<img src="${firstPhoto}" alt="${e(v.name)}"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:64px">🏪</div>`}<div class="hero-overlay"></div><div class="hero-text"><h1>${e(v.name)}</h1>${tpL ? `<p>${e(tpL)}</p>` : ''}</div></div>
+  <div class="hero">${firstPhoto ? `<img src="${firstPhoto}" alt="${e(v.name)}"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:64px">🏪</div>`}<div class="hero-overlay"></div><div class="hero-text"><h1>${e(v.name)}</h1>${tpL ? `<p>${e(tpL)}</p>` : ''}${pubRated > 0 ? `<p style="margin-top:4px;font-size:15px;color:#f5a623;font-weight:700">⭐ ${pubAvg} <span style="color:rgba(255,255,255,.5);font-weight:400;font-size:13px">(${pubRated} opinii Fox'ów)</span></p>` : ''}</div></div>
 
   <div class="section">
     ${v.address ? `<div class="info-row">📍 ${e(v.address)}${v.city ? ', ' + e(v.city) : ''}</div>` : ''}
@@ -2750,6 +2760,11 @@ app.get("/api/venues", async (req, res) => {
     const pcQ = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_venue_photos GROUP BY venue_id`);
     pcQ.rows.forEach(r => photoCounts[r.venue_id] = r.cnt);
 
+    // Review stats per venue (avg rating + count)
+    const reviewStatsMap = {};
+    const rsQ = await pool.query(`SELECT venue_id, COUNT(*)::int AS review_count, COALESCE(AVG(rating),0)::numeric AS avg_rating, COUNT(rating)::int AS rated_count FROM fp1_reviews GROUP BY venue_id`);
+    rsQ.rows.forEach(r => reviewStatsMap[r.venue_id] = { review_count: r.review_count, avg_rating: r.rated_count > 0 ? parseFloat(parseFloat(r.avg_rating).toFixed(1)) : null, rated_count: r.rated_count });
+
     // Individual Fox discounts
     const foxDiscounts = {};
     if (userId) {
@@ -2777,6 +2792,9 @@ app.get("/api/venues", async (req, res) => {
         top_reason: topReason[v.id]?.reason || null,
         top_dish_name: topDish[v.id] || null,
     has_photos: (photoCounts[v.id] || 0) > 0,
+    review_count: reviewStatsMap[v.id]?.review_count || 0,
+    avg_rating: reviewStatsMap[v.id]?.avg_rating || null,
+    rated_count: reviewStatsMap[v.id]?.rated_count || 0,
     is_top_week: v.id === topWeekId,
         is_top_month: v.id === topMonthId,
         is_top_year: v.id === topYearId,
@@ -3677,10 +3695,11 @@ app.post("/api/review", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
     const { checkin_id, rating, text } = req.body;
-    if (!checkin_id || !rating) return res.status(400).json({ error: "Brak danych" });
-    const r = parseInt(rating);
-    if (r < 1 || r > 5) return res.status(400).json({ error: "Ocena musi być od 1 do 5" });
+    if (!checkin_id) return res.status(400).json({ error: "Brak danych" });
+    const r = rating != null ? parseInt(rating) : null;
+    if (r !== null && (r < 1 || r > 5)) return res.status(400).json({ error: "Ocena musi być od 1 do 5" });
     const cleanText = text ? String(text).trim().slice(0, 500) : null;
+    if (r === null && !cleanText) return res.status(400).json({ error: "Dodaj ocenę lub tekst" });
     // Verify: checkin belongs to this fox, is confirmed, is credited
     const ci = await pool.query(
       `SELECT c.id, c.venue_id FROM fp1_checkins c
@@ -4910,6 +4929,13 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   const reviewStats = await pool.query(
     `SELECT COUNT(*)::int AS cnt, COALESCE(AVG(rating),0)::numeric AS avg FROM fp1_reviews WHERE venue_id=$1`, [venueId]
   );
+  // Rating distribution (5★ to 1★)
+  const ratingDist = await pool.query(
+    `SELECT rating, COUNT(*)::int AS cnt FROM fp1_reviews WHERE venue_id=$1 AND rating IS NOT NULL GROUP BY rating ORDER BY rating DESC`, [venueId]
+  );
+  const distMap = {5:0,4:0,3:0,2:0,1:0};
+  ratingDist.rows.forEach(r => { distMap[r.rating] = r.cnt; });
+  const totalRated = Object.values(distMap).reduce((a,b)=>a+b,0);
   const myPos   = growth.findIndex(g => Number(g.id) === Number(venueId)) + 1;
 
   let statusHtml = `<span class="badge badge-ok">● Aktywny</span>`;
@@ -4934,7 +4960,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         const borderColor = isAdminUser ? '#FFD700' : (badge ? TOP_FOX_COLORS[badge] : null);
         return `<div style="margin:8px 0;padding:8px;border-radius:10px;border:1px solid ${borderColor ? borderColor+'40' : '#2a2f49'};background:${borderColor ? borderColor+'10' : 'transparent'}">
           <div>Kod wizyty: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>
-          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} <span class="muted">· ${p.rating||0} pkt · X/Y: ${p.fox_visits||0}/${p.total_visits||0}</span></div>
+          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} ${p.last_review_rating ? `<span style="color:#f5a623;font-size:12px">${'★'.repeat(p.last_review_rating)}${'☆'.repeat(5-p.last_review_rating)}</span>` : `<span style="font-size:11px;color:rgba(255,255,255,.3)">Pierwsza wizyta</span>`} <span class="muted">· ${p.rating||0} pkt · X/Y: ${p.fox_visits||0}/${p.total_visits||0}</span></div>
         </div>`;
       }).join("");
 
@@ -5275,14 +5301,22 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       <div id="promoOrderMsg"></div>
     </div>
     <div class="card">
+      <h2>⭐ Twój rating od Fox'ów</h2>
+      ${totalRated > 0 ? `<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;padding:12px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:10px">
+        <div style="text-align:center;min-width:70px"><div style="font-size:32px;font-weight:800;color:#f5a623">${parseFloat(reviewStats.rows[0].avg).toFixed(1)}</div><div style="font-size:11px;color:rgba(255,255,255,.4)">${totalRated} ocen</div></div>
+        <div style="flex:1">${[5,4,3,2,1].map(s => {const pct=totalRated>0?Math.round(distMap[s]/totalRated*100):0; return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="font-size:11px;color:rgba(255,255,255,.5);min-width:18px">${s}★</span><div style="flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:#f5a623;border-radius:4px"></div></div><span style="font-size:10px;color:rgba(255,255,255,.3);min-width:22px;text-align:right">${distMap[s]}</span></div>`;}).join('')}
+        </div>
+      </div>` : `<div class="muted" style="margin-bottom:8px">Brak ocen od Fox'ów</div>`}
+    </div>
+    <div class="card">
       <h2>💬 Opinie Fox'ów</h2>
       ${reviewStats.rows[0].cnt > 0 ? `<div style="margin-bottom:12px;padding:12px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:10px;text-align:center"><span style="font-size:24px;font-weight:800;color:#f5a623">${parseFloat(reviewStats.rows[0].avg).toFixed(1)}</span><span style="font-size:14px;color:rgba(255,255,255,.5)"> / 5</span><div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Średnia ocena na podstawie ${reviewStats.rows[0].cnt} opinii</div></div>` : `<div class="muted" style="margin-bottom:8px">Brak opinii</div>`}
       ${venueReviews.rows.map(r => {
-        const stars = '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating);
+        const stars = r.rating ? ('★'.repeat(r.rating) + '☆'.repeat(5 - r.rating)) : '';
         const date = new Date(r.created_at).toLocaleDateString("pl-PL", { timeZone: "Europe/Warsaw" });
         return `<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <div><span style="font-weight:700">@${escapeHtml(r.username||'Fox')}</span> <span style="color:#f5a623;font-size:13px">${stars}</span></div>
+            <div><span style="font-weight:700">@${escapeHtml(r.username||'Fox')}</span>${stars ? ` <span style="color:#f5a623;font-size:13px">${stars}</span>` : ''}</div>
             <span style="font-size:11px;color:rgba(255,255,255,.3)">${date}</span>
           </div>
           ${r.text ? `<div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.5;margin-bottom:4px">${escapeHtml(r.text)}</div>` : ''}
@@ -5640,7 +5674,11 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const badgeEmoji = foxBadge === "year" ? "🟠" : foxBadge === "month" ? "🔵" : foxBadge === "week" ? "🟢" : "";
     const badgeText = isAdminConfirm ? " ⭐ Założyciel" : (foxBadge ? ` ${badgeEmoji} ${TOP_FOX_LABELS[foxBadge]}` : "");
     const founderText = (!isAdminConfirm && foxQ.rows[0]?.founder_number) ? ` 👑#${foxQ.rows[0].founder_number}` : "";
-    const label = r.debounce ? `Debounce ⚠️ · ${foxName}` : r.countedAdded ? `✅ ${foxName}${founderText}${badgeText} · X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅ · ${foxName}`;
+    // Fox's last review for this venue
+    const foxReviewQ = await pool.query(`SELECT rating, text FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 1`, [String(r.userId), venueId]);
+    const foxReview = foxReviewQ.rows[0];
+    const reviewText = foxReview ? (foxReview.rating ? ' ⭐'.repeat(foxReview.rating) : ' 💬') : ' · Brak oceny';
+    const label = r.debounce ? `Debounce ⚠️ · ${foxName}` : r.countedAdded ? `✅ ${foxName}${founderText}${badgeText}${reviewText} · X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅ · ${foxName}`;
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent(label)}`);
   } catch (e) {
     console.error("CONFIRM_ERR", e);

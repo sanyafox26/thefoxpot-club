@@ -476,6 +476,12 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div id="stampsList" style="display:none;margin-top:10px"></div>
       </div>
 
+      <!-- Moje opinie -->
+      <div class="card" id="myReviewsCard" style="display:none">
+        <button type="button" id="myReviewsToggle" onclick="var c=q('myReviewsList');c.style.display=c.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:10px;color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;text-align:left;font-family:var(--font)">💬 Moje opinie ▾</button>
+        <div id="myReviewsList" style="display:none;margin-top:10px"></div>
+      </div>
+
       <!-- PWA Install Button -->
       <button id="pwaInstallBtn" style="display:none;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font);margin-bottom:12px;text-align:center">📲 Dodaj FoxPot do ekranu głównego</button>
     </div>
@@ -1230,6 +1236,8 @@ async function loadProfile(){
     renderNearby();
     // Show leave button only for authenticated users
     const $leave=q('pLeaveSection');if($leave)$leave.style.display='block';
+    // Load my reviews
+    loadMyReviewsProfile();
   }catch(e){
     $l.style.display='none';
     if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
@@ -2355,6 +2363,7 @@ function renderMapList() {
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const statusWarn = v.venue_status ? `<span style="font-size:10px;color:#EF4444;font-weight:700">${v.venue_status.type==='reserve'?'📍 Rezerwacja':'⚠️ '+(v.venue_status.reason||'Ograniczone')}</span>` : '';
     const demoTarget = S.isDemo ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Zrób pierwszy check-in!</span>` : '';
+    const venueRating = v.rated_count > 0 ? `<span style="font-size:11px;color:#f5a623;font-weight:700">⭐ ${v.avg_rating}</span>` : '';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
    const topStyle = (S.isDemo && S.demoVenueId === v.id) ? 'border-color:#f5a623;border-width:2px;background:rgba(245,166,35,.08);box-shadow:0 0 12px rgba(245,166,35,.15)' : v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.1);box-shadow:0 0 16px rgba(139,92,246,.2)' : v.is_top_year ? 'border-color:#FF8A00;border-width:2px;background:rgba(255,138,0,.1);box-shadow:0 0 12px rgba(255,138,0,.15)' : v.is_top_month ? 'border-color:#3B82F6;border-width:2px;background:rgba(59,130,246,.1);box-shadow:0 0 12px rgba(59,130,246,.15)' : v.is_top_week ? 'border-color:#22C55E;border-width:2px;background:rgba(34,197,94,.1);box-shadow:0 0 12px rgba(34,197,94,.15)' : '';
     const isTopVenue = v.is_top_alltime||v.is_top_year||v.is_top_month||v.is_top_week;
@@ -2368,6 +2377,7 @@ function renderMapList() {
         <div class="venue-map-addr">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+        ${venueRating}
         ${xy}
         ${badge}
         ${statusWarn}
@@ -2620,6 +2630,7 @@ async function startTrial(venueId) {
         <div id="vPhotoDots${v.id}" style="position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:6px"></div>
       </div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
+      ${v.rated_count > 0 ? `<div style="font-size:13px;color:#f5a623;font-weight:700;margin-bottom:4px">⭐ ${v.avg_rating} <span style="color:var(--muted);font-weight:400;font-size:11px">(z ${v.rated_count} opinii)</span></div>` : ''}
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       <div>${badge}${topBadges}${dietBadges}</div>
@@ -2695,29 +2706,37 @@ async function loadVenueReviewBlock(venueId) {
     }
 
     let html = '';
-    // Show existing reviews from this Fox
-    if (myReviews.length > 0) {
-      html += `<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Twoje opinie</div>`;
-      html += myReviews.map(r => {
-        const stars = '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating);
-        const date = new Date(r.created_at).toLocaleDateString("pl-PL");
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--fox)">${stars}</span><span style="font-size:10px;color:var(--muted)">${date}</span></div>
-          ${r.text?`<div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4">${esc(r.text)}</div>`:''}
-          ${r.venue_reply?`<div style="margin-top:6px;padding:6px 8px;background:rgba(46,204,113,.06);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--muted)"><span style="color:var(--green);font-weight:700">Odpowiedź lokalu:</span> ${esc(r.venue_reply)}</div>`:''}
-        </div>`;
-      }).join('');
-    }
     // Review form
     if (canReview) {
       html += `<div style="margin-top:8px;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">
         <div style="font-size:13px;font-weight:700;margin-bottom:8px">💬 Zostaw opinię</div>
-        <div id="reviewStars${venueId}" style="display:flex;gap:4px;margin-bottom:8px;font-size:24px;cursor:pointer">
-          ${[1,2,3,4,5].map(i=>`<span onclick="setReviewStars(${venueId},${i})" style="color:var(--border2);transition:color .15s" data-star="${i}">★</span>`).join('')}
+        <div onclick="toggleReviewStars(${venueId})" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:8px;user-select:none">
+          <span style="font-size:13px;color:var(--fox);font-weight:600">⭐ Oceń wizytę</span>
+          <span id="reviewStarsArrow${venueId}" style="font-size:11px;color:var(--muted);transition:transform .3s">▼</span>
+        </div>
+        <div id="reviewStarsWrap${venueId}" style="max-height:0;overflow:hidden;transition:max-height .35s ease">
+          <div id="reviewStars${venueId}" style="display:flex;gap:4px;margin-bottom:8px;font-size:24px;cursor:pointer;padding:4px 0">
+            ${[1,2,3,4,5].map(i=>`<span onclick="setReviewStars(${venueId},${i})" style="color:var(--border2);transition:color .15s" data-star="${i}">★</span>`).join('')}
+          </div>
         </div>
         <textarea id="reviewText${venueId}" maxlength="500" rows="2" placeholder="Podziel się wrażeniami z wizyty..." style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font);resize:none"></textarea>
-        <button id="reviewBtn${venueId}" onclick="submitReview(${venueId})" disabled style="margin-top:6px;width:100%;padding:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);opacity:.4">Wyślij opinię</button>
+        <button id="reviewBtn${venueId}" onclick="submitReview(${venueId})" style="margin-top:6px;width:100%;padding:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">Wyślij opinię</button>
         <div id="reviewMsg${venueId}" style="font-size:11px;margin-top:4px;text-align:center"></div>
+      </div>`;
+    }
+    // Fox's last review for this venue
+    if (myReviews.length > 0) {
+      const last = myReviews[0];
+      const lastStars = last.rating ? ('★'.repeat(last.rating) + '☆'.repeat(5 - last.rating)) : '';
+      const lastDate = new Date(last.created_at).toLocaleDateString("pl-PL");
+      html += `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-sm)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Twoja ostatnia ocena</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          ${lastStars ? `<span style="color:var(--fox);font-size:14px">${lastStars}</span>` : '<span style="font-size:12px;color:var(--muted)">Bez oceny</span>'}
+          <span style="font-size:10px;color:var(--muted)">${lastDate}</span>
+        </div>
+        ${last.text?`<div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4">${esc(last.text)}</div>`:''}
+        ${last.venue_reply?`<div style="margin-top:6px;padding:6px 8px;background:rgba(46,204,113,.06);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--muted)"><span style="color:var(--green);font-weight:700">Odpowiedź lokalu:</span> ${esc(last.venue_reply)}</div>`:''}
       </div>`;
     }
     block.innerHTML = html;
@@ -2725,6 +2744,20 @@ async function loadVenueReviewBlock(venueId) {
 }
 
 let _reviewRating = {};
+let _reviewStarsOpen = {};
+function toggleReviewStars(venueId) {
+  const wrap = q('reviewStarsWrap' + venueId);
+  const arrow = q('reviewStarsArrow' + venueId);
+  if (!wrap) return;
+  _reviewStarsOpen[venueId] = !_reviewStarsOpen[venueId];
+  if (_reviewStarsOpen[venueId]) {
+    wrap.style.maxHeight = '50px';
+    if (arrow) arrow.style.transform = 'rotate(180deg)';
+  } else {
+    wrap.style.maxHeight = '0';
+    if (arrow) arrow.style.transform = '';
+  }
+}
 function setReviewStars(venueId, rating) {
   _reviewRating[venueId] = rating;
   const container = q('reviewStars' + venueId);
@@ -2732,15 +2765,13 @@ function setReviewStars(venueId, rating) {
   container.querySelectorAll('span').forEach(s => {
     s.style.color = parseInt(s.dataset.star) <= rating ? 'var(--fox)' : 'var(--border2)';
   });
-  const btn = q('reviewBtn' + venueId);
-  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
   haptic('selection');
 }
 
 async function submitReview(venueId) {
-  const rating = _reviewRating[venueId];
-  if (!rating) return;
+  const rating = _reviewRating[venueId] || null;
   const text = q('reviewText' + venueId)?.value?.trim() || null;
+  if (!rating && !text) { const msg = q('reviewMsg' + venueId); if(msg) msg.innerHTML = '<span style="color:var(--fox)">Dodaj ocenę lub tekst</span>'; return; }
   const btn = q('reviewBtn' + venueId);
   const msg = q('reviewMsg' + venueId);
   btn.disabled = true; btn.textContent = '⏳...';
@@ -2764,6 +2795,40 @@ async function submitReview(venueId) {
     msg.innerHTML = `<span style="color:var(--red)">${esc(e.message||'Błąd')}</span>`;
     btn.textContent = 'Wyślij opinię'; btn.disabled = false;
   }
+}
+
+// ─── Moje opinie (Profile) ───
+async function loadMyReviewsProfile() {
+  try {
+    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
+    const resp = await fetch(BASE+'/api/my-reviews', {headers:h});
+    const data = await resp.json();
+    const reviews = data.reviews || [];
+    const card = q('myReviewsCard');
+    const list = q('myReviewsList');
+    if (!card || !list) return;
+    if (reviews.length === 0) {
+      card.style.display = 'block';
+      list.style.display = 'block';
+      list.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:12px">Nie masz jeszcze żadnych opinii</div>';
+      return;
+    }
+    card.style.display = 'block';
+    list.innerHTML = reviews.map(r => {
+      const stars = r.rating ? ('★'.repeat(r.rating) + '☆'.repeat(5 - r.rating)) : '';
+      const date = new Date(r.created_at).toLocaleDateString("pl-PL");
+      const firstLine = r.text ? esc(r.text).split('\n')[0].slice(0, 80) : '';
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border)" onclick="go('map');setTimeout(()=>openVenueDetail(${r.venue_id}),300)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">${esc(r.venue_name)}</span>
+          <span style="font-size:10px;color:var(--muted)">${date}</span>
+        </div>
+        ${stars ? `<div style="color:var(--fox);font-size:13px;margin-bottom:2px">${stars}</div>` : ''}
+        ${firstLine ? `<div style="font-size:12px;color:var(--muted);line-height:1.4">${firstLine}</div>` : ''}
+        ${r.venue_reply ? `<div style="margin-top:4px;padding:4px 8px;background:rgba(46,204,113,.06);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--muted)"><span style="color:var(--green);font-weight:700">Odpowiedź:</span> ${esc(r.venue_reply)}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) { /* silent */ }
 }
 
 const _menuState = {};
