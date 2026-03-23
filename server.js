@@ -1449,11 +1449,55 @@ async function confirmOtp(venueId, otp) {
     return { ok:true, userId, day, countedAdded:false, debounce:true, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
   }
 
-  // V26: ТІЛЬКИ підтверджуємо check-in. БЕЗ бонусів — вони тепер в POST /api/receipt
   await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
   const already = await hasCountedToday(venueId, userId);
-  return { ok:true, userId, day, checkin_id:row.id, countedAdded:false, debounce:false,
-    receipt_pending:!already, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
+  let countedAdded = false, isFirstEver = false, inviteAutoAdded = 0, newAch = [];
+  if (!already) {
+    const hasDK = COUNTED_DAY_COL === "day_key", hasWD = await hasColumn("fp1_counted_visits", "war_day");
+    const cols = ["venue_id","user_id"], vals = [venueId, userId];
+    if (hasDK) { cols.push("day_key"); vals.push(day); } if (hasWD) { cols.push("war_day"); vals.push(day); }
+    const foxPhone = await pool.query(`SELECT phone FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (foxPhone.rows[0]?.phone) { cols.push("visitor_phone"); vals.push(foxPhone.rows[0].phone); }
+    // Visit cap: max 3 credited per fox per venue per month
+    const phoneForCap = foxPhone.rows[0]?.phone;
+    let creditCount = 0;
+    if (phoneForCap) {
+      const cv = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE (user_id=$1 OR visitor_phone=$3) AND venue_id=$2 AND is_credited=TRUE
+         AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
+        [userId, venueId, phoneForCap]
+      );
+      creditCount = cv.rows[0].c;
+    } else {
+      const cv = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE
+         AND EXTRACT(YEAR FROM created_at)=EXTRACT(YEAR FROM NOW()) AND EXTRACT(MONTH FROM created_at)=EXTRACT(MONTH FROM NOW())`,
+        [userId, venueId]
+      );
+      creditCount = cv.rows[0].c;
+    }
+    const isCredited = creditCount < 3;
+    cols.push("is_credited"); vals.push(isCredited);
+    await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
+    if (isCredited) await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
+    countedAdded = true;
+    // First ever visit
+    const totalV = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND is_credited=TRUE`, [userId]);
+    if (totalV.rows[0].c === 1) { isFirstEver = true; await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]); }
+    // Auto invite every 5 visits
+    inviteAutoAdded = await awardInvitesFrom5Visits(userId);
+    // Achievements
+    newAch = await checkAndAwardAchievements(userId);
+    // Mark reservation as used
+    await pool.query(`UPDATE fp1_reservations SET used=TRUE WHERE user_id=$1 AND venue_id=$2 AND used=FALSE AND expired=FALSE AND expires_at>NOW()`, [userId, venueId]);
+    // Demo fox upgrade
+    const demoCheck = await pool.query(`SELECT is_demo FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
+    if (demoCheck.rows[0]?.is_demo) {
+      await pool.query(`UPDATE fp1_foxes SET is_demo=FALSE, demo_venue_id=NULL, demo_expires_at=NULL, join_source='venue' WHERE user_id=$1`, [userId]);
+    }
+  }
+  return { ok:true, userId, day, checkin_id:row.id, countedAdded, debounce:false,
+    inviteAutoAdded, isFirstEver, newAch };
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -4960,7 +5004,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         const borderColor = isAdminUser ? '#FFD700' : (badge ? TOP_FOX_COLORS[badge] : null);
         return `<div style="margin:8px 0;padding:8px;border-radius:10px;border:1px solid ${borderColor ? borderColor+'40' : '#2a2f49'};background:${borderColor ? borderColor+'10' : 'transparent'}">
           <div>Kod wizyty: <b style="font-size:20px;letter-spacing:4px">${escapeHtml(p.otp)}</b> <span class="muted">· za ~${min} min</span></div>
-          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} ${p.last_review_rating ? `<span style="color:#f5a623;font-size:12px">${'★'.repeat(p.last_review_rating)}${'☆'.repeat(5-p.last_review_rating)}</span>` : `<span style="font-size:11px;color:rgba(255,255,255,.3)">Pierwsza wizyta</span>`} <span class="muted">· ${p.rating||0} pkt · X/Y: ${p.fox_visits||0}/${p.total_visits||0}</span></div>
+          <div style="margin-top:4px;font-size:13px"><span${nameColor}>🦊 ${foxName}</span>${founderLabel}${badgeHtml}${p.founder_number && !isAdminUser ? ` <span style="color:#ffd700;font-size:11px">👑 #${p.founder_number}</span>` : ''} ${p.last_review_rating ? `<span style="color:#f5a623;font-size:12px">${'★'.repeat(p.last_review_rating)}${'☆'.repeat(5-p.last_review_rating)}</span>` : `<span style="font-size:11px;color:rgba(255,255,255,.3)">Pierwsza wizyta</span>`} <span class="muted">· ${p.rating||0} pkt · ${p.fox_visits||0}/${p.total_visits||0}</span></div>
         </div>`;
       }).join("");
 
@@ -5654,8 +5698,8 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     if (bot) {
       try {
         let msg;
-        if (r.debounce) msg = `⚠️ Wizyta już potwierdzona w ciągu 15 min\n🏪 ${venue.name}\n📊 X/Y: ${xy.X}/${xy.Y}`;
-        else if (!r.countedAdded) msg = `DZIŚ JUŻ BYŁEŚ ✅\n🏪 ${venue.name}\n📅 ${r.day}\n📊 X/Y: ${xy.X}/${xy.Y}`;
+        if (r.debounce) msg = `⚠️ Wizyta już potwierdzona w ciągu 15 min\n🏪 ${venue.name}\n📊 ${xy.X}/${xy.Y}`;
+        else if (!r.countedAdded) msg = `DZIŚ JUŻ BYŁEŚ ✅\n🏪 ${venue.name}\n📅 ${r.day}\n📊 ${xy.X}/${xy.Y}`;
         else {
           msg = `✅ Check-in potwierdzony!\n🏪 ${venue.name}\n\n💰 Wpisz kwotę rachunku w aplikacji FoxPot, aby otrzymać punkty i bonusy!`;
           if (r.isFirstEver) msg += `\n🎉 Pierwsza wizyta! +10 punktów`;
@@ -5678,7 +5722,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const foxReviewQ = await pool.query(`SELECT rating, text FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 1`, [String(r.userId), venueId]);
     const foxReview = foxReviewQ.rows[0];
     const reviewText = foxReview ? (foxReview.rating ? ' ⭐'.repeat(foxReview.rating) : ' 💬') : ' · Brak oceny';
-    const label = r.debounce ? `Debounce ⚠️ · ${foxName}` : r.countedAdded ? `✅ ${foxName}${founderText}${badgeText}${reviewText} · X/Y ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅ · ${foxName}`;
+    const label = r.debounce ? `Debounce ⚠️ · ${foxName}` : r.countedAdded ? `✅ ${foxName}${founderText}${badgeText}${reviewText} · ${xy.X}/${xy.Y}` : `DZIŚ JUŻ BYŁO ✅ · ${foxName}`;
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent(label)}`);
   } catch (e) {
     console.error("CONFIRM_ERR", e);
