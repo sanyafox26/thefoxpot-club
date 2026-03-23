@@ -3725,6 +3725,32 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
    REVIEWS — Private feedback from Fox to Venue
 ═══════════════════════════════════════════════════════════════ */
 
+// GET /api/venue-review-status?venue_id=X — can fox review + last review
+app.get("/api/venue-review-status", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const venueId = req.query.venue_id ? Number(req.query.venue_id) : null;
+    if (!venueId) return res.json({ can_review: false, last_review: null });
+    // Find unreviewed confirmed checkin
+    const unreviewd = await pool.query(
+      `SELECT c.id FROM fp1_checkins c
+       WHERE c.user_id=$1::bigint AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id)
+       ORDER BY c.confirmed_at DESC LIMIT 1`,
+      [userId, venueId]
+    );
+    // Fox's last review at this venue
+    const lastReview = await pool.query(
+      `SELECT rating, text, created_at FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 1`,
+      [userId, venueId]
+    );
+    res.json({
+      can_review: unreviewd.rowCount > 0,
+      last_review: lastReview.rows[0] || null
+    });
+  } catch(e) { res.json({ can_review: false, last_review: null }); }
+});
+
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
@@ -5037,7 +5063,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
 
   res.send(pageShell(`Panel — ${venue?.name || venueId}`, `
     <div class="card">
-      <div class="topbar"><h1>🦊 ${escapeHtml(venue?.name||venueId)} ${statusHtml}</h1><a href="/panel/logout">Wyloguj</a></div>
+      <div class="topbar"><h1>🦊 ${escapeHtml(venue?.name||venueId)} ${totalRated > 0 ? `<span style="color:#f5a623;font-size:16px;font-weight:800">⭐ ${parseFloat(reviewStats.rows[0].avg).toFixed(1)}</span>` : ''} ${statusHtml}</h1><a href="/panel/logout">Wyloguj</a></div>
       ${flash(req)}
       <div style="margin-top:10px;opacity:.7;font-size:13px">Kod lokalu: <b>${escapeHtml(venue.ref_code||'brak')}</b> | Łącznie wizyt: <b>${xy.rows[0].c}</b></div>
       ${venue.slug ? `<div style="margin-top:8px;display:flex;align-items:center;gap:6px"><a href="https://thefoxpot.club/lokal/${escapeHtml(venue.slug)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.25);border-radius:8px;color:#f5a623;font-size:12px;font-weight:700;text-decoration:none">🌐 Zobacz stronę</a><button onclick="navigator.clipboard.writeText('https://thefoxpot.club/lokal/${escapeHtml(venue.slug)}');this.textContent='✅';setTimeout(()=>this.textContent='📋',1500)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:rgba(255,255,255,.5);padding:4px 8px;cursor:pointer;font-size:12px">📋</button></div>` : ''}

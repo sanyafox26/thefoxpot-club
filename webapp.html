@@ -2638,6 +2638,7 @@ async function startTrial(venueId) {
       </div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
       ${v.rated_count > 0 ? `<div style="font-size:13px;color:#f5a623;font-weight:700;margin-bottom:4px">⭐ ${v.avg_rating} <span style="color:var(--muted);font-weight:400;font-size:11px">(z ${v.rated_count} opinii)</span></div>` : ''}
+      <div id="foxReviewBadge${v.id}" style="display:none;font-size:12px;color:var(--green);margin-bottom:4px"></div>
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       <div>${badge}${topBadges}${dietBadges}</div>
@@ -2670,23 +2671,7 @@ async function startTrial(venueId) {
       </div>
     </div>`}
     ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${menuBlock}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
-    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px">
-      <div style="padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px">💬 Zostaw opinię</div>
-        <div onclick="toggleReviewStars(${v.id})" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:8px;user-select:none">
-          <span style="font-size:13px;color:var(--fox);font-weight:600">⭐ Oceń wizytę</span>
-          <span id="reviewStarsArrow${v.id}" style="font-size:11px;color:var(--muted);transition:transform .3s">▼</span>
-        </div>
-        <div id="reviewStarsWrap${v.id}" style="max-height:0;overflow:hidden;transition:max-height .35s ease">
-          <div id="reviewStars${v.id}" style="display:flex;gap:4px;margin-bottom:8px;font-size:24px;cursor:pointer;padding:4px 0">
-            ${[1,2,3,4,5].map(i=>'<span onclick="setReviewStars('+v.id+','+i+')" style="color:var(--border2);transition:color .15s" data-star="'+i+'">★</span>').join('')}
-          </div>
-        </div>
-        <textarea id="reviewText${v.id}" maxlength="500" rows="2" placeholder="Podziel się wrażeniami z wizyty..." style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font);resize:none"></textarea>
-        <button id="reviewBtn${v.id}" onclick="submitReview(${v.id})" style="margin-top:6px;width:100%;padding:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">Wyślij opinię</button>
-        <div id="reviewMsg${v.id}" style="font-size:11px;margin-top:4px;text-align:center"></div>
-      </div>
-    </div>
+    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"></div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
@@ -2704,28 +2689,27 @@ async function startTrial(venueId) {
   q('venueModal').classList.add('open');
   haptic('selection');
   initVenuePhotos(v.id);
-  // loadVenueReviewBlock loaded statically in template now
+  loadVenueReviewBlock(v.id);
 }
 
 // ─── Venue Review Block ───
 async function loadVenueReviewBlock(venueId) {
   const block = q('venueReviewBlock' + venueId);
-  if (!block) return;
-  if (!IS_AUTHENTICATED) return;
+  if (!block || !IS_AUTHENTICATED) return;
   try {
-    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
-    // Fetch reviews and checkin status in parallel
-    const [myR, cq] = await Promise.all([
-      fetch(BASE+'/api/my-reviews', {headers:h}).then(r=>r.json()).catch(e=>({reviews:[],err:e.message})),
-      fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h}).then(r=>r.json()).catch(e=>({last_confirmed_id:null,err:e.message}))
-    ]);
-    const myReviews = (myR.reviews||[]).filter(r => r.venue_id === venueId);
-    let canReview = !!cq.last_confirmed_id;
-
+    const d = await api('/api/venue-review-status?venue_id=' + venueId);
     let html = '';
-    // Review form
-    if (canReview) {
-      html += `<div style="margin-top:8px;padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">
+    // Show fox's last review badge at top of modal
+    const badge = q('foxReviewBadge' + venueId);
+    if (badge && d.last_review) {
+      const lr = d.last_review;
+      const stars = lr.rating ? '★'.repeat(lr.rating) + '☆'.repeat(5 - lr.rating) : '';
+      badge.style.display = 'block';
+      badge.innerHTML = stars ? `Twoja ocena: <span style="color:var(--fox)">${stars}</span>` : `Twoja ocena: <span style="color:var(--muted)">tylko tekst</span>`;
+    }
+    // Review form — only if there's an unreviewed confirmed checkin
+    if (d.can_review) {
+      html += `<div style="padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">
         <div style="font-size:13px;font-weight:700;margin-bottom:8px">💬 Zostaw opinię</div>
         <div onclick="toggleReviewStars(${venueId})" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:8px;user-select:none">
           <span style="font-size:13px;color:var(--fox);font-weight:600">⭐ Oceń wizytę</span>
@@ -2739,21 +2723,6 @@ async function loadVenueReviewBlock(venueId) {
         <textarea id="reviewText${venueId}" maxlength="500" rows="2" placeholder="Podziel się wrażeniami z wizyty..." style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font);resize:none"></textarea>
         <button id="reviewBtn${venueId}" onclick="submitReview(${venueId})" style="margin-top:6px;width:100%;padding:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">Wyślij opinię</button>
         <div id="reviewMsg${venueId}" style="font-size:11px;margin-top:4px;text-align:center"></div>
-      </div>`;
-    }
-    // Fox's last review for this venue
-    if (myReviews.length > 0) {
-      const last = myReviews[0];
-      const lastStars = last.rating ? ('★'.repeat(last.rating) + '☆'.repeat(5 - last.rating)) : '';
-      const lastDate = new Date(last.created_at).toLocaleDateString("pl-PL");
-      html += `<div style="margin-top:8px;padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Twoja ostatnia ocena</div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          ${lastStars ? `<span style="color:var(--fox);font-size:14px">${lastStars}</span>` : '<span style="font-size:12px;color:var(--muted)">Bez oceny</span>'}
-          <span style="font-size:10px;color:var(--muted)">${lastDate}</span>
-        </div>
-        ${last.text?`<div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4">${esc(last.text)}</div>`:''}
-        ${last.venue_reply?`<div style="margin-top:6px;padding:6px 8px;background:rgba(46,204,113,.06);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--muted)"><span style="color:var(--green);font-weight:700">Odpowiedź lokalu:</span> ${esc(last.venue_reply)}</div>`:''}
       </div>`;
     }
     block.innerHTML = html;
@@ -2797,8 +2766,8 @@ async function submitReview(venueId) {
     if (d.ok) {
       msg.innerHTML = '<span style="color:var(--green)">✅ Dziękujemy za opinię!</span>';
       haptic('success');
-      // Review submitted — hide form after delay
-      setTimeout(() => { const b = q('venueReviewBlock'+venueId); if(b) b.innerHTML='<div style="padding:12px;text-align:center;color:var(--green);font-size:13px;font-weight:700">✅ Opinia wysłana!</div>'; }, 1500);
+      // Review submitted — reload review block after delay
+      setTimeout(() => loadVenueReviewBlock(venueId), 1500);
     } else {
       msg.innerHTML = `<span style="color:var(--fox)">${esc(d.error||'Błąd')}</span>`;
       btn.textContent = 'Wyślij opinię'; btn.disabled = false;
