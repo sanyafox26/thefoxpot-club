@@ -2656,7 +2656,7 @@ async function startTrial(venueId) {
       </div>
     </div>`}
     ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${menuBlock}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
-    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"></div>
+    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"><div style="font-size:11px;color:var(--fox);padding:6px">⏳ Ładowanie opinii... auth=${IS_AUTHENTICATED} jwt=${!!_jwtToken}</div></div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
