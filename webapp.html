@@ -2167,8 +2167,10 @@ const TOP_BADGE_LABELS={year:'🏆 Top roku',month:'👑 Top miesiąca',week:'�
 async function loadTop(){
   S.topLoaded=true;
   const $l=q('topLoading'),$c=q('topContent');
+  console.log('[TOP] loadTop called, $l=',$l,'$c=',$c);
   try{
     const d=await api('/api/top');
+    console.log('[TOP] API response:', JSON.stringify(d).slice(0,500));
     $l.style.display='none';
     const medals=['🥇','🥈','🥉'];
     const myId=getUserId(S.profile)||null;
@@ -2747,22 +2749,29 @@ async function submitReview(venueId) {
   }
 }
 
-async function loadVenueMenu(venueId, btn) {
+const _menuState = {};
+async function loadVenueMenu(venueId, btn, append) {
   const el = q('venueMenu_' + venueId);
   if (!el) return;
-  if (el.style.display === 'block') { el.style.display = 'none'; return; }
-  el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Ładowanie...</div>';
-  el.style.display = 'block';
+  if (!append && el.style.display === 'block') { el.style.display = 'none'; return; }
+  if (!append) {
+    _menuState[venueId] = { page: 1, loaded: 0, total: 0 };
+    el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Ładowanie...</div>';
+    el.style.display = 'block';
+  }
+  const ms = _menuState[venueId];
   try {
-    const r = await fetch(BASE + '/api/venue/' + venueId + '/menu');
+    const r = await fetch(BASE + '/api/venue/' + venueId + '/menu?page=' + ms.page + '&limit=15');
     const d = await r.json();
     const items = d.items || [];
     const mfUrl = d.menu_file_url || '';
-    if (!items.length && !mfUrl) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Menu jeszcze nie dodane</div>'; return; }
+    ms.total = d.total_count || 0;
+    ms.loaded += items.length;
+    if (!ms.loaded && !mfUrl) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Menu jeszcze nie dodane</div>'; return; }
     const catNames = {main:'🍽 Dania główne',snack:'🥗 Przystawki',soup:'🍲 Zupy',dessert:'🍰 Desery',drink:'☕ Napoje',alcohol:'🍺 Alkohol'};
     const catOrder = ['main','snack','soup','dessert','drink','alcohol'];
     const grouped = {};
-    items.forEach(m => { if (!grouped[m.category]) grouped[m.category] = []; grouped[m.category].push(m); });
+    items.forEach(m => { const c = m.category || 'main'; if (!grouped[c]) grouped[c] = []; grouped[c].push(m); });
     let html = '';
     catOrder.forEach(cat => {
       if (!grouped[cat]) return;
@@ -2774,14 +2783,26 @@ async function loadVenueMenu(venueId, btn) {
         '</div>'
       ).join('');
     });
-    if (mfUrl) {
-      const isPdf = mfUrl.toLowerCase().endsWith('.pdf');
-      html += '<div style="margin-top:10px">' + (isPdf
-        ? '<a href="' + esc(mfUrl) + '" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;color:var(--fox);font-weight:600;font-size:13px;text-decoration:none">📄 Zobacz pełne menu (PDF)</a>'
-        : '<div style="text-align:center"><img src="' + esc(mfUrl) + '" onclick="window.open(this.src,\'_blank\')" style="max-width:280px;width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/><div style="font-size:10px;color:var(--muted);margin-top:4px">Kliknij aby powiększyć</div></div>') + '</div>';
+    if (append) {
+      const moreBtn = q('menuMore_' + venueId);
+      if (moreBtn) moreBtn.remove();
+      const listEl = q('menuItems_' + venueId);
+      if (listEl) listEl.insertAdjacentHTML('beforeend', html);
+    } else {
+      let full = '<div id="menuItems_' + venueId + '">' + html + '</div>';
+      if (mfUrl) {
+        const isPdf = mfUrl.toLowerCase().endsWith('.pdf');
+        full += '<div style="margin-top:10px">' + (isPdf
+          ? '<a href="' + esc(mfUrl) + '" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;color:var(--fox);font-weight:600;font-size:13px;text-decoration:none">📄 Zobacz pełne menu (PDF)</a>'
+          : '<div style="text-align:center"><img src="' + esc(mfUrl) + '" onclick="window.open(this.src,\'_blank\')" style="max-width:280px;width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/><div style="font-size:10px;color:var(--muted);margin-top:4px">Kliknij aby powiększyć</div></div>') + '</div>';
+      }
+      el.innerHTML = full;
     }
-    el.innerHTML = html;
-  } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
+    if (ms.loaded < ms.total) {
+      const listEl = q('menuItems_' + venueId) || el;
+      listEl.insertAdjacentHTML('afterend', '<button id="menuMore_' + venueId + '" onclick="_menuState[' + venueId + '].page++;loadVenueMenu(' + venueId + ',null,true)" style="width:100%;margin-top:8px;padding:8px;background:rgba(255,138,0,.08);border:1px solid rgba(255,138,0,.2);border-radius:var(--radius-sm);color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">Pokaż więcej pozycji (' + (ms.total - ms.loaded) + ')</button>');
+    }
+  } catch (e) { if (!append) el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }
 
 // ── Content Rotation Engine — never empty ──

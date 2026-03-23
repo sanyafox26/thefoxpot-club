@@ -5482,9 +5482,13 @@ app.delete("/panel/venue/menu-file", requirePanelAuth, async (req, res) => {
 // Public: get menu for venue
 app.get("/api/venue/:id/menu", async (req, res) => {
   const venueId = Number(req.params.id);
-  const items = await pool.query(`SELECT name,category,price FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [venueId]);
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 15));
+  const offset = (page - 1) * limit;
+  const items = await pool.query(`SELECT name,category,price FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name LIMIT $2 OFFSET $3`, [venueId, limit, offset]);
+  const cnt = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_menu_items WHERE venue_id=$1`, [venueId]);
   const vq = await pool.query(`SELECT menu_file_url FROM fp1_venues WHERE id=$1`, [venueId]);
-  res.json({ items: items.rows, menu_file_url: vq.rows[0]?.menu_file_url || null });
+  res.json({ items: items.rows, total_count: cnt.rows[0].c, page, limit, menu_file_url: vq.rows[0]?.menu_file_url || null });
 });
 
 // ── PANEL: Save venue settings ──
