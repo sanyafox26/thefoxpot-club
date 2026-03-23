@@ -2656,7 +2656,23 @@ async function startTrial(venueId) {
       </div>
     </div>`}
     ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${menuBlock}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
-    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"></div>
+    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px">
+      <div style="padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">💬 Zostaw opinię</div>
+        <div onclick="toggleReviewStars(${v.id})" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:8px;user-select:none">
+          <span style="font-size:13px;color:var(--fox);font-weight:600">⭐ Oceń wizytę</span>
+          <span id="reviewStarsArrow${v.id}" style="font-size:11px;color:var(--muted);transition:transform .3s">▼</span>
+        </div>
+        <div id="reviewStarsWrap${v.id}" style="max-height:0;overflow:hidden;transition:max-height .35s ease">
+          <div id="reviewStars${v.id}" style="display:flex;gap:4px;margin-bottom:8px;font-size:24px;cursor:pointer;padding:4px 0">
+            ${[1,2,3,4,5].map(i=>'<span onclick="setReviewStars('+v.id+','+i+')" style="color:var(--border2);transition:color .15s" data-star="'+i+'">★</span>').join('')}
+          </div>
+        </div>
+        <textarea id="reviewText${v.id}" maxlength="500" rows="2" placeholder="Podziel się wrażeniami z wizyty..." style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font);resize:none"></textarea>
+        <button id="reviewBtn${v.id}" onclick="submitReview(${v.id})" style="margin-top:6px;width:100%;padding:10px;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);border-radius:var(--radius-sm);color:var(--fox);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font)">Wyślij opinię</button>
+        <div id="reviewMsg${v.id}" style="font-size:11px;margin-top:4px;text-align:center"></div>
+      </div>
+    </div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
