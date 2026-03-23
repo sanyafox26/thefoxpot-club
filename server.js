@@ -4817,6 +4817,7 @@ app.post("/panel/login", async (req, res) => {
 app.get("/panel/logout", (req, res) => { clearCookie(res); res.redirect("/panel"); });
 
 app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
+  try {
   const venueId = String(req.panel.venue_id);
   const venue   = await getVenue(venueId);
   const pending = await listPending(venueId);
@@ -5219,6 +5220,10 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </div>
       <p class="muted" style="font-size:11px">Udostępnij ten link na Instagramie, Facebooku, Google Maps lub wydrukuj QR kod.</p>
     </div>`));
+  } catch (e) {
+    console.error("DASHBOARD ERROR:", e);
+    res.status(500).send(pageShell("Panel — Błąd", `<div class="card"><h2>❌ Błąd ładowania panelu</h2><p class="muted">${escapeHtml(String(e?.message || e).slice(0, 200))}</p><a href="/panel/dashboard">Spróbuj ponownie</a></div>`));
+  }
 });
 
 // ── PANEL: GET venue dishes (Top 3) ──
