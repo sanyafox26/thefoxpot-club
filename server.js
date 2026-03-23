@@ -1445,16 +1445,18 @@ async function confirmOtp(venueId, otp) {
     [userId, venueId]
   );
   if (debounce.rowCount > 0) {
+    console.log(`[confirmOtp] DEBOUNCE userId=${userId} venueId=${venueId}`);
     await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW() WHERE id=$1`, [row.id]);
     return { ok:true, userId, day, countedAdded:false, debounce:true, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
   }
 
-  // Check ONLY counted_visits (not confirmed checkins) to avoid false positives from old unprocessed checkins
+  // Check ONLY counted_visits (not confirmed checkins) to avoid false positives
   const alreadyCounted = await pool.query(
     `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND user_id=$3 LIMIT 1`,
     [venueId, day, userId]
   );
   const already = alreadyCounted.rowCount > 0;
+  console.log(`[confirmOtp] userId=${userId} venueId=${venueId} day=${day} already=${already} COUNTED_DAY_COL=${COUNTED_DAY_COL}`);
   await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
   let countedAdded = false, isFirstEver = false, inviteAutoAdded = 0, newAch = [];
   if (!already) {
@@ -1483,6 +1485,7 @@ async function confirmOtp(venueId, otp) {
     }
     const isCredited = creditCount < 3;
     cols.push("is_credited"); vals.push(isCredited);
+    console.log(`[confirmOtp] INSERT counted_visit cols=${cols.join(',')} isCredited=${isCredited}`);
     await pool.query(`INSERT INTO fp1_counted_visits(${cols.join(",")}) VALUES(${cols.map((_,i)=>`$${i+1}`).join(",")})`, vals);
     if (isCredited) await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [userId]);
     countedAdded = true;
