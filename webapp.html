@@ -2681,16 +2681,18 @@ async function startTrial(venueId) {
 async function loadVenueReviewBlock(venueId) {
   const block = q('venueReviewBlock' + venueId);
   if (!block) return;
-  if (!IS_AUTHENTICATED) return;
+  if (!IS_AUTHENTICATED) { block.innerHTML='<div style="font-size:11px;color:var(--red);padding:8px">DEBUG: not authenticated jwt='+!!_jwtToken+'</div>'; return; }
   try {
     const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
     // Fetch reviews and checkin status in parallel
     const [myR, cq] = await Promise.all([
-      fetch(BASE+'/api/my-reviews', {headers:h}).then(r=>r.json()).catch(()=>({reviews:[]})),
-      fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h}).then(r=>r.json()).catch(()=>({last_confirmed_id:null}))
+      fetch(BASE+'/api/my-reviews', {headers:h}).then(r=>r.json()).catch(e=>({reviews:[],err:e.message})),
+      fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h}).then(r=>r.json()).catch(e=>({last_confirmed_id:null,err:e.message}))
     ]);
     const myReviews = (myR.reviews||[]).filter(r => r.venue_id === venueId);
     let canReview = !!cq.last_confirmed_id;
+    // TEMP DEBUG — remove after fixing
+    block.insertAdjacentHTML('beforeend', `<div style="font-size:10px;color:var(--muted);padding:4px;opacity:.6">can=${canReview} id=${cq.last_confirmed_id||'null'} rev=${myReviews.length} err=${cq.err||myR.err||'none'}</div>`);
 
     let html = '';
     // Review form
