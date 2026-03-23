@@ -408,8 +408,13 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       </div>
       <!-- Nearby venues (geo-based) -->
       <div id="nearbyCard" style="display:none;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:8px;padding:0 2px">📍 Lokale w pobliżu</div>
-        <div id="nearbyList"></div>
+        <div onclick="toggleNearby()" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);cursor:pointer;user-select:none">
+          <span style="font-size:13px;font-weight:700;color:var(--green)" id="nearbyTitle">🦊 Lokale w pobliżu</span>
+          <span id="nearbyArrow" style="font-size:12px;color:var(--muted);transition:transform .3s">▼</span>
+        </div>
+        <div id="nearbyCollapse" style="max-height:0;overflow:hidden;transition:max-height .35s ease">
+          <div id="nearbyList" style="padding-top:6px"></div>
+        </div>
       </div>
       <!-- Social bonus (3rd position) -->
       <div class="card" id="socialBonusCard" style="display:none;margin-bottom:12px">
@@ -1337,6 +1342,17 @@ async function loadBestFox() {
 }
 
 // ─── Nearby Venues (geo-based) ───
+function toggleNearby() {
+  const col = q('nearbyCollapse'), arrow = q('nearbyArrow');
+  if (!col) return;
+  if (col.style.maxHeight && col.style.maxHeight !== '0px') {
+    col.style.maxHeight = '0';
+    if (arrow) arrow.style.transform = 'rotate(0deg)';
+  } else {
+    col.style.maxHeight = col.scrollHeight + 'px';
+    if (arrow) arrow.style.transform = 'rotate(180deg)';
+  }
+}
 async function renderNearby() {
   const card = q('nearbyCard');
   const list = q('nearbyList');
@@ -1350,6 +1366,8 @@ async function renderNearby() {
     .slice(0, 5);
   if (!nearby.length) { card.style.display='none'; return; }
   card.style.display = 'block';
+  const titleEl = q('nearbyTitle');
+  if (titleEl) titleEl.textContent = '🦊 Lokale w pobliżu (' + nearby.length + ')';
   list.innerHTML = nearby.map(v => {
     const d = formatDist(v.dist);
     const visits = v.my_visits || 0;
