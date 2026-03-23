@@ -2695,15 +2695,11 @@ async function loadVenueReviewBlock(venueId) {
     const myD = await myR.json();
     const myReviews = (myD.reviews||[]).filter(r => r.venue_id === venueId);
 
-    // Find last confirmed checkin without review
-    const profile = S.profile;
-    let canReview = false, lastCheckinId = null;
-    // We check by trying to find a checkin_id not in existing reviews
-    // For simplicity, show form if Fox has visited and has fewer reviews than visits
-    const v = S.venues.find(x => x.id === venueId);
-    if (v && (v.my_visits||0) > myReviews.length) {
-      canReview = true;
-    }
+    // Check if there's an unreviewed confirmed checkin at this venue
+    let canReview = false;
+    const cq = await fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h});
+    const cd = await cq.json();
+    if (cd.last_confirmed_id) canReview = true;
 
     let html = '';
     // Review form

@@ -3672,42 +3672,6 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
    REVIEWS — Private feedback from Fox to Venue
 ═══════════════════════════════════════════════════════════════ */
 
-// DEBUG: check review eligibility for a user at a venue (TEMP — delete after debugging)
-app.get("/api/debug-review-state", async (req, res) => {
-  try {
-    const username = req.query.username;
-    const venueName = req.query.venue;
-    if (!username || !venueName) return res.json({ error: "need ?username=X&venue=Y" });
-    const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE username ILIKE $1 LIMIT 1`, [username]);
-    if (!foxQ.rows.length) return res.json({ error: "fox not found" });
-    const userId = foxQ.rows[0].user_id;
-    const venueQ = await pool.query(`SELECT id, name FROM fp1_venues WHERE name ILIKE $1 LIMIT 1`, ['%'+venueName+'%']);
-    if (!venueQ.rows.length) return res.json({ error: "venue not found" });
-    const venueId = venueQ.rows[0].id;
-    const checkins = await pool.query(
-      `SELECT id, otp, confirmed_at, created_at, expires_at FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 5`,
-      [userId, venueId]
-    );
-    const counted = await pool.query(
-      `SELECT id, war_day, is_credited, created_at FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 5`,
-      [userId, venueId]
-    );
-    const reviews = await pool.query(
-      `SELECT id, checkin_id, rating, text, created_at FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 5`,
-      [String(userId), venueId]
-    );
-    const statusCheck = await pool.query(
-      `SELECT c.id FROM fp1_checkins c WHERE c.user_id=$1 AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id) ORDER BY c.confirmed_at DESC LIMIT 1`,
-      [userId, venueId]
-    );
-    res.json({
-      user_id: userId, venue_id: venueId, venue_name: venueQ.rows[0].name,
-      checkins: checkins.rows, counted_visits: counted.rows, reviews: reviews.rows,
-      eligible_checkin_id: statusCheck.rows[0]?.id || null
-    });
-  } catch(e) { res.json({ error: String(e?.message || e) }); }
-});
-
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
@@ -3736,10 +3700,9 @@ app.post("/api/review", requireWebAppAuth, async (req, res) => {
     if (r !== null && (r < 1 || r > 5)) return res.status(400).json({ error: "Ocena musi być od 1 do 5" });
     const cleanText = text ? String(text).trim().slice(0, 500) : null;
     if (r === null && !cleanText) return res.status(400).json({ error: "Dodaj ocenę lub tekst" });
-    // Verify: checkin belongs to this fox, is confirmed, is credited
+    // Verify: checkin belongs to this fox and is confirmed (no need for credited — every confirmed visit can review)
     const ci = await pool.query(
       `SELECT c.id, c.venue_id FROM fp1_checkins c
-       JOIN fp1_counted_visits cv ON cv.user_id = c.user_id AND cv.venue_id = c.venue_id AND cv.war_day = c.war_day AND cv.is_credited = TRUE
        WHERE c.id = $1 AND c.user_id = $2 AND c.confirmed_at IS NOT NULL LIMIT 1`,
       [checkin_id, userId]
     );
