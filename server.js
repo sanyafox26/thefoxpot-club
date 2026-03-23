@@ -3725,19 +3725,21 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
-    const userId = String(req.tgUser.id);
+    const userId = req.tgUser.id;
     const venueId = req.query.venue_id ? Number(req.query.venue_id) : null;
     if (!venueId) return res.json({ last_confirmed_id: null });
     // Find latest confirmed checkin at this venue that doesn't have a review yet
+    // user_id in fp1_checkins is BIGINT, so cast to BIGINT explicitly
     const r = await pool.query(
       `SELECT c.id FROM fp1_checkins c
-       WHERE c.user_id=$1 AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL
+       WHERE c.user_id=$1::bigint AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id)
        ORDER BY c.confirmed_at DESC LIMIT 1`,
       [userId, venueId]
     );
+    console.log(`[checkin/status] userId=${userId} venueId=${venueId} found=${r.rows[0]?.id||'null'}`);
     res.json({ last_confirmed_id: r.rows[0]?.id || null });
-  } catch(e) { res.json({ last_confirmed_id: null }); }
+  } catch(e) { console.error("[checkin/status] ERR", e.message); res.json({ last_confirmed_id: null }); }
 });
 
 // POST /api/review — Fox leaves a review after credited check-in
@@ -3750,10 +3752,10 @@ app.post("/api/review", requireWebAppAuth, async (req, res) => {
     if (r !== null && (r < 1 || r > 5)) return res.status(400).json({ error: "Ocena musi być od 1 do 5" });
     const cleanText = text ? String(text).trim().slice(0, 500) : null;
     if (r === null && !cleanText) return res.status(400).json({ error: "Dodaj ocenę lub tekst" });
-    // Verify: checkin belongs to this fox and is confirmed (no need for credited — every confirmed visit can review)
+    // Verify: checkin belongs to this fox and is confirmed
     const ci = await pool.query(
       `SELECT c.id, c.venue_id FROM fp1_checkins c
-       WHERE c.id = $1 AND c.user_id = $2 AND c.confirmed_at IS NOT NULL LIMIT 1`,
+       WHERE c.id = $1 AND c.user_id = $2::bigint AND c.confirmed_at IS NOT NULL LIMIT 1`,
       [checkin_id, userId]
     );
     if (ci.rowCount === 0) return res.status(403).json({ error: "Brak potwierdzonego check-inu" });
