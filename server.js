@@ -489,6 +489,7 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "youtube_url",           "TEXT");
   await ensureColumn("fp1_venues",         "website_url",           "TEXT");
   await ensureColumn("fp1_venues",         "menu_file_url",         "TEXT");
+  await ensureColumn("fp1_venues",         "phone",                 "TEXT");
   // Venue slug for public page
   await ensureColumn("fp1_venues",         "slug",                  "TEXT");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_slug ON fp1_venues(slug) WHERE slug IS NOT NULL`).catch(()=>{});
@@ -2115,7 +2116,7 @@ app.get("/lokal/:slug", async (req, res) => {
     const vr = await pool.query(
       `SELECT id,name,slug,city,address,lat,lng,venue_type,cuisine,tags,description,is_trial,
               discount_percent,opening_hours,status_temporary,google_place_id,pioneer_number,
-              instagram_url,facebook_url,tiktok_url,youtube_url,website_url,menu_file_url
+              instagram_url,facebook_url,tiktok_url,youtube_url,website_url,menu_file_url,phone
        FROM fp1_venues WHERE slug=$1 AND approved=TRUE LIMIT 1`, [slug]
     );
     if (vr.rowCount === 0) return res.status(404).send(pageShell("Nie znaleziono",'<div style="text-align:center;padding:60px 20px"><h1 style="font-size:24px;margin-bottom:12px">Lokal nie znaleziony</h1><a href="/" style="color:#E8751A">← Strona główna</a></div>'));
@@ -2234,6 +2235,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     ${v.status_temporary ? `<div class="info-row" style="color:#FBBF24">⚠️ ${e(v.status_temporary)}</div>` : ''}
     <div style="display:flex;gap:8px;margin:12px 0">
       ${v.lat && v.lng ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener noreferrer" style="flex:1;padding:10px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none">🗺️ Nawiguj</a>` : ''}
+      ${v.phone ? `<a href="tel:${e(v.phone.replace(/\s/g,''))}" style="flex:1;padding:10px;text-align:center;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:8px;color:#2ecc71;font-size:13px;font-weight:600;text-decoration:none">📞 Zadzwoń</a>` : ''}
     </div>
   </div>
 
@@ -2493,7 +2495,7 @@ app.get("/api/venues", async (req, res) => {
       }
     }
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number, promo_radius, promo_message, promo_active, promo_start, promo_end FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number, promo_radius, promo_message, promo_active, promo_start, promo_end, phone, menu_file_url FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
@@ -5242,6 +5244,8 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <textarea name="opening_hours" rows="2" maxlength="300">${escapeHtml(venue.opening_hours||'')}</textarea>
         <label>Status chwilowy (np. "Dziś zamknięte od 18:00" — puste = brak)</label>
         <input name="status_temporary" value="${escapeHtml(venue.status_temporary||'')}" maxlength="120"/>
+        <label>Numer telefonu</label>
+        <input name="phone" value="${escapeHtml(venue.phone||'')}" maxlength="20" placeholder="+48 500 000 000" type="tel"/>
         <div class="grid2" style="margin-top:8px">
           <div><label>Tags (vegan, gluten-free)</label><input name="tags" value="${escapeHtml(venue.tags||'')}" maxlength="100"/></div>
           <div><label>Google Place ID</label><input name="google_place_id" value="${escapeHtml(venue.google_place_id||'')}" maxlength="100"/></div>
@@ -5485,7 +5489,7 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
       `UPDATE fp1_venues SET venue_type=$1, cuisine=$2, description=$3, recommended=$4,
        opening_hours=$5, status_temporary=$6, tags=$7, google_place_id=$8,
        instagram_url=$10, facebook_url=$11, tiktok_url=$12,
-       youtube_url=$13, website_url=$14 WHERE id=$9`,
+       youtube_url=$13, website_url=$14, phone=$15 WHERE id=$9`,
       [
         String(b.venue_type||"").trim().slice(0,60),
         String(b.cuisine||"").trim().slice(0,60),
@@ -5501,6 +5505,7 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
         String(b.tiktok_url||"").trim().slice(0,200),
         String(b.youtube_url||"").trim().slice(0,200),
         String(b.website_url||"").trim().slice(0,200),
+        String(b.phone||"").trim().slice(0,20) || null,
       ]
     );
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Ustawienia zapisane ✅")}`);
