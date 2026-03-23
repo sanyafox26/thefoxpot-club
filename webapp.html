@@ -2489,7 +2489,6 @@ async function startTrial(venueId) {
 }
 
  function openVenueDetail(id) {
-  try {
   const v = S_map.venues.find(x => x.id === id);
   if (!v) return;
   const mapsUrl = v.lat && v.lng
@@ -2657,7 +2656,7 @@ async function startTrial(venueId) {
       </div>
     </div>`}
     ${demoTargetBlock}${activeStatusBlock}${trialInfo}${pionierInfo}${desc}${menuBlock}${rec}${hoursBlock}${statusBlock}${foxCat}${foxReason}${S_map.isFox ? stampsBlock : ''}
-    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"><div style="font-size:11px;color:var(--fox);padding:6px">⏳ Ładowanie opinii... auth=${IS_AUTHENTICATED} jwt=${!!_jwtToken}</div></div>
+    <div id="venueReviewBlock${v.id}" style="margin-bottom:12px"></div>
     <div style="display:flex;flex-direction:column;gap:8px">
       ${checkinBtn}
       ${(S_map.isFox && v.is_trial) ? (v.my_reservation
@@ -2676,14 +2675,13 @@ async function startTrial(venueId) {
   haptic('selection');
   initVenuePhotos(v.id);
   loadVenueReviewBlock(v.id);
-  } catch(err) { alert('openVenueDetail error: ' + err.message); }
 }
 
 // ─── Venue Review Block ───
 async function loadVenueReviewBlock(venueId) {
   const block = q('venueReviewBlock' + venueId);
   if (!block) return;
-  if (!IS_AUTHENTICATED) { block.innerHTML='<div style="font-size:11px;color:var(--red);padding:8px">DEBUG: not authenticated jwt='+!!_jwtToken+'</div>'; return; }
+  if (!IS_AUTHENTICATED) return;
   try {
     const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
     // Fetch reviews and checkin status in parallel
@@ -2693,8 +2691,6 @@ async function loadVenueReviewBlock(venueId) {
     ]);
     const myReviews = (myR.reviews||[]).filter(r => r.venue_id === venueId);
     let canReview = !!cq.last_confirmed_id;
-    // TEMP DEBUG — remove after fixing
-    block.insertAdjacentHTML('beforeend', `<div style="font-size:10px;color:var(--muted);padding:4px;opacity:.6">can=${canReview} id=${cq.last_confirmed_id||'null'} rev=${myReviews.length} err=${cq.err||myR.err||'none'}</div>`);
 
     let html = '';
     // Review form
