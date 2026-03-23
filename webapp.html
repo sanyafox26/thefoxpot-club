@@ -989,7 +989,7 @@ let _foxLat = null, _foxLng = null, _geoWatchId = null;
 function initGeo() {
   if (!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition(
-    pos => { _foxLat = pos.coords.latitude; _foxLng = pos.coords.longitude; },
+    pos => { _foxLat = pos.coords.latitude; _foxLng = pos.coords.longitude; renderNearby(); },
     () => {}, { enableHighAccuracy: false, timeout: 10000 }
   );
   // Update every 5 min
