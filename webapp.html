@@ -1061,6 +1061,12 @@ function openExternal(url, event) {
 
 function callVenue(phone, btn) {
   const clean = phone.replace(/\s/g, '');
+  if (!IS_TELEGRAM) {
+    // Capacitor / PWA / browser — tel: works
+    location.href = 'tel:' + clean;
+    return;
+  }
+  // Telegram WebApp — tel: blocked, copy instead
   if (navigator.clipboard) {
     navigator.clipboard.writeText(clean).then(function() {
       if (btn) { btn.innerHTML = '✅ Skopiowano: ' + phone; setTimeout(function(){ btn.innerHTML = '📞 Zadzwoń · ' + phone; }, 2000); }
