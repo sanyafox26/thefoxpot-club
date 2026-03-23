@@ -2674,25 +2674,23 @@ async function startTrial(venueId) {
   q('venueModal').classList.add('open');
   haptic('selection');
   initVenuePhotos(v.id);
-  if (S_map.isFox) loadVenueReviewBlock(v.id);
+  loadVenueReviewBlock(v.id);
 }
 
 // ─── Venue Review Block ───
 async function loadVenueReviewBlock(venueId) {
   const block = q('venueReviewBlock' + venueId);
   if (!block) return;
+  if (!IS_AUTHENTICATED) return;
   try {
-    // Check if Fox has unreviewd check-in at this venue
     const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
-    const myR = await fetch(BASE+'/api/my-reviews', {headers:h});
-    const myD = await myR.json();
-    const myReviews = (myD.reviews||[]).filter(r => r.venue_id === venueId);
-
-    // Check if there's an unreviewed confirmed checkin at this venue
-    let canReview = false;
-    const cq = await fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h});
-    const cd = await cq.json();
-    if (cd.last_confirmed_id) canReview = true;
+    // Fetch reviews and checkin status in parallel
+    const [myR, cq] = await Promise.all([
+      fetch(BASE+'/api/my-reviews', {headers:h}).then(r=>r.json()).catch(()=>({reviews:[]})),
+      fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h}).then(r=>r.json()).catch(()=>({last_confirmed_id:null}))
+    ]);
+    const myReviews = (myR.reviews||[]).filter(r => r.venue_id === venueId);
+    let canReview = !!cq.last_confirmed_id;
 
     let html = '';
     // Review form

@@ -3717,25 +3717,6 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
    REVIEWS — Private feedback from Fox to Venue
 ═══════════════════════════════════════════════════════════════ */
 
-// DEBUG: temp check review block state
-app.get("/api/debug-review-block", async (req, res) => {
-  try {
-    const foxId = req.query.fox_id;
-    const venueId = req.query.venue_id;
-    if (!foxId || !venueId) return res.json({ error: "need ?fox_id=X&venue_id=Y" });
-    const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [Number(foxId)]);
-    if (!foxQ.rows.length) return res.json({ error: "fox not found" });
-    const userId = String(foxQ.rows[0].user_id);
-    const checkins = await pool.query(
-      `SELECT id, confirmed_at, created_at FROM fp1_checkins WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 5`, [userId, venueId]);
-    const reviews = await pool.query(
-      `SELECT id, checkin_id, rating FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 5`, [userId, Number(venueId)]);
-    const eligible = await pool.query(
-      `SELECT c.id FROM fp1_checkins c WHERE c.user_id=$1 AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id) ORDER BY c.confirmed_at DESC LIMIT 1`, [userId, Number(venueId)]);
-    res.json({ user_id: userId, checkins: checkins.rows, reviews: reviews.rows, eligible_id: eligible.rows[0]?.id || null });
-  } catch(e) { res.json({ error: String(e?.message||e) }); }
-});
-
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
