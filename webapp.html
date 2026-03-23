@@ -1629,6 +1629,10 @@ function startOtpPolling(venueId, venueName, discount, isRepeat) {
         q('otpBox').classList.remove('show');
         showReceiptForm(venueId, venueName, discount, isRepeat, d.checkin_id);
         haptic('success');
+        // Update local visit counters immediately on confirmation
+        if (S_map.venues) { const lv = S_map.venues.find(x => x.id === venueId); if (lv) { lv.my_visits = (lv.my_visits||0) + 1; lv.total_visits = (lv.total_visits||0) + 1; lv.my_monthly_credited = (lv.my_monthly_credited||0) + 1; } }
+        if (S.venues) { const sv = S.venues.find(x => x.id === venueId); if (sv) { sv.my_visits = (sv.my_visits||0) + 1; sv.total_visits = (sv.total_visits||0) + 1; } }
+        S.profileLoaded = false;
       } else if (d.status === 'confirmed' && d.receipt_done) {
         stopOtpPolling();
         q('otpBox').classList.remove('show');
@@ -1668,7 +1672,17 @@ async function submitReceipt() {
     haptic('success');
     if (d.stats) {
       if (q('pRating')) q('pRating').textContent = d.stats.rating;
-      if (q('pVisits')) S.profileLoaded = false;
+      S.profileLoaded = false;
+    }
+    // Update local venue visit counters immediately
+    const vid = receiptPending.venueId;
+    if (S_map.venues) {
+      const lv = S_map.venues.find(x => x.id === vid);
+      if (lv) { lv.my_visits = (lv.my_visits||0) + 1; lv.total_visits = (lv.total_visits||0) + 1; lv.my_monthly_credited = (lv.my_monthly_credited||0) + 1; }
+    }
+    if (S.venues) {
+      const sv = S.venues.find(x => x.id === vid);
+      if (sv) { sv.my_visits = (sv.my_visits||0) + 1; sv.total_visits = (sv.total_visits||0) + 1; }
     }
   } catch(e) {
     if(e.message && e.message.includes('consent_required')){showConsent();btn.disabled=false;btn.textContent='💰 Zapisz rachunek';return}
