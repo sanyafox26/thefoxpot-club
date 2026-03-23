@@ -4819,9 +4819,9 @@ app.get("/panel/logout", (req, res) => { clearCookie(res); res.redirect("/panel"
 app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   try {
   const venueId = Number(req.panel.venue_id);
-  if (!venueId || isNaN(venueId)) return res.redirect("/panel");
+  if (!venueId || isNaN(venueId)) { clearCookie(res); return res.redirect("/panel"); }
   const venue   = await getVenue(venueId);
-  if (!venue) { console.error("DASHBOARD: venue not found, venueId=", venueId, "typeof=", typeof venueId, "raw=", req.panel.venue_id); return res.status(404).send(pageShell("Panel — Błąd", `<div class="card"><h2>Lokal nie znaleziony</h2><p class="muted">ID: ${venueId} (raw: ${req.panel.venue_id})</p><a href="/panel">Zaloguj ponownie</a></div>`)); }
+  if (!venue) { console.error("DASHBOARD: venue not found, venueId=", venueId, "typeof=", typeof venueId, "raw=", req.panel.venue_id); clearCookie(res); return res.redirect("/panel?msg=" + encodeURIComponent("Lokal nie znaleziony. Zaloguj ponownie.")); }
   const pending = await listPending(venueId);
   const status  = await currentVenueStatus(venueId);
   const reserveUsed = await reserveCountThisMonth(venueId);
