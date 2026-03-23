@@ -488,6 +488,7 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "tiktok_url",            "TEXT");
   await ensureColumn("fp1_venues",         "youtube_url",           "TEXT");
   await ensureColumn("fp1_venues",         "website_url",           "TEXT");
+  await ensureColumn("fp1_venues",         "menu_file_url",         "TEXT");
   // Venue slug for public page
   await ensureColumn("fp1_venues",         "slug",                  "TEXT");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_slug ON fp1_venues(slug) WHERE slug IS NOT NULL`).catch(()=>{});
@@ -2114,7 +2115,7 @@ app.get("/lokal/:slug", async (req, res) => {
     const vr = await pool.query(
       `SELECT id,name,slug,city,address,lat,lng,venue_type,cuisine,tags,description,is_trial,
               discount_percent,opening_hours,status_temporary,google_place_id,pioneer_number,
-              instagram_url,facebook_url,tiktok_url,youtube_url,website_url
+              instagram_url,facebook_url,tiktok_url,youtube_url,website_url,menu_file_url
        FROM fp1_venues WHERE slug=$1 AND approved=TRUE LIMIT 1`, [slug]
     );
     if (vr.rowCount === 0) return res.status(404).send(pageShell("Nie znaleziono",'<div style="text-align:center;padding:60px 20px"><h1 style="font-size:24px;margin-bottom:12px">Lokal nie znaleziony</h1><a href="/" style="color:#E8751A">← Strona główna</a></div>'));
@@ -2172,6 +2173,7 @@ app.get("/lokal/:slug", async (req, res) => {
         </div>
       `).join('')}
     </div>` : '';
+    const menuFileH = v.menu_file_url ? `<div style="margin-bottom:24px">${!menuH ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : ''}<a href="${e(v.menu_file_url)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:12px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;color:#f5a623;font-weight:600;font-size:14px;text-decoration:none">📄 Zobacz pełne menu (PDF/zdjęcie)</a></div>` : '';
 
     // Photos gallery
     const galleryH = photos.rowCount > 1 ? `<div style="margin-bottom:24px">
@@ -2247,7 +2249,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     ${v.description ? `<p style="font-size:14px;color:rgba(255,255,255,.7);line-height:1.7">${e(v.description)}</p>` : ''}
   </div>
 
-  <div class="section">${menuH}</div>
+  <div class="section">${menuH}${menuFileH}</div>
   <div class="section">${galleryH}</div>
   <div class="section">${mapH}</div>
 
@@ -5061,6 +5063,43 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         }
         loadMenu();
       </script>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)">
+        <div style="font-size:12px;font-weight:700;color:#f5a623;margin-bottom:8px">📄 Lub wgraj gotowe menu jako zdjęcie lub PDF</div>
+        <div id="menuFileArea">
+          ${venue.menu_file_url ? `<div id="menuFilePreview" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px"><a href="${escapeHtml(venue.menu_file_url)}" target="_blank" style="color:#f5a623;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 Plik menu</a><button onclick="deleteMenuFile()" style="background:transparent;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;padding:2px 10px;cursor:pointer">✕</button></div>` : ''}
+        </div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.15);border-radius:8px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.6)">
+          <input type="file" accept="image/jpeg,image/png,application/pdf" onchange="uploadMenuFile(this)" style="display:none"/>
+          + Wybierz plik (JPG, PNG, PDF, max 10 MB)
+        </label>
+        <div id="menuFileMsg" style="font-size:12px;margin-top:6px"></div>
+      </div>
+      <script>
+        async function uploadMenuFile(input){
+          const file=input.files[0];if(!file)return;
+          if(file.size>10*1024*1024){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">Max 10 MB</span>';return}
+          document.getElementById('menuFileMsg').innerHTML='<span style="color:var(--fox)">⏳ Wysyłanie...</span>';
+          const reader=new FileReader();
+          reader.onload=async function(){
+            try{
+              const r=await fetch('/panel/venue/menu-file',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:reader.result})});
+              const d=await r.json();
+              if(d.error){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">'+d.error+'</span>';return}
+              document.getElementById('menuFileMsg').innerHTML='<span style="color:#2ecc71">✅ Menu wgrane!</span>';
+              document.getElementById('menuFileArea').innerHTML='<div id="menuFilePreview" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px"><a href="'+d.url+'" target="_blank" style="color:#f5a623;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 Plik menu</a><button onclick="deleteMenuFile()" style="background:transparent;border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;padding:2px 10px;cursor:pointer">✕</button></div>';
+            }catch(e){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">Błąd</span>'}
+          };
+          reader.readAsDataURL(file);
+        }
+        async function deleteMenuFile(){
+          if(!confirm('Usunąć plik menu?'))return;
+          try{
+            await fetch('/panel/venue/menu-file',{method:'DELETE',credentials:'same-origin'});
+            document.getElementById('menuFileArea').innerHTML='';
+            document.getElementById('menuFileMsg').innerHTML='<span style="color:#2ecc71">✅ Usunięto</span>';
+          }catch(e){document.getElementById('menuFileMsg').innerHTML='<span style="color:#ef4444">Błąd</span>'}
+        }
+      </script>
     </div>
     <div class="card">
       <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">🎟️ Indywidualna zniżka dla Fox'a ▾</button>
@@ -5408,11 +5447,33 @@ app.delete("/panel/venue/menu/:id", requirePanelAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Panel: upload menu file (image or PDF)
+app.post("/panel/venue/menu-file", requirePanelAuth, async (req, res) => {
+  try {
+    const venueId = Number(req.panel.venue_id);
+    const { file } = req.body;
+    if (!file) return res.status(400).json({ error: "Brak pliku" });
+    const result = await uploadToCloudinary(file, `foxpot/venues/${venueId}/menu`);
+    const url = result.secure_url || result.url;
+    if (!url) return res.status(500).json({ error: "Błąd uploadu" });
+    await pool.query(`UPDATE fp1_venues SET menu_file_url=$1 WHERE id=$2`, [url, venueId]);
+    res.json({ ok: true, url });
+  } catch (e) { res.status(500).json({ error: String(e?.message || e).slice(0, 120) }); }
+});
+
+// Panel: delete menu file
+app.delete("/panel/venue/menu-file", requirePanelAuth, async (req, res) => {
+  const venueId = Number(req.panel.venue_id);
+  await pool.query(`UPDATE fp1_venues SET menu_file_url=NULL WHERE id=$1`, [venueId]);
+  res.json({ ok: true });
+});
+
 // Public: get menu for venue
 app.get("/api/venue/:id/menu", async (req, res) => {
   const venueId = Number(req.params.id);
   const items = await pool.query(`SELECT name,category,price FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [venueId]);
-  res.json({ items: items.rows });
+  const vq = await pool.query(`SELECT menu_file_url FROM fp1_venues WHERE id=$1`, [venueId]);
+  res.json({ items: items.rows, menu_file_url: vq.rows[0]?.menu_file_url || null });
 });
 
 // ── PANEL: Save venue settings ──
