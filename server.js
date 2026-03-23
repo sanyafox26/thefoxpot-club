@@ -236,6 +236,13 @@ function isAdmin(userId) {
   return ADMIN_TG_ID && String(userId) === String(ADMIN_TG_ID);
 }
 
+function generateSlug(name) {
+  return String(name || "").toLowerCase()
+    .replace(/ą/g,'a').replace(/ć/g,'c').replace(/ę/g,'e').replace(/ł/g,'l')
+    .replace(/ń/g,'n').replace(/ó/g,'o').replace(/ś/g,'s').replace(/ź/g,'z').replace(/ż/g,'z')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
@@ -475,6 +482,13 @@ async function migrate() {
   await ensureColumn("fp1_venues",         "cuisine",               "TEXT NOT NULL DEFAULT ''");
    await ensureColumn("fp1_venues",         "tags",                  "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues",         "pioneer_number",        "INT");
+  // Venue social links
+  await ensureColumn("fp1_venues",         "instagram_url",         "TEXT");
+  await ensureColumn("fp1_venues",         "facebook_url",          "TEXT");
+  await ensureColumn("fp1_venues",         "tiktok_url",            "TEXT");
+  // Venue slug for public page
+  await ensureColumn("fp1_venues",         "slug",                  "TEXT");
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fp1_venues_slug ON fp1_venues(slug) WHERE slug IS NOT NULL`).catch(()=>{});
   // V29: Venue photos (multiple URLs)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_venue_photos (
@@ -498,6 +512,7 @@ async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await ensureColumn("fp1_menu_items",     "photo_url",             "TEXT");
 
   // Promotions
   await pool.query(`
@@ -811,6 +826,17 @@ async function migrate() {
   await ensureColumn("fp1_leaderboard_cache", "achieved_at", "TIMESTAMPTZ");
 
   await migrateSupport(pool);
+  // Auto-generate slugs for venues without one
+  try {
+    const noSlug = await pool.query(`SELECT id, name FROM fp1_venues WHERE slug IS NULL`);
+    for (const v of noSlug.rows) {
+      let slug = generateSlug(v.name);
+      const dup = await pool.query(`SELECT 1 FROM fp1_venues WHERE slug=$1 AND id!=$2`, [slug, v.id]);
+      if (dup.rowCount > 0) slug = slug + '-' + v.id;
+      await pool.query(`UPDATE fp1_venues SET slug=$1 WHERE id=$2`, [slug, v.id]);
+    }
+  } catch(e) { console.warn("Slug migration:", e.message); }
+
   // Set Praga Street Food coordinates to Szwedzka 30, Warszawa (for geo testing)
   await pool.query(`UPDATE fp1_venues SET lat=52.2563, lng=21.0412, address='Szwedzka 30, Warszawa' WHERE name='Praga Street Food' AND (lat IS NULL OR lat != 52.2563)`).catch(()=>{});
 
@@ -2038,7 +2064,7 @@ app.get("/venue/:id", async (req, res) => {
     const tpL=[v.venue_type,v.cuisine].filter(Boolean).join(" \u00b7 ");
     const stH=v.status_temporary?`<div class="card" style="border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06);padding:14px 16px"><div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:4px">Status</div><div style="font-size:13px;color:rgba(255,255,255,.6)">${escapeHtml(v.status_temporary)}</div></div>`:"";
     const hrH=v.opening_hours?`<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:4px">Godziny otwarcia</div><div style="font-size:13px;color:rgba(255,255,255,.7);line-height:1.6;white-space:pre-line">${escapeHtml(v.opening_hours)}</div></div>`:"";
-    const allPhotos = await pool.query(`SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 3`, [venueId]);
+    const allPhotos = await pool.query(`SELECT url FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC LIMIT 10`, [venueId]);
     const hasPhoto = allPhotos.rowCount > 0 || v.google_place_id;
     let phH = '';
     if (allPhotos.rowCount > 0) {
@@ -2059,6 +2085,19 @@ app.get("/venue/:id", async (req, res) => {
       <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.25)"><a href="/" style="color:rgba(255,255,255,.35)">thefoxpot.club</a></div>
     `,`body{background:#0a0b14}.card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:18px}`));
   } catch(e) { console.error("venue teaser err:",e); res.status(500).send("Error"); }
+});
+
+// Public venue page by slug: /lokal/zloty-kebab → same as /venue/:id
+app.get("/lokal/:slug", async (req, res) => {
+  try {
+    const slug = String(req.params.slug).toLowerCase().trim();
+    const v = await pool.query(`SELECT id FROM fp1_venues WHERE slug=$1 AND approved=TRUE LIMIT 1`, [slug]);
+    if (v.rowCount === 0) return res.status(404).send("Nie znaleziono lokalu");
+    // Reuse existing /venue/:id handler by redirecting internally
+    req.params.id = String(v.rows[0].id);
+    req.url = `/venue/${v.rows[0].id}`;
+    return app._router.handle(req, res, () => res.status(404).send("Not found"));
+  } catch(e) { res.status(500).send("Błąd"); }
 });
 
 app.get("/health", async (_req, res) => {
@@ -3649,7 +3688,7 @@ app.post("/panel/venue/photos/upload", requirePanelAuth, async (req, res) => {
 
     // Check count
     const existing = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_venue_photos WHERE venue_id=$1`, [venueId]);
-    if (existing.rows[0].c >= 3) return res.status(400).json({ error: "Maksymalnie 3 zdjęcia" });
+    if (existing.rows[0].c >= 10) return res.status(400).json({ error: "Maksymalnie 10 zdjęć" });
 
     // Upload to Cloudinary
     const result = await uploadToCloudinary(image, `foxpot/venues/${venueId}`);
@@ -4848,10 +4887,27 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <input name="status_temporary" value="${escapeHtml(venue.status_temporary||'')}" maxlength="120"/>
         <div class="grid2" style="margin-top:8px">
           <div><label>Tags (vegan, gluten-free)</label><input name="tags" value="${escapeHtml(venue.tags||'')}" maxlength="100"/></div>
-          
+          <div><label>Google Place ID</label><input name="google_place_id" value="${escapeHtml(venue.google_place_id||'')}" maxlength="100"/></div>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+          <div style="font-size:12px;font-weight:700;color:#f5a623;margin-bottom:8px">📱 Social media lokalu</div>
+          <div class="grid2">
+            <div><label>Instagram URL</label><input name="instagram_url" value="${escapeHtml(venue.instagram_url||'')}" maxlength="200" placeholder="https://instagram.com/..."/></div>
+            <div><label>Facebook URL</label><input name="facebook_url" value="${escapeHtml(venue.facebook_url||'')}" maxlength="200" placeholder="https://facebook.com/..."/></div>
+          </div>
+          <div><label>TikTok URL</label><input name="tiktok_url" value="${escapeHtml(venue.tiktok_url||'')}" maxlength="200" placeholder="https://tiktok.com/@..."/></div>
         </div>
         <button type="submit" style="margin-top:12px;width:100%">💾 Zapisz ustawienia</button>
       </form>
+    </div>
+    <div class="card">
+      <h2>🌐 Twoja strona w internecie</h2>
+      <p class="muted" style="margin-bottom:8px">Twój lokal ma publiczną stronę, którą możesz udostępniać w social media i Google.</p>
+      <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <input id="venueUrl" readonly value="${PUBLIC_URL}/lokal/${escapeHtml(venue.slug||'')}" style="flex:1;background:transparent;border:none;color:#f0f0f5;font-size:13px;font-family:monospace;outline:none"/>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('venueUrl').value);this.textContent='✅';setTimeout(()=>this.textContent='📋',2000)" style="background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.3);color:#f5a623;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px">📋</button>
+      </div>
+      <p class="muted" style="font-size:11px">Udostępnij ten link na Instagramie, Facebooku, Google Maps lub wydrukuj QR kod.</p>
     </div>`));
 });
 
@@ -5048,7 +5104,8 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
   try {
     await pool.query(
       `UPDATE fp1_venues SET venue_type=$1, cuisine=$2, description=$3, recommended=$4,
-       opening_hours=$5, status_temporary=$6, tags=$7, google_place_id=$8 WHERE id=$9`,
+       opening_hours=$5, status_temporary=$6, tags=$7, google_place_id=$8,
+       instagram_url=$10, facebook_url=$11, tiktok_url=$12 WHERE id=$9`,
       [
         String(b.venue_type||"").trim().slice(0,60),
         String(b.cuisine||"").trim().slice(0,60),
@@ -5058,7 +5115,10 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
         String(b.status_temporary||"").trim().slice(0,120),
         String(b.tags||"").trim().slice(0,100),
         String(b.google_place_id||"").trim().slice(0,100),
-        venueId
+        venueId,
+        String(b.instagram_url||"").trim().slice(0,200),
+        String(b.facebook_url||"").trim().slice(0,200),
+        String(b.tiktok_url||"").trim().slice(0,200),
       ]
     );
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Ustawienia zapisane ✅")}`);
