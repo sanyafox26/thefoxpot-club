@@ -3749,28 +3749,43 @@ app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
 app.post("/api/review", requireWebAppAuth, async (req, res) => {
   try {
     const userId = String(req.tgUser.id);
-    const { checkin_id, rating, text } = req.body;
-    if (!checkin_id) return res.status(400).json({ error: "Brak danych" });
+    const { venue_id, checkin_id, rating, text } = req.body;
     const r = rating != null ? parseInt(rating) : null;
     if (r !== null && (r < 1 || r > 5)) return res.status(400).json({ error: "Ocena musi być od 1 do 5" });
     const cleanText = text ? String(text).trim().slice(0, 500) : null;
     if (r === null && !cleanText) return res.status(400).json({ error: "Dodaj ocenę lub tekst" });
-    // Verify: checkin belongs to this fox and is confirmed
-    const ci = await pool.query(
-      `SELECT c.id, c.venue_id FROM fp1_checkins c
-       WHERE c.id = $1 AND c.user_id = $2::bigint AND c.confirmed_at IS NOT NULL LIMIT 1`,
-      [checkin_id, userId]
-    );
+    // Find checkin: by checkin_id or by venue_id (latest unreviewed confirmed)
+    let ci;
+    if (checkin_id) {
+      ci = await pool.query(
+        `SELECT c.id, c.venue_id FROM fp1_checkins c
+         WHERE c.id = $1 AND c.user_id = $2::bigint AND c.confirmed_at IS NOT NULL LIMIT 1`,
+        [checkin_id, userId]
+      );
+    } else if (venue_id) {
+      ci = await pool.query(
+        `SELECT c.id, c.venue_id FROM fp1_checkins c
+         WHERE c.user_id = $1::bigint AND c.venue_id = $2 AND c.confirmed_at IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id = c.id)
+         ORDER BY c.confirmed_at DESC LIMIT 1`,
+        [userId, venue_id]
+      );
+    } else {
+      return res.status(400).json({ error: "Brak danych" });
+    }
+    console.log(`[review] userId=${userId} venue_id=${venue_id} checkin_id=${checkin_id} found=${ci.rows[0]?.id||'null'}`);
     if (ci.rowCount === 0) return res.status(403).json({ error: "Brak potwierdzonego check-inu" });
+    const foundCheckinId = ci.rows[0].id;
+    const foundVenueId = ci.rows[0].venue_id;
     // Check duplicate
-    const dup = await pool.query(`SELECT 1 FROM fp1_reviews WHERE checkin_id=$1`, [checkin_id]);
+    const dup = await pool.query(`SELECT 1 FROM fp1_reviews WHERE checkin_id=$1`, [foundCheckinId]);
     if (dup.rowCount > 0) return res.status(409).json({ error: "Opinia już wystawiona dla tej wizyty" });
     const ins = await pool.query(
       `INSERT INTO fp1_reviews(user_id, venue_id, checkin_id, rating, text) VALUES($1,$2,$3,$4,$5) RETURNING id, created_at`,
-      [userId, ci.rows[0].venue_id, checkin_id, r, cleanText]
+      [userId, foundVenueId, foundCheckinId, r, cleanText]
     );
     res.json({ ok: true, review_id: ins.rows[0].id });
-  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+  } catch (e) { console.error("[review] ERR", e.message); res.status(500).json({ error: String(e?.message || e) }); }
 });
 
 // GET /api/my-reviews — Fox's own reviews + venue replies

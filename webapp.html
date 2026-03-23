@@ -2793,13 +2793,7 @@ async function submitReview(venueId) {
   const msg = q('reviewMsg' + venueId);
   btn.disabled = true; btn.textContent = '⏳...';
   try {
-    // Find the latest confirmed checkin_id for this venue
-    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
-    const cq = await fetch(BASE+'/api/checkin/status?venue_id='+venueId, {headers:h});
-    const cd = await cq.json();
-    const checkinId = cd.last_confirmed_id;
-    if (!checkinId) { msg.innerHTML = '<span style="color:var(--red)">Brak potwierdzonego check-inu. Zrób check-in najpierw.</span>'; btn.textContent = 'Wyślij opinię'; btn.disabled = false; return; }
-    const d = await api('/api/review', 'POST', { checkin_id: checkinId, rating, text });
+    const d = await api('/api/review', 'POST', { venue_id: venueId, rating, text });
     if (d.ok) {
       msg.innerHTML = '<span style="color:var(--green)">✅ Dziękujemy za opinię!</span>';
       haptic('success');
