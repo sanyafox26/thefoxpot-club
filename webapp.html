@@ -412,7 +412,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <span style="font-size:13px;font-weight:700;color:var(--green)" id="nearbyTitle">🦊 Lokale w pobliżu</span>
           <span id="nearbyArrow" style="font-size:12px;color:var(--muted);transition:transform .3s">▼</span>
         </div>
-        <div id="nearbyCollapse" style="max-height:0;overflow:hidden;transition:max-height .35s ease">
+        <div id="nearbyCollapse" style="max-height:0px;overflow:hidden;transition:max-height .35s ease">
           <div id="nearbyList" style="padding-top:6px"></div>
         </div>
       </div>
@@ -1342,15 +1342,17 @@ async function loadBestFox() {
 }
 
 // ─── Nearby Venues (geo-based) ───
+let _nearbyOpen = false;
 function toggleNearby() {
   const col = q('nearbyCollapse'), arrow = q('nearbyArrow');
   if (!col) return;
-  if (col.style.maxHeight && col.style.maxHeight !== '0px') {
-    col.style.maxHeight = '0';
-    if (arrow) arrow.style.transform = 'rotate(0deg)';
-  } else {
-    col.style.maxHeight = col.scrollHeight + 'px';
+  _nearbyOpen = !_nearbyOpen;
+  if (_nearbyOpen) {
+    col.style.maxHeight = col.scrollHeight + 200 + 'px';
     if (arrow) arrow.style.transform = 'rotate(180deg)';
+  } else {
+    col.style.maxHeight = '0px';
+    if (arrow) arrow.style.transform = 'rotate(0deg)';
   }
 }
 async function renderNearby() {
@@ -1368,6 +1370,10 @@ async function renderNearby() {
   card.style.display = 'block';
   const titleEl = q('nearbyTitle');
   if (titleEl) titleEl.textContent = '🦊 Lokale w pobliżu (' + nearby.length + ')';
+  const col = q('nearbyCollapse');
+  if (col) { col.style.maxHeight = '0px'; _nearbyOpen = false; }
+  const arrow = q('nearbyArrow');
+  if (arrow) arrow.style.transform = 'rotate(0deg)';
   list.innerHTML = nearby.map(v => {
     const d = formatDist(v.dist);
     const visits = v.my_visits || 0;
