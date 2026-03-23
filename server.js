@@ -2194,19 +2194,23 @@ app.get("/lokal/:slug", async (req, res) => {
       `).join('')}
     </div>` : '';
     const mfFiles = menuFiles.rows.length ? menuFiles.rows : (v.menu_file_url ? [{ url: v.menu_file_url }] : []);
+    const mfImages = mfFiles.filter(f => !f.url.toLowerCase().endsWith('.pdf'));
+    const mfPdfs = mfFiles.filter(f => f.url.toLowerCase().endsWith('.pdf'));
     const mfHeader = !menuH && mfFiles.length ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : '';
-    const menuFileH = mfFiles.length ? `<div style="margin-bottom:24px">${mfHeader}${mfFiles.map(f => {
-      const isPdf = f.url.toLowerCase().endsWith('.pdf');
-      return isPdf
-        ? `<div style="margin-bottom:8px"><div style="border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1)"><iframe src="${e(f.url)}" style="width:100%;height:500px;border:0" loading="lazy"></iframe></div><a href="${e(f.url)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:8px;text-align:center;font-size:12px;color:#f5a623;text-decoration:none">📄 Otwórz menu (PDF)</a></div>`
-        : `<div style="text-align:center;margin-bottom:8px"><img src="${e(f.url)}" alt="Menu" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src=this.src" style="max-width:400px;width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1);cursor:pointer" loading="lazy"/></div>`;
-    }).join('')}${mfFiles.length ? '<div style="font-size:11px;color:rgba(255,255,255,.3);text-align:center">Kliknij aby powiększyć</div>' : ''}</div>` : '';
+    const menuFileH = mfFiles.length ? `<div style="margin-bottom:24px">${mfHeader}${mfImages.length ? `
+      <div style="display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:8px">
+        ${mfImages.map((f, i) => `<div style="flex:0 0 140px;scroll-snap-align:start;aspect-ratio:3/4;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;background:rgba(255,255,255,.04)" onclick="openMenuSlider(${i})"><img src="${e(f.url)}" style="width:100%;height:100%;object-fit:cover" loading="lazy"/></div>`).join('')}
+      </div>
+      <div style="font-size:11px;color:rgba(255,255,255,.3);text-align:center;margin-top:4px">${mfImages.length > 1 ? 'Przewiń → lub kliknij aby powiększyć' : 'Kliknij aby powiększyć'}</div>` : ''}${mfPdfs.map(f => `<div style="margin-top:8px"><a href="${e(f.url)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;color:#f5a623;font-weight:600;font-size:13px;text-decoration:none">📄 Otwórz menu (PDF)</a></div>`).join('')}
+    </div>` : '';
+    const menuFileUrls = JSON.stringify(mfImages.map(f => f.url));
+    const galleryUrls = JSON.stringify(photos.rows.map(p => p.url));
 
     // Photos gallery
     const galleryH = photos.rowCount > 1 ? `<div style="margin-bottom:24px">
       <h2 style="font-size:18px;font-weight:800;margin-bottom:12px">📸 Zdjęcia</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">
-        ${photos.rows.map(p => `<div style="aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04);cursor:pointer" onclick="document.getElementById('foxLightbox').style.display='flex';document.getElementById('foxLightboxImg').src='${p.url}'"><img src="${p.url}" style="width:100%;height:100%;object-fit:cover" loading="lazy"/></div>`).join('')}
+        ${photos.rows.map((p, i) => `<div style="aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04);cursor:pointer" onclick="openGallerySlider(${i})"><img src="${p.url}" style="width:100%;height:100%;object-fit:cover" loading="lazy"/></div>`).join('')}
       </div>
     </div>` : '';
 
@@ -2291,7 +2295,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div style="text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,.2)">
     <a href="/" style="color:rgba(255,255,255,.3);text-decoration:none">thefoxpot.club</a> · <a href="/rules" style="color:rgba(255,255,255,.3);text-decoration:none">Regulamin</a> · <a href="/privacy" style="color:rgba(255,255,255,.3);text-decoration:none">Prywatność</a>
   </div>
-<div id="foxLightbox" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.9);align-items:center;justify-content:center;cursor:pointer"><img id="foxLightboxImg" src="" style="max-width:95%;max-height:90vh;border-radius:12px;object-fit:contain"/><div style="position:fixed;top:16px;right:20px;font-size:28px;color:#fff;font-weight:700">✕</div></div>
+<div id="foxLightbox" onclick="if(event.target===this)closeLightbox()" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);align-items:center;justify-content:center">
+  <img id="foxLightboxImg" src="" style="max-width:92%;max-height:85vh;border-radius:12px;object-fit:contain"/>
+  <div onclick="closeLightbox()" style="position:fixed;top:14px;right:18px;font-size:28px;color:#fff;font-weight:700;cursor:pointer;z-index:10000">✕</div>
+  <div id="foxLbPrev" onclick="event.stopPropagation();lbNav(-1)" style="display:none;position:fixed;left:8px;top:50%;transform:translateY(-50%);font-size:36px;color:#fff;cursor:pointer;padding:12px;z-index:10000">‹</div>
+  <div id="foxLbNext" onclick="event.stopPropagation();lbNav(1)" style="display:none;position:fixed;right:8px;top:50%;transform:translateY(-50%);font-size:36px;color:#fff;cursor:pointer;padding:12px;z-index:10000">›</div>
+  <div id="foxLbCounter" style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.5);font-size:13px;z-index:10000"></div>
+</div>
+<script>
+let _lbImages=[],_lbIdx=0;
+function openMenuSlider(i){_lbImages=${menuFileUrls};_lbIdx=i;showLb();}
+function openGallerySlider(i){_lbImages=${galleryUrls};_lbIdx=i;showLb();}
+function openLbSingle(src){_lbImages=[src];_lbIdx=0;showLb();}
+function showLb(){
+  var lb=document.getElementById('foxLightbox'),img=document.getElementById('foxLightboxImg');
+  img.src=_lbImages[_lbIdx];lb.style.display='flex';
+  document.getElementById('foxLbPrev').style.display=_lbImages.length>1?'block':'none';
+  document.getElementById('foxLbNext').style.display=_lbImages.length>1?'block':'none';
+  var c=document.getElementById('foxLbCounter');
+  c.textContent=_lbImages.length>1?(_lbIdx+1)+' / '+_lbImages.length:'';
+}
+function lbNav(d){_lbIdx=(_lbIdx+d+_lbImages.length)%_lbImages.length;showLb();}
+function closeLightbox(){document.getElementById('foxLightbox').style.display='none';}
+document.addEventListener('keydown',function(e){
+  if(document.getElementById('foxLightbox').style.display!=='flex')return;
+  if(e.key==='Escape')closeLightbox();
+  if(e.key==='ArrowLeft')lbNav(-1);
+  if(e.key==='ArrowRight')lbNav(1);
+});
+</script>
 </div></body></html>`);
   } catch(e) { console.error("lokal page err:", e); res.status(500).send("Błąd"); }
 });
