@@ -2618,6 +2618,7 @@ async function startTrial(venueId) {
            <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:-4px">Niewykorzystana rezerwacja: miejsce wraca do puli, −5 pkt</div>`)
       : ''}
       ${joinBlock}
+      ${v.phone ? `<a href="tel:${esc(v.phone.replace(/\\s/g,''))}" style="display:block;width:100%;padding:14px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">📞 Zadzwoń</a>` : ''}
       <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" onclick="openExternal('${mapsUrl}',event)" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
       <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
     </div>
@@ -2731,7 +2732,8 @@ async function loadVenueMenu(venueId, btn) {
     const r = await fetch(BASE + '/api/venue/' + venueId + '/menu');
     const d = await r.json();
     const items = d.items || [];
-    if (!items.length) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Menu jeszcze nie dodane</div>'; return; }
+    const mfUrl = d.menu_file_url || '';
+    if (!items.length && !mfUrl) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Menu jeszcze nie dodane</div>'; return; }
     const catNames = {main:'🍽 Dania główne',snack:'🥗 Przystawki',soup:'🍲 Zupy',dessert:'🍰 Desery',drink:'☕ Napoje',alcohol:'🍺 Alkohol'};
     const catOrder = ['main','snack','soup','dessert','drink','alcohol'];
     const grouped = {};
@@ -2747,6 +2749,12 @@ async function loadVenueMenu(venueId, btn) {
         '</div>'
       ).join('');
     });
+    if (mfUrl) {
+      const isPdf = mfUrl.toLowerCase().endsWith('.pdf') || mfUrl.includes('/raw/upload/');
+      html += '<div style="margin-top:10px">' + (isPdf
+        ? '<a href="' + esc(mfUrl) + '" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;color:var(--fox);font-weight:600;font-size:13px;text-decoration:none">📄 Zobacz pełne menu (PDF)</a>'
+        : '<img src="' + esc(mfUrl) + '" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1)" loading="lazy"/>') + '</div>';
+    }
     el.innerHTML = html;
   } catch (e) { el.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Błąd</div>'; }
 }

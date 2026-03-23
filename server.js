@@ -2174,7 +2174,13 @@ app.get("/lokal/:slug", async (req, res) => {
         </div>
       `).join('')}
     </div>` : '';
-    const menuFileH = v.menu_file_url ? `<div style="margin-bottom:24px">${!menuH ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : ''}<a href="${e(v.menu_file_url)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:12px;text-align:center;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;color:#f5a623;font-weight:600;font-size:14px;text-decoration:none">📄 Zobacz pełne menu (PDF/zdjęcie)</a></div>` : '';
+    const mfUrl = v.menu_file_url || '';
+    const mfIsPdf = mfUrl.toLowerCase().endsWith('.pdf') || mfUrl.includes('/raw/upload/');
+    const mfHeader = !menuH ? '<h2 style="font-size:18px;font-weight:800;margin-bottom:12px">🍽 Menu</h2>' : '';
+    const menuFileH = mfUrl ? `<div style="margin-bottom:24px">${mfHeader}${mfIsPdf
+      ? `<div style="border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-bottom:8px"><iframe src="${e(mfUrl)}" style="width:100%;height:500px;border:0" loading="lazy"></iframe></div><a href="${e(mfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:8px;text-align:center;font-size:12px;color:#f5a623;text-decoration:none">📄 Otwórz menu (PDF)</a>`
+      : `<img src="${e(mfUrl)}" alt="Menu" style="width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.1)" loading="lazy"/>`
+    }</div>` : '';
 
     // Photos gallery
     const galleryH = photos.rowCount > 1 ? `<div style="margin-bottom:24px">
