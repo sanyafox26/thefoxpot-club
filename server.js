@@ -1450,7 +1450,6 @@ async function confirmOtp(venueId, otp) {
   }
 
   // Check ONLY counted_visits (not confirmed checkins) to avoid false positives from old unprocessed checkins
-  const day = row.war_day || warsawDayKey();
   const alreadyCounted = await pool.query(
     `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND user_id=$3 LIMIT 1`,
     [venueId, day, userId]
