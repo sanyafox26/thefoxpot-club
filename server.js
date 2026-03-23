@@ -1449,7 +1449,13 @@ async function confirmOtp(venueId, otp) {
     return { ok:true, userId, day, countedAdded:false, debounce:true, inviteAutoAdded:0, isFirstEver:false, newAch:[] };
   }
 
-  const already = await hasCountedToday(venueId, userId);
+  // Check ONLY counted_visits (not confirmed checkins) to avoid false positives from old unprocessed checkins
+  const day = row.war_day || warsawDayKey();
+  const alreadyCounted = await pool.query(
+    `SELECT 1 FROM fp1_counted_visits WHERE venue_id=$1 AND ${COUNTED_DAY_COL}=$2 AND user_id=$3 LIMIT 1`,
+    [venueId, day, userId]
+  );
+  const already = alreadyCounted.rowCount > 0;
   await pool.query(`UPDATE fp1_checkins SET confirmed_at=NOW(), confirmed_by_venue_id=$1 WHERE id=$2`, [venueId, row.id]);
   let countedAdded = false, isFirstEver = false, inviteAutoAdded = 0, newAch = [];
   if (!already) {
@@ -2032,7 +2038,7 @@ app.get("/faq",      (_req, res) => res.sendFile(path.join(__dirname, "faq.html"
 app.get("/faq.html", (_req, res) => res.sendFile(path.join(__dirname, "faq.html")));
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
-app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V27_2_VISIT_ORDER_FIX"));
+app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V27_3"));
 
 // ── Invite link without Telegram ──
 app.get("/invite/:code", async (req, res) => {
