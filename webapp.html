@@ -476,12 +476,6 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div id="stampsList" style="display:none;margin-top:10px"></div>
       </div>
 
-      <!-- Moje opinie -->
-      <div class="card" id="myReviewsCard" style="display:none">
-        <button type="button" id="myReviewsToggle" onclick="var c=q('myReviewsList');c.style.display=c.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:10px;color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;text-align:left;font-family:var(--font)">💬 Moje opinie ▾</button>
-        <div id="myReviewsList" style="display:none;margin-top:10px"></div>
-      </div>
-
       <!-- PWA Install Button -->
       <button id="pwaInstallBtn" style="display:none;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font);margin-bottom:12px;text-align:center">📲 Dodaj FoxPot do ekranu głównego</button>
     </div>
@@ -1236,8 +1230,6 @@ async function loadProfile(){
     renderNearby();
     // Show leave button only for authenticated users
     const $leave=q('pLeaveSection');if($leave)$leave.style.display='block';
-    // Load my reviews
-    loadMyReviewsProfile();
   }catch(e){
     $l.style.display='none';
     if(e.message.includes('401')||e.message.includes('nie zarejestrowany')){$u.style.display='block'}
@@ -2791,40 +2783,6 @@ async function submitReview(venueId) {
     msg.innerHTML = `<span style="color:var(--red)">${esc(e.message||'Błąd')}</span>`;
     btn.textContent = 'Wyślij opinię'; btn.disabled = false;
   }
-}
-
-// ─── Moje opinie (Profile) ───
-async function loadMyReviewsProfile() {
-  try {
-    const h = {}; if(INIT_DATA) h['X-Telegram-Init-Data'] = INIT_DATA; if(_jwtToken) h['Authorization'] = 'Bearer '+_jwtToken;
-    const resp = await fetch(BASE+'/api/my-reviews', {headers:h});
-    const data = await resp.json();
-    const reviews = data.reviews || [];
-    const card = q('myReviewsCard');
-    const list = q('myReviewsList');
-    if (!card || !list) return;
-    if (reviews.length === 0) {
-      card.style.display = 'block';
-      list.style.display = 'block';
-      list.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:12px">Nie masz jeszcze żadnych opinii</div>';
-      return;
-    }
-    card.style.display = 'block';
-    list.innerHTML = reviews.map(r => {
-      const stars = r.rating ? ('★'.repeat(r.rating) + '☆'.repeat(5 - r.rating)) : '';
-      const date = new Date(r.created_at).toLocaleDateString("pl-PL");
-      const firstLine = r.text ? esc(r.text).split('\n')[0].slice(0, 80) : '';
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--border)" onclick="go('map');setTimeout(()=>openVenueDetail(${r.venue_id}),300)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-          <span style="font-size:13px;font-weight:700;color:var(--text)">${esc(r.venue_name)}</span>
-          <span style="font-size:10px;color:var(--muted)">${date}</span>
-        </div>
-        ${stars ? `<div style="color:var(--fox);font-size:13px;margin-bottom:2px">${stars}</div>` : ''}
-        ${firstLine ? `<div style="font-size:12px;color:var(--muted);line-height:1.4">${firstLine}</div>` : ''}
-        ${r.venue_reply ? `<div style="margin-top:4px;padding:4px 8px;background:rgba(46,204,113,.06);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--muted)"><span style="color:var(--green);font-weight:700">Odpowiedź:</span> ${esc(r.venue_reply)}</div>` : ''}
-      </div>`;
-    }).join('');
-  } catch(e) { /* silent */ }
 }
 
 const _menuState = {};
