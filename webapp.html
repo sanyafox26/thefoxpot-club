@@ -2684,13 +2684,13 @@ async function startTrial(venueId) {
       ${joinBlock}
       ${v.phone ? `<button onclick="callVenue('${esc(v.phone.replace(/'/g,''))}',this)" style="display:block;width:100%;padding:14px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:600;text-align:center;cursor:pointer;font-family:var(--font)">📞 Zadzwoń · ${esc(v.phone)}</button>` : ''}
       <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" onclick="openExternal('${mapsUrl}',event)" style="display:block;width:100%;padding:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none;font-family:var(--font)">🗺️ Otwórz w Mapach Google</a>
-      <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij</button>
+      <button onclick="q('venueModal').classList.remove('open')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">Zamknij ✅ V2</button>
     </div>
   `;
   q('venueModal').classList.add('open');
   haptic('selection');
   initVenuePhotos(v.id);
-  loadVenueReviewBlock(v.id);
+  // loadVenueReviewBlock loaded statically in template now
 }
 
 // ─── Venue Review Block ───
