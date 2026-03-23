@@ -3672,7 +3672,7 @@ app.get("/api/venue/:id/reviews", async (req, res) => {
 // POST /panel/review/:id/reply — Venue replies to a review
 app.post("/panel/review/:id/reply", requirePanelAuth, async (req, res) => {
   try {
-    const venueId = String(req.panel.venue_id);
+    const venueId = Number(req.panel.venue_id);
     const reviewId = Number(req.params.id);
     const reply = String(req.body.reply || "").trim().slice(0, 500);
     if (!reply) return res.status(400).json({ error: "Treść odpowiedzi jest wymagana" });
@@ -3954,7 +3954,7 @@ app.use("/panel/venue/photos/upload", express.json({ limit: "10mb" }));
 
 // GET /panel/venue/photos — get venue photos
 app.get("/panel/venue/photos", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const photos = await pool.query(
     `SELECT id, url, sort_order FROM fp1_venue_photos WHERE venue_id=$1 ORDER BY sort_order ASC`, [venueId]
   );
@@ -3964,7 +3964,7 @@ app.get("/panel/venue/photos", requirePanelAuth, async (req, res) => {
 // POST /panel/venue/photos/upload — upload photo via Cloudinary
 app.post("/panel/venue/photos/upload", requirePanelAuth, async (req, res) => {
   try {
-    const venueId = String(req.panel.venue_id);
+    const venueId = Number(req.panel.venue_id);
     const { image } = req.body; // base64 data URL
     if (!image) return res.status(400).json({ error: "Brak zdjęcia" });
     if (!CLOUDINARY_CLOUD || !CLOUDINARY_KEY || !CLOUDINARY_SECRET) {
@@ -3998,7 +3998,7 @@ app.post("/panel/venue/photos/upload", requirePanelAuth, async (req, res) => {
 // DELETE /panel/venue/photos/:id — delete a photo
 app.delete("/panel/venue/photos/:id", requirePanelAuth, async (req, res) => {
   try {
-    const venueId = String(req.panel.venue_id);
+    const venueId = Number(req.panel.venue_id);
     const photoId = Number(req.params.id);
     await pool.query(`DELETE FROM fp1_venue_photos WHERE id=$1 AND venue_id=$2`, [photoId, venueId]);
     // Re-number sort_order
@@ -4818,7 +4818,7 @@ app.get("/panel/logout", (req, res) => { clearCookie(res); res.redirect("/panel"
 
 app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   try {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const venue   = await getVenue(venueId);
   const pending = await listPending(venueId);
   const status  = await currentVenueStatus(venueId);
@@ -5228,7 +5228,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
 
 // ── PANEL: GET venue dishes (Top 3) ──
 app.get("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   try {
     const r = await pool.query(
       `SELECT id, name, category, sort_order, is_active FROM fp1_venue_dishes WHERE venue_id=$1 ORDER BY sort_order ASC`,
@@ -5240,7 +5240,7 @@ app.get("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
 
 // ── PANEL: PUT venue dishes (upsert Top 3) ──
 app.put("/panel/venue/dishes", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const AGG_WHITELIST = ["main","snack","dessert","drink","alcohol","other"];
   try {
     const dishes = req.body.dishes;
@@ -5349,7 +5349,7 @@ function validateCustomText(text) {
 
 // ── PANEL: Fox choice stats (what Foxes pick) ──
 app.get("/panel/venue/choice-stats", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   try {
     const stats = await pool.query(
       `SELECT agg_category, COUNT(*)::int AS cnt FROM fp1_receipts
@@ -5369,13 +5369,13 @@ app.get("/panel/venue/choice-stats", requirePanelAuth, async (req, res) => {
 
 // ── PANEL: Menu items CRUD ──
 app.get("/panel/venue/menu", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const items = await pool.query(`SELECT id,name,category,price,sort_order FROM fp1_menu_items WHERE venue_id=$1 ORDER BY sort_order,name`, [venueId]);
   res.json({ items: items.rows });
 });
 
 app.post("/panel/venue/menu", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const name = String(req.body.name || "").trim().slice(0, 80);
   const category = ["main","snack","soup","dessert","drink","alcohol"].includes(req.body.category) ? req.body.category : "main";
   const price = parseFloat(req.body.price) || null;
@@ -5388,7 +5388,7 @@ app.post("/panel/venue/menu", requirePanelAuth, async (req, res) => {
 });
 
 app.put("/panel/venue/menu/:id", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const itemId = Number(req.params.id);
   const name = String(req.body.name || "").trim().slice(0, 80);
   const category = ["main","snack","soup","dessert","drink","alcohol"].includes(req.body.category) ? req.body.category : "main";
@@ -5399,7 +5399,7 @@ app.put("/panel/venue/menu/:id", requirePanelAuth, async (req, res) => {
 });
 
 app.delete("/panel/venue/menu/:id", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const itemId = Number(req.params.id);
   await pool.query(`DELETE FROM fp1_menu_items WHERE id=$1 AND venue_id=$2`, [itemId, venueId]);
   res.json({ ok: true });
@@ -5414,7 +5414,7 @@ app.get("/api/venue/:id/menu", async (req, res) => {
 
 // ── PANEL: Save venue settings ──
 app.post("/panel/settings", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const b = req.body;
   try {
     await pool.query(
@@ -5443,7 +5443,7 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
 });
 
 app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   // Rate limit: max 10 OTP attempts per venue per 5 min
   if (rateLimit(`otp_confirm:${venueId}`, 10, 5*60*1000)) {
     return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Zbyt wiele prób. Poczekaj 5 minut.")}`);
@@ -5487,7 +5487,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
 });
 
 app.post("/panel/reserve", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const startsRaw = String(req.body.starts_at || "").trim();
   const hours = Math.min(24, Math.max(1, Number(req.body.hours) || 24));
   if (!startsRaw) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Podaj datę i godzinę.")}`);
@@ -5502,7 +5502,7 @@ app.post("/panel/reserve", requirePanelAuth, async (req, res) => {
 });
 
 app.post("/panel/limited", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const reason = ["FULL","PRIVATE EVENT","KITCHEN LIMIT"].includes(req.body.reason) ? req.body.reason : "FULL";
   const hours  = Math.min(3, Math.max(1, Number(req.body.hours) || 3));
   const cnt = await limitedCountThisWeek(venueId);
@@ -5513,20 +5513,20 @@ app.post("/panel/limited", requirePanelAuth, async (req, res) => {
 });
 
 app.post("/panel/status/cancel", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   await pool.query(`UPDATE fp1_venue_status SET ends_at=NOW() WHERE venue_id=$1 AND starts_at<=NOW() AND ends_at>NOW()`, [venueId]);
   res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Status anulowany.")}`);
 });
 
 app.post("/panel/status/cancel/:id", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const statusId = Number(req.params.id);
   await pool.query(`UPDATE fp1_venue_status SET ends_at=NOW() WHERE id=$1 AND venue_id=$2`, [statusId, venueId]);
   res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Anulowano.")}`);
 });
 
 app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const userId  = String(req.body.user_id || "").trim();
   const emoji   = ["⭐","🦊","🔥","🎁","💎","🏆","👑","❤️","🍕","🍔","🌭","🍟","🍣","🍱","🍜","🍝","🥩","🍗","🥗","🥪","🌮","🌯","🥐","🍰","🎂","🧁","🍩","🍪","🍦","🍫","🍺","🍻","🍷","🍸","☕","🧋","🥤","🍹"].includes(req.body.emoji) ? req.body.emoji : "⭐";
   const delta   = [-10,-1,1].includes(Number(req.body.delta)) ? Number(req.body.delta) : 1;
@@ -5547,7 +5547,7 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
 
 // POST /panel/discount — set individual Fox discount
 app.post("/panel/discount", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const userId = String(req.body.user_id || "").trim();
   const pct = parseFloat(req.body.discount_percent);
   const temp = req.body.is_temporary === "1";
@@ -5572,7 +5572,7 @@ app.post("/panel/discount", requirePanelAuth, async (req, res) => {
 
 // POST /panel/promo-order — venue orders a promotion package
 app.post("/panel/promo-order", requirePanelAuth, async (req, res) => {
-  const venueId = String(req.panel.venue_id);
+  const venueId = Number(req.panel.venue_id);
   const pkg = ["start","boost","premium"].includes(req.body.package) ? req.body.package : "start";
   const venue = await getVenue(venueId);
   await pool.query(`INSERT INTO fp1_promo_orders(venue_id,package) VALUES($1,$2)`, [venueId, pkg]);
