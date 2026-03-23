@@ -3717,6 +3717,22 @@ app.post("/api/venue/checkin", requireWebAppAuth, async (req, res) => {
    REVIEWS — Private feedback from Fox to Venue
 ═══════════════════════════════════════════════════════════════ */
 
+// TEMP DEBUG — remove after
+app.get("/api/debug-full", async (req, res) => {
+  try {
+    const foxId = Number(req.query.fox_id || 38);
+    const foxQ = await pool.query(`SELECT id, user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [foxId]);
+    if (!foxQ.rows.length) return res.json({ error: "fox not found" });
+    const userId = String(foxQ.rows[0].user_id);
+    // Recent checkins
+    const checkins = await pool.query(`SELECT id, venue_id, otp, confirmed_at, war_day, created_at FROM fp1_checkins WHERE user_id=$1 ORDER BY created_at DESC LIMIT 5`, [userId]);
+    // Recent counted visits
+    const visits = await pool.query(`SELECT id, venue_id, is_credited, war_day, created_at FROM fp1_counted_visits WHERE user_id=$1 ORDER BY created_at DESC LIMIT 5`, [userId]);
+    // Server version
+    res.json({ user_id: userId, fox_id: foxId, version: "V27_1_CONFIRM_FIX", checkins: checkins.rows, counted_visits: visits.rows });
+  } catch(e) { res.json({ error: String(e?.message||e) }); }
+});
+
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
