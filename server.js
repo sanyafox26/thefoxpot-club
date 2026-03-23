@@ -5204,7 +5204,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <p class="muted" style="margin-bottom:8px">Ustaw większą zniżkę dla konkretnego Fox'a. Minimum: ${parseFloat(venue.discount_percent)||10}% (domyślna).</p>
         <form method="POST" action="/panel/discount">
           <div class="grid2">
-            <div><label>Telegram ID Fox'a</label><input name="user_id" type="number" required placeholder="np. 457874548"/></div>
+            <div><label>ID Fox'a</label><input name="user_id" type="number" required placeholder="np. 42"/></div>
             <div><label>Zniżka %</label><input name="discount_percent" type="number" min="${parseFloat(venue.discount_percent)||10}" max="100" step="1" required placeholder="np. 15" value="15"/></div>
           </div>
           <div style="margin-top:8px"><label>Czas trwania</label>
@@ -5219,7 +5219,7 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       <div style="display:none;margin-top:12px">
         <form method="POST" action="/panel/stamps">
           <div class="grid2">
-            <div><label>Telegram ID gościa <a href="/faq#lq34" target="_blank" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:400" title="Jak znaleźć ID?">(jak znaleźć?)</a></label><input name="user_id" type="number" required placeholder="np. 457874548"/></div>
+            <div><label>ID Fox'a</label><input name="user_id" type="number" required placeholder="np. 42"/></div>
             <div><label>Emoji</label>
               <select name="emoji"><option>⭐</option><option>🦊</option><option>🔥</option><option>🎁</option><option>💎</option><option>🏆</option><option>👑</option><option>❤️</option><option>🍕</option><option>🍔</option><option>🌭</option><option>🍟</option><option>🍣</option><option>🍱</option><option>🍜</option><option>🍝</option><option>🥩</option><option>🍗</option><option>🥗</option><option>🥪</option><option>🌮</option><option>🌯</option><option>🥐</option><option>🍰</option><option>🎂</option><option>🧁</option><option>🍩</option><option>🍪</option><option>🍦</option><option>🍫</option><option>🍺</option><option>🍻</option><option>🍷</option><option>🍸</option><option>☕</option><option>🧋</option><option>🥤</option><option>🍹</option></select>
             </div>
@@ -5727,11 +5727,17 @@ app.post("/panel/status/cancel/:id", requirePanelAuth, async (req, res) => {
 
 app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
   const venueId = Number(req.panel.venue_id);
-  const userId  = String(req.body.user_id || "").trim();
+  let userId  = String(req.body.user_id || "").trim();
   const emoji   = ["⭐","🦊","🔥","🎁","💎","🏆","👑","❤️","🍕","🍔","🌭","🍟","🍣","🍱","🍜","🍝","🥩","🍗","🥗","🥪","🌮","🌯","🥐","🍰","🎂","🧁","🍩","🍪","🍦","🍫","🍺","🍻","🍷","🍸","☕","🧋","🥤","🍹"].includes(req.body.emoji) ? req.body.emoji : "⭐";
   const delta   = [-10,-1,1].includes(Number(req.body.delta)) ? Number(req.body.delta) : 1;
   const note    = String(req.body.note || "").trim().slice(0, 100);
-  if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy Telegram ID.")}`);
+  if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy ID Fox'a.")}`);
+  // Resolve short Fox ID → Telegram user_id
+  if (Number(userId) > 0 && Number(userId) < 100000) {
+    const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [Number(userId)]);
+    if (foxQ.rows.length) userId = String(foxQ.rows[0].user_id);
+    else return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Fox o ID "+userId+" nie znaleziony.")}`);
+  }
   if (delta < 0) { const bal = await stampBalance(venueId, userId); if (bal < Math.abs(delta)) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Gość nie ma wystarczająco stempli (saldo: "+bal+").")}`); }
   await pool.query(`INSERT INTO fp1_stamps(venue_id,user_id,emoji,delta,note) VALUES($1,$2,$3,$4,$5)`, [venueId, userId, emoji, delta, note||null]);
   const newBal = await stampBalance(venueId, userId);
@@ -5748,10 +5754,16 @@ app.post("/panel/stamps", requirePanelAuth, async (req, res) => {
 // POST /panel/discount — set individual Fox discount
 app.post("/panel/discount", requirePanelAuth, async (req, res) => {
   const venueId = Number(req.panel.venue_id);
-  const userId = String(req.body.user_id || "").trim();
+  let userId = String(req.body.user_id || "").trim();
   const pct = parseFloat(req.body.discount_percent);
   const temp = req.body.is_temporary === "1";
-  if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy Telegram ID.")}`);
+  if (!userId || isNaN(Number(userId))) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nieprawidłowy ID Fox'a.")}`);
+  // Resolve short Fox ID → Telegram user_id
+  if (Number(userId) > 0 && Number(userId) < 100000) {
+    const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [Number(userId)]);
+    if (foxQ.rows.length) userId = String(foxQ.rows[0].user_id);
+    else return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Fox o ID "+userId+" nie znaleziony.")}`);
+  }
   const venue = await getVenue(venueId);
   const minDiscount = parseFloat(venue?.discount_percent) || 10;
   if (isNaN(pct) || pct < minDiscount || pct > 100) return res.redirect(`/panel/dashboard?err=${encodeURIComponent(`Zniżka musi być ${minDiscount}%–100%.`)}`);
