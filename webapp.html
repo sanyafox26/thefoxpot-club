@@ -2489,6 +2489,7 @@ async function startTrial(venueId) {
 }
 
  function openVenueDetail(id) {
+  try {
   const v = S_map.venues.find(x => x.id === id);
   if (!v) return;
   const mapsUrl = v.lat && v.lng
@@ -2675,6 +2676,7 @@ async function startTrial(venueId) {
   haptic('selection');
   initVenuePhotos(v.id);
   loadVenueReviewBlock(v.id);
+  } catch(err) { alert('openVenueDetail error: ' + err.message); }
 }
 
 // ─── Venue Review Block ───
