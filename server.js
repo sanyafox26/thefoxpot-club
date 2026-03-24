@@ -3864,7 +3864,8 @@ app.post("/panel/review/:id/reply", requirePanelAuth, async (req, res) => {
       [reply, reviewId, venueId]
     );
     if (r.rowCount === 0) {
-      console.log(`[reply] FAIL reviewId=${reviewId} panelVenueId=${venueId}`);
+      const dbg = await pool.query(`SELECT id, venue_id, user_id, venue_reply FROM fp1_reviews WHERE id=$1`, [reviewId]);
+      console.log(`[reply] FAIL reviewId=${reviewId} panelVenueId=${venueId} dbRow=`, JSON.stringify(dbg.rows[0]||'NOT_FOUND'));
       return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nie znaleziono opinii lub już odpowiedziano")}`);
     }
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Odpowiedź wysłana ✅")}`);
