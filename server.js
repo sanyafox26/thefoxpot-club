@@ -3761,6 +3761,20 @@ app.get("/api/venue-review-status", requireWebAppAuth, async (req, res) => {
   } catch(e) { res.json({ can_review: false, last_review: null }); }
 });
 
+// TEMP DEBUG
+app.get("/api/debug-fox", async (req, res) => {
+  try {
+    const foxId = Number(req.query.id);
+    if (!foxId) return res.json({ error: "need ?id=X" });
+    const f = await pool.query(`SELECT id, user_id, username, phone, city, created_at FROM fp1_foxes WHERE id=$1 LIMIT 1`, [foxId]);
+    if (!f.rows.length) return res.json({ error: "not found" });
+    const userId = String(f.rows[0].user_id);
+    const visits = await pool.query(`SELECT cv.venue_id, v.name, cv.war_day, cv.created_at FROM fp1_counted_visits cv JOIN fp1_venues v ON v.id=cv.venue_id WHERE cv.user_id=$1::bigint ORDER BY cv.created_at DESC LIMIT 10`, [userId]);
+    const checkins = await pool.query(`SELECT c.venue_id, v.name, c.confirmed_at, c.created_at FROM fp1_checkins c JOIN fp1_venues v ON v.id=c.venue_id WHERE c.user_id=$1::bigint AND c.confirmed_at IS NOT NULL ORDER BY c.confirmed_at DESC LIMIT 10`, [userId]);
+    res.json({ fox: f.rows[0], last_visits: visits.rows, last_checkins: checkins.rows });
+  } catch(e) { res.json({ error: String(e?.message||e) }); }
+});
+
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
 app.get("/api/checkin/status", requireWebAppAuth, async (req, res) => {
   try {
