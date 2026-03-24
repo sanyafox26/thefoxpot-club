@@ -463,12 +463,13 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <button id="loginSendBtn" onclick="loginSendOtp()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--fox),var(--fox2));border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font)">📲 Wyślij kod SMS</button>
           <div id="loginErr1" style="display:none;margin-top:8px;font-size:12px;color:#EF4444;text-align:center"></div>
 
-          <div style="display:flex;align-items:center;gap:12px;margin:16px 0">
+          <!-- HIDDEN: Telegram login divider + link hidden from UI -->
+          <div style="display:none;align-items:center;gap:12px;margin:16px 0">
             <div style="flex:1;height:1px;background:var(--border2)"></div>
             <span style="font-size:11px;color:var(--muted)">lub</span>
             <div style="flex:1;height:1px;background:var(--border2)"></div>
           </div>
-          <a href="https://t.me/thefoxpot_club_bot" target="_blank" style="display:block;width:100%;padding:12px;background:rgba(0,136,204,.1);border:1px solid rgba(0,136,204,.3);border-radius:var(--radius-sm);color:#0088cc;font-size:14px;font-weight:700;text-align:center;text-decoration:none;font-family:var(--font)">✈️ Zaloguj przez Telegram</a>
+          <a href="https://t.me/thefoxpot_club_bot" target="_blank" style="display:none;width:100%;padding:12px;background:rgba(0,136,204,.1);border:1px solid rgba(0,136,204,.3);border-radius:var(--radius-sm);color:#0088cc;font-size:14px;font-weight:700;text-align:center;text-decoration:none;font-family:var(--font)">✈️ Zaloguj przez Telegram</a>
         </div>
 
         <!-- Step 2: OTP verify -->
@@ -726,7 +727,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div class="inv-code" id="invCodeTxt">XXXXXXXXXX</div>
         <div class="inv-code-actions">
           <button class="inv-copy-btn" id="invCopyBtn" onclick="copyCode()">📋 Kopiuj kod</button>
-          <button class="inv-share-btn" onclick="shareCode()">✈️ Wyślij w Telegram</button>
+          <!-- HIDDEN: Telegram share button hidden from UI -->
+          <button class="inv-share-btn" onclick="shareCode()" style="display:none">✈️ Wyślij w Telegram</button>
         </div>
         <div class="inv-code-note">Wyślij link znajomemu — klika i dołącza jednym klikiem! 🦊</div>
       </div>
@@ -906,7 +908,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div style="font-size:14px;font-weight:700;margin-bottom:8px">📩 Potrzebujesz pomocy? Napisz do nas</div>
       <div style="display:flex;flex-direction:column;gap:8px;align-items:center">
         <a href="mailto:kontakt@thefoxpot.club" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">✉️ kontakt@thefoxpot.club</a>
-        <a href="#" onclick="openExternal('https://t.me/thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">✈️ Telegram</a>
+        <!-- HIDDEN: Telegram link hidden from UI -->
+        <a href="#" onclick="openExternal('https://t.me/thefoxpotclub');return false" style="display:none;color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">✈️ Telegram</a>
         <a href="#" onclick="openExternal('https://www.instagram.com/thefoxpotclub/');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">📸 Instagram</a>
         <a href="#" onclick="openExternal('https://www.tiktok.com/@thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">🎵 TikTok</a>
         <a href="#" onclick="openExternal('https://www.youtube.com/@thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">▶️ YouTube</a>
@@ -1251,12 +1254,12 @@ const SOCIAL_PLATFORMS = [
   { key:'instagram', label:'Instagram',  emoji:'📸', url:'https://www.instagram.com/thefoxpotclub/', color:'#E1306C' },
   { key:'tiktok',    label:'TikTok',     emoji:'🎵', url:'https://www.tiktok.com/@thefoxpotclub',    color:'#00f2ea' },
   { key:'youtube',   label:'YouTube',    emoji:'▶️', url:'https://www.youtube.com/@thefoxpotclub',   color:'#FF0000' },
-  { key:'telegram',  label:'Telegram',   emoji:'✈️', url:'https://t.me/thefoxpotclub',               color:'#0088cc' },
+  // { key:'telegram',  label:'Telegram',   emoji:'✈️', url:'https://t.me/thefoxpotclub',               color:'#0088cc' }, // HIDDEN: Telegram line hidden from UI
   { key:'facebook',  label:'Facebook',   emoji:'👍', url:'https://www.facebook.com/thefoxpotclub',   color:'#1877F2' },
 ];
 
 // Track which platforms user clicked "Subskrybuj" (enables Sprawdź button)
-const socialClicked = { instagram:false, tiktok:false, youtube:false, telegram:false, facebook:false };
+const socialClicked = { instagram:false, tiktok:false, youtube:false, /* telegram:false, */ facebook:false };
 
 function renderSocialBonus(d) {
   const card = q('socialBonusCard');
@@ -1270,7 +1273,7 @@ function renderSocialBonus(d) {
     instagram: !!d.sub_instagram,
     tiktok:    !!d.sub_tiktok,
     youtube:   !!d.sub_youtube,
-    telegram:  !!d.sub_telegram,
+    // telegram:  !!d.sub_telegram, // HIDDEN: Telegram line hidden from UI
     facebook:  !!d.sub_facebook,
   };
   const count = Object.values(subs).filter(Boolean).length;

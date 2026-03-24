@@ -3101,11 +3101,12 @@ app.post("/api/social/verify", requireWebAppAuth, async (req, res) => {
 
     let invite_bonus = false;
 
-    // Check if all 4 are now subscribed → bonus +1 invite (one-time)
+    // Check if all 4 visible platforms are now subscribed → bonus +1 invite (one-time)
+    // HIDDEN: Telegram excluded from full-set check (UI hidden)
     if (!f.sub_bonus_claimed) {
       const updated = await pool.query(`SELECT sub_instagram, sub_tiktok, sub_youtube, sub_telegram, sub_facebook FROM fp1_foxes WHERE user_id=$1`, [userId]);
       const u = updated.rows[0];
-      if (u.sub_instagram && u.sub_tiktok && u.sub_youtube && u.sub_telegram && u.sub_facebook) {
+      if (u.sub_instagram && u.sub_tiktok && u.sub_youtube && /* u.sub_telegram && */ u.sub_facebook) {
         await pool.query(
           `UPDATE fp1_foxes SET sub_bonus_claimed = TRUE, invites = invites + 1 WHERE user_id=$1`,
           [userId]
