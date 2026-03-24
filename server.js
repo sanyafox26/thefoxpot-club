@@ -3739,22 +3739,19 @@ app.get("/api/venue-review-status", requireWebAppAuth, async (req, res) => {
     const userId = String(req.tgUser.id);
     const venueId = req.query.venue_id ? Number(req.query.venue_id) : null;
     if (!venueId) return res.json({ can_review: false, last_review: null });
-    // Find unreviewed confirmed checkin (only from last 7 days to avoid old test data)
-    const unreviewd = await pool.query(
-      `SELECT c.id FROM fp1_checkins c
-       WHERE c.user_id=$1::bigint AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL
-       AND c.confirmed_at > NOW() - INTERVAL '7 days'
-       AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id)
-       ORDER BY c.confirmed_at DESC LIMIT 1`,
-      [userId, venueId]
-    );
+    // Can review = has more counted visits than reviews at this venue
+    const visitCount = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE`, [userId, venueId]);
+    const reviewCount = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2`, [userId, venueId]);
+    const canReview = visitCount.rows[0].c > reviewCount.rows[0].c;
     // Fox's last review at this venue
     const lastReview = await pool.query(
       `SELECT rating, text, created_at FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2 ORDER BY created_at DESC LIMIT 1`,
       [userId, venueId]
     );
     res.json({
-      can_review: unreviewd.rowCount > 0,
+      can_review: canReview,
       last_review: lastReview.rows[0] || null
     });
   } catch(e) { res.json({ can_review: false, last_review: null }); }
@@ -3798,11 +3795,14 @@ app.post("/api/review", requireWebAppAuth, async (req, res) => {
         [checkin_id, userId]
       );
     } else if (venue_id) {
+      // Check visits > reviews
+      const vc = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_counted_visits WHERE user_id=$1 AND venue_id=$2 AND is_credited=TRUE`, [userId, venue_id]);
+      const rc = await pool.query(`SELECT COUNT(*)::int AS c FROM fp1_reviews WHERE user_id=$1 AND venue_id=$2`, [userId, venue_id]);
+      if (vc.rows[0].c <= rc.rows[0].c) return res.status(403).json({ error: "Już wystawiłeś opinię za tę wizytę" });
+      // Find any confirmed checkin at this venue for linking
       ci = await pool.query(
         `SELECT c.id, c.venue_id FROM fp1_checkins c
          WHERE c.user_id = $1::bigint AND c.venue_id = $2 AND c.confirmed_at IS NOT NULL
-         AND c.confirmed_at > NOW() - INTERVAL '7 days'
-         AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id = c.id)
          ORDER BY c.confirmed_at DESC LIMIT 1`,
         [userId, venue_id]
       );
