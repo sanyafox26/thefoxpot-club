@@ -651,11 +651,20 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="receipt-detail" id="receiptDetail"></div>
     </div>
     <label class="venue-lbl">Wybierz lokal</label>
-    <select class="venue-select" id="venueSelect"><option value="">— wybierz lokal —</option></select>
+    <div style="position:relative;margin-bottom:10px">
+      <input id="venueSearchCI" type="text" placeholder="🔍 Wpisz nazwę lokalu…" autocomplete="off" oninput="filterVenueCI()" onfocus="filterVenueCI()" style="width:100%;padding:12px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:var(--font);outline:none"/>
+      <div id="venueSearchResults" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:100;max-height:200px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border2);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+    </div>
+    <select class="venue-select" id="venueSelect" style="display:none"><option value="">— wybierz lokal —</option></select>
     <button class="checkin-btn" id="ciBtn" onclick="doCheckin()">Pokaż kod wizyty ✓</button>
     <div class="card">
-      <div class="card-title">AKTYWNE LOKALE</div>
-      <div id="venuesList"><div class="loading"><div class="spinner"></div></div></div>
+      <div onclick="toggleCIVenues()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none">
+        <div class="card-title" style="margin-bottom:0">AKTYWNE LOKALE</div>
+        <span id="ciVenuesArrow" style="font-size:12px;color:var(--muted);transition:transform .3s">▼</span>
+      </div>
+      <div id="ciVenuesCollapse" style="max-height:0;overflow:hidden;transition:max-height .4s ease">
+        <div id="venuesList" style="padding-top:8px"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
     </div>
   </section>
 
@@ -1596,7 +1605,34 @@ async function loadVenues(){
     q('venuesList').innerHTML='<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Błąd ładowania</div></div>';
   }
 }
-function pickVenue(id){q('venueSelect').value=String(id);haptic('selection')}
+function pickVenue(id){
+  q('venueSelect').value=String(id);
+  const v=S.venues?.find(x=>x.id===id);
+  if(v){q('venueSearchCI').value=v.name+' ('+v.city+')';}
+  q('venueSearchResults').style.display='none';
+  haptic('selection');
+}
+
+function filterVenueCI(){
+  const input=q('venueSearchCI');
+  const results=q('venueSearchResults');
+  const val=(input.value||'').toLowerCase().trim();
+  if(!val||!S.venues?.length){results.style.display='none';return;}
+  const matches=S.venues.filter(v=>v.name.toLowerCase().includes(val)||(v.city||'').toLowerCase().includes(val)||(v.address||'').toLowerCase().includes(val)).slice(0,8);
+  if(!matches.length){results.style.display='none';return;}
+  results.innerHTML=matches.map(v=>`<div onclick="pickVenue(${v.id})" style="padding:10px 14px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background='transparent'"><span style="font-size:16px">🏪</span><div><div style="font-weight:700">${esc(v.name)}</div><div style="font-size:11px;color:var(--muted)">${esc(v.city)}${v.address?' · '+esc(v.address):''}</div></div></div>`).join('');
+  results.style.display='block';
+}
+document.addEventListener('click',function(e){var r=q('venueSearchResults');if(r&&!r.contains(e.target)&&e.target!==q('venueSearchCI'))r.style.display='none';});
+
+let _ciVenuesOpen=false;
+function toggleCIVenues(){
+  const col=q('ciVenuesCollapse'),arrow=q('ciVenuesArrow');
+  if(!col)return;
+  _ciVenuesOpen=!_ciVenuesOpen;
+  if(_ciVenuesOpen){col.style.maxHeight=col.scrollHeight+'px';if(arrow)arrow.style.transform='rotate(180deg)';}
+  else{col.style.maxHeight='0';if(arrow)arrow.style.transform='rotate(0deg)';}
+}
 
   function showConsent() {
   const el = q('consentOverlay');
