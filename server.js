@@ -3761,14 +3761,6 @@ app.get("/api/venue-review-status", requireWebAppAuth, async (req, res) => {
   } catch(e) { res.json({ can_review: false, last_review: null }); }
 });
 
-// TEMP: cleanup duplicate review
-app.get("/api/debug-cleanup", async (req, res) => {
-  try {
-    const r = await pool.query(`DELETE FROM fp1_reviews WHERE id=1 RETURNING id`);
-    res.json({ deleted: r.rowCount });
-  } catch(e) { res.json({ error: String(e?.message||e) }); }
-});
-
 // TEMP DEBUG
 app.get("/api/debug-fox", async (req, res) => {
   try {
