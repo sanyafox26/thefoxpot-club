@@ -2221,14 +2221,14 @@ app.get("/lokal/:slug", async (req, res) => {
     const catLabels = {main:'Dania główne',snack:'Przekąski',soup:'Zupy',dessert:'Desery',drink:'Napoje',alcohol:'Alkohole'};
     menuItems.rows.forEach(m => { const c = m.category || 'main'; if (!menuCats[c]) menuCats[c] = []; menuCats[c].push(m); });
 
-    // Social links
+    // Social links (real brand SVG icons)
     const socials = [
-      v.instagram_url ? `<a href="${e(v.instagram_url)}" target="_blank" rel="noopener noreferrer" style="color:#E1306C;font-size:24px;text-decoration:none">📸</a>` : '',
-      v.facebook_url ? `<a href="${e(v.facebook_url)}" target="_blank" rel="noopener noreferrer" style="color:#1877F2;font-size:24px;text-decoration:none">👍</a>` : '',
-      v.tiktok_url ? `<a href="${e(v.tiktok_url)}" target="_blank" rel="noopener noreferrer" style="color:#00f2ea;font-size:24px;text-decoration:none">🎵</a>` : '',
-      v.youtube_url ? `<a href="${e(v.youtube_url)}" target="_blank" rel="noopener noreferrer" style="color:#FF0000;font-size:24px;text-decoration:none">▶️</a>` : '',
-      v.website_url ? `<a href="${e(v.website_url)}" target="_blank" rel="noopener noreferrer" style="color:#f5a623;font-size:24px;text-decoration:none">🌐</a>` : '',
-    ].filter(Boolean).join(' ');
+      v.instagram_url ? `<a href="${e(v.instagram_url)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:rgba(225,48,108,.1);text-decoration:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="6" stroke="#E1306C" stroke-width="2"/><circle cx="12" cy="12" r="5" stroke="#E1306C" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.5" fill="#E1306C"/></svg></a>` : '',
+      v.facebook_url ? `<a href="${e(v.facebook_url)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:rgba(24,119,242,.1);text-decoration:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12c0 5.99 4.388 10.954 10.125 11.854V15.47H7.078V12h3.047V9.356c0-3.007 1.792-4.668 4.533-4.668 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874V12h3.328l-.532 3.47h-2.796v8.385C19.612 22.954 24 17.99 24 12"/></svg></a>` : '',
+      v.tiktok_url ? `<a href="${e(v.tiktok_url)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.08);text-decoration:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M16.6 5.82A4.278 4.278 0 0 1 15.54 3h-3.09v12.4a2.592 2.592 0 0 1-2.59 2.5c-1.42 0-2.6-1.16-2.6-2.6 0-1.72 1.66-3.01 3.37-2.48V9.66c-3.45-.46-6.47 2.22-6.47 5.64 0 3.33 2.76 5.7 5.69 5.7 3.14 0 5.69-2.55 5.69-5.7V9.01a7.35 7.35 0 0 0 4.3 1.38V7.3s-1.88.09-3.24-1.48z" fill="#25F4EE"/><path d="M16.6 5.82A4.278 4.278 0 0 1 15.54 3h-3.09v12.4a2.592 2.592 0 0 1-2.59 2.5c-1.42 0-2.6-1.16-2.6-2.6 0-1.72 1.66-3.01 3.37-2.48V9.66c-3.45-.46-6.47 2.22-6.47 5.64 0 3.33 2.76 5.7 5.69 5.7 3.14 0 5.69-2.55 5.69-5.7V9.01a7.35 7.35 0 0 0 4.3 1.38V7.3s-1.88.09-3.24-1.48z" fill="#FE2C55" transform="translate(.7,.7)"/><path d="M16.6 5.82A4.278 4.278 0 0 1 15.54 3h-3.09v12.4a2.592 2.592 0 0 1-2.59 2.5c-1.42 0-2.6-1.16-2.6-2.6 0-1.72 1.66-3.01 3.37-2.48V9.66c-3.45-.46-6.47 2.22-6.47 5.64 0 3.33 2.76 5.7 5.69 5.7 3.14 0 5.69-2.55 5.69-5.7V9.01a7.35 7.35 0 0 0 4.3 1.38V7.3s-1.88.09-3.24-1.48z" fill="#fff" transform="translate(.35,.35)"/></svg></a>` : '',
+      v.youtube_url ? `<a href="${e(v.youtube_url)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:rgba(255,0,0,.1);text-decoration:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.016 3.016 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.016 3.016 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" fill="#FF0000"/><path d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="#fff"/></svg></a>` : '',
+      v.website_url ? `<a href="${e(v.website_url)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:rgba(245,166,35,.1);text-decoration:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></a>` : '',
+    ].filter(Boolean).join('');
 
     // JSON-LD Schema
     const schema = JSON.stringify({
@@ -2319,7 +2319,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .verified{display:flex;align-items:center;gap:6px;padding:10px 16px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.15);border-radius:10px;font-size:13px;color:#2ecc71;font-weight:600}
 </style></head><body>
 <div class="wrap">
-  <div class="nav-bar"><a href="/">🦊 FoxPot Club</a>${socials ? `<div style="display:flex;gap:12px">${socials}</div>` : ''}</div>
+  <div class="nav-bar"><a href="/">🦊 FoxPot Club</a></div>
   <div class="hero">${firstPhoto ? `<img src="${firstPhoto}" alt="${e(v.name)}"/>` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:64px">🏪</div>`}<div class="hero-overlay"></div><div class="hero-text"><h1>${e(v.name)}</h1>${tpL ? `<p>${e(tpL)}</p>` : ''}${pubRated > 0 ? `<p style="margin-top:4px;font-size:15px;color:#f5a623;font-weight:700">⭐ ${pubAvg} <span style="color:rgba(255,255,255,.5);font-weight:400;font-size:13px">(${pubRated} opinii Fox'ów)</span></p>` : ''}</div></div>
 
   <div class="section">
@@ -2330,6 +2330,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       ${v.lat && v.lng ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener noreferrer" style="flex:1;padding:10px;text-align:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;font-size:13px;font-weight:600;text-decoration:none">🗺️ Nawiguj</a>` : ''}
       ${v.phone ? `<a href="tel:${e(v.phone.replace(/\s/g,''))}" style="flex:1;padding:10px;text-align:center;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.2);border-radius:8px;color:#2ecc71;font-size:13px;font-weight:600;text-decoration:none">📞 Zadzwoń</a>` : ''}
     </div>
+    ${socials ? `<div style="display:flex;justify-content:center;gap:12px;padding:8px 0">${socials}</div>` : ''}
   </div>
 
   <div class="section"><div class="verified">✓ ${visits > 0 ? `${visits} zweryfikowanych wizyt w FoxPot Club` : 'Nowy lokal w FoxPot Club!'}</div></div>
@@ -2618,7 +2619,7 @@ app.get("/api/venues", async (req, res) => {
       }
     }
     const r = await pool.query(
-     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number, promo_radius, promo_message, promo_active, promo_start, promo_end, phone, menu_file_url FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
+     `SELECT id, name, city, address, lat, lng, is_trial, discount_percent, description, recommended, venue_type, cuisine, monthly_visit_limit, tags, opening_hours, status_temporary, google_place_id, pioneer_number, promo_radius, promo_message, promo_active, promo_start, promo_end, phone, menu_file_url, instagram_url, facebook_url, tiktok_url, youtube_url, website_url FROM fp1_venues WHERE approved=TRUE ORDER BY id ASC LIMIT 100`
     );
     let myVisits = {};
     let totalVisits = {};
