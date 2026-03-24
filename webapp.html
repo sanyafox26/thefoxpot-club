@@ -2370,7 +2370,6 @@ function renderMapList() {
       : '<span class="venue-map-badge badge-partner">Partner</span>';
     const statusWarn = v.venue_status ? `<span style="font-size:10px;color:#EF4444;font-weight:700">${v.venue_status.type==='reserve'?'📍 Rezerwacja':'⚠️ '+(v.venue_status.reason||'Ograniczone')}</span>` : '';
     const demoTarget = S.isDemo ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Zrób pierwszy check-in!</span>` : '';
-    const venueRating = v.rated_count > 0 ? `<span style="font-size:11px;color:#f5a623;font-weight:700">⭐ ${v.avg_rating}</span>` : '';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
    const topStyle = (S.isDemo && S.demoVenueId === v.id) ? 'border-color:#f5a623;border-width:2px;background:rgba(245,166,35,.08);box-shadow:0 0 12px rgba(245,166,35,.15)' : v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.1);box-shadow:0 0 16px rgba(139,92,246,.2)' : v.is_top_year ? 'border-color:#FF8A00;border-width:2px;background:rgba(255,138,0,.1);box-shadow:0 0 12px rgba(255,138,0,.15)' : v.is_top_month ? 'border-color:#3B82F6;border-width:2px;background:rgba(59,130,246,.1);box-shadow:0 0 12px rgba(59,130,246,.15)' : v.is_top_week ? 'border-color:#22C55E;border-width:2px;background:rgba(34,197,94,.1);box-shadow:0 0 12px rgba(34,197,94,.15)' : '';
     const isTopVenue = v.is_top_alltime||v.is_top_year||v.is_top_month||v.is_top_week;
@@ -2384,7 +2383,6 @@ function renderMapList() {
         <div class="venue-map-addr">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-        ${venueRating}
         ${xy}
         ${badge}
         ${statusWarn}
@@ -2637,7 +2635,6 @@ async function startTrial(venueId) {
         <div id="vPhotoDots${v.id}" style="position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:6px"></div>
       </div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
-      ${v.rated_count > 0 ? `<div style="font-size:13px;color:#f5a623;font-weight:700;margin-bottom:4px">⭐ ${v.avg_rating} <span style="color:var(--muted);font-weight:400;font-size:11px">(z ${v.rated_count} opinii)</span></div>` : ''}
       <div id="foxReviewBadge${v.id}" style="display:none;font-size:12px;color:var(--green);margin-bottom:4px"></div>
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
