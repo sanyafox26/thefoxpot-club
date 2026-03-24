@@ -2407,7 +2407,8 @@ function renderMapList() {
     list.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">'+(search?'Nie znaleziono: «'+esc(search)+'»':'Brak lokali w tej kategorii')+'</div></div>';
     return;
   }
-  list.innerHTML = venues.map(v => {
+  const TOP_VISIBLE = 3;
+  const cards = venues.map((v, idx) => {
     const badge = v.is_trial
       ? '<span class="venue-map-badge badge-trial">Współpraca testowa</span>'
       : '<span class="venue-map-badge badge-partner">Partner</span>';
@@ -2419,7 +2420,7 @@ function renderMapList() {
     const iconBg = v.is_top_alltime?'rgba(139,92,246,.2)':v.is_top_year?'rgba(255,138,0,.2)':v.is_top_month?'rgba(59,130,246,.2)':v.is_top_week?'rgba(34,197,94,.2)':'rgba(107,114,128,.1)';
     const iconBorder = v.is_top_alltime?'rgba(139,92,246,.4)':v.is_top_year?'rgba(255,138,0,.4)':v.is_top_month?'rgba(59,130,246,.4)':v.is_top_week?'rgba(34,197,94,.4)':'rgba(107,114,128,.2)';
     const icon = v.is_top_alltime?'⭐':isTopVenue?'🏆':'🏪';
-    return `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
+    return { idx, html: `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon" style="background:${iconBg};border-color:${iconBorder}">${icon}</div>
       <div class="venue-map-info" style="flex:1">
         <div class="venue-map-name">${esc(v.name)}</div>
@@ -2431,8 +2432,38 @@ function renderMapList() {
         ${statusWarn}
         ${demoTarget}
       </div>
-    </div>`;
-  }).join('');
+    </div>` };
+  });
+  const topCards = cards.slice(0, TOP_VISIBLE).map(c => c.html).join('');
+  const restCards = cards.slice(TOP_VISIBLE);
+  const restCount = restCards.length;
+  if (restCount > 0) {
+    list.innerHTML = topCards
+      + `<div id="mapRestToggle" onclick="toggleMapRest()" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;margin:4px 0;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);cursor:pointer;user-select:none">
+          <span style="font-size:13px;font-weight:700;color:var(--muted)" id="mapRestLabel">🏪 Pokaż pozostałe lokale (${restCount})</span>
+          <span id="mapRestArrow" style="font-size:12px;color:var(--muted);transition:transform .3s">▼</span>
+        </div>`
+      + `<div id="mapRestList" style="max-height:0;overflow:hidden;transition:max-height .4s ease">${restCards.map(c => c.html).join('')}</div>`;
+  } else {
+    list.innerHTML = topCards;
+  }
+}
+
+let _mapRestOpen = false;
+function toggleMapRest() {
+  const rest = q('mapRestList'), arrow = q('mapRestArrow'), label = q('mapRestLabel');
+  if (!rest) return;
+  _mapRestOpen = !_mapRestOpen;
+  if (_mapRestOpen) {
+    rest.style.maxHeight = rest.scrollHeight + 'px';
+    if (arrow) arrow.style.transform = 'rotate(180deg)';
+    if (label) label.textContent = '🏪 Zwiń listę';
+  } else {
+    rest.style.maxHeight = '0';
+    if (arrow) arrow.style.transform = 'rotate(0deg)';
+    const cnt = rest.querySelectorAll('.venue-map-card').length;
+    if (label) label.textContent = '🏪 Pokaż pozostałe lokale (' + cnt + ')';
+  }
 }
 
  async function makeReserve(venueId) {
