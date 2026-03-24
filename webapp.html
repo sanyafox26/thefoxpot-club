@@ -2755,8 +2755,11 @@ async function submitReview(venueId) {
     if (d.ok) {
       msg.innerHTML = '<span style="color:var(--green)">✅ Dziękujemy za opinię!</span>';
       haptic('success');
-      // Review submitted — reload review block after delay
-      setTimeout(() => loadVenueReviewBlock(venueId), 1500);
+      // Update local venue data with this review
+      const lv = S_map.venues?.find(x => x.id === venueId);
+      if (lv) lv.my_review = { rating, text, created_at: new Date().toISOString() };
+      // Reload review block (hides form, shows updated state)
+      setTimeout(() => { loadVenueReviewBlock(venueId); openVenueDetail(venueId); }, 1500);
     } else {
       msg.innerHTML = `<span style="color:var(--fox)">${esc(d.error||'Błąd')}</span>`;
       btn.textContent = 'Wyślij opinię'; btn.disabled = false;
