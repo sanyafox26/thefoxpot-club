@@ -1823,12 +1823,12 @@ app.post("/api/auth/send-otp", express.json(), async (req, res) => {
         return res.status(429).json({ error: `Poczekaj ${wait}s przed ponownym wysłaniem kodu.` });
       }
     }
-    // 2) Max 3 codes per 15 min
+    // 2) Max 5 codes per 15 min
     const recent15 = await pool.query(
-      `SELECT COUNT(*)::int AS cnt FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '5 minutes'`, [cleaned]
+      `SELECT COUNT(*)::int AS cnt FROM fp1_otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '15 minutes'`, [cleaned]
     );
-    if (recent15.rows[0].cnt >= 3) {
-      return res.status(429).json({ error: "Za dużo kodów. Poczekaj 5 minut." });
+    if (recent15.rows[0].cnt >= 5) {
+      return res.status(429).json({ error: "Za dużo kodów. Poczekaj 15 minut." });
     }
     // 3) Max 8 codes per hour (hard spam block)
     const recent1h = await pool.query(
