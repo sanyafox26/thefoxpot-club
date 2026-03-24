@@ -1963,8 +1963,8 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
       }
     }
 
-    // Generate JWT (7 days)
-    const token = jwt.sign({ fox_id: foxId, phone: cleaned }, JWT_SECRET, { expiresIn: "7d" });
+    // Generate JWT (90 days)
+    const token = jwt.sign({ fox_id: foxId, phone: cleaned }, JWT_SECRET, { expiresIn: "90d" });
 
     res.json({ ok: true, token, is_new: isNew });
   } catch(e) {

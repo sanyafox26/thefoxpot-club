@@ -1171,7 +1171,7 @@ async function api(path,method='GET',body=null){
   const data=await res.json();
   if(!res.ok){
     // Токен протермінований — повертаємо на логін
-    if(res.status===401){ if(IS_PWA) location.href='/pwa'; else if(IS_JWT) localStorage.removeItem('fp1_jwt'); }
+    if(res.status===401){ if(IS_PWA) location.href='/pwa'; else if(IS_JWT){ localStorage.removeItem('fp1_jwt'); location.reload(); return; } }
     throw new Error(data?.error||'HTTP '+res.status);
   }
   return data;
