@@ -2825,6 +2825,8 @@ app.get("/api/venues", async (req, res) => {
       mrQ.rows.forEach(r => myReviewsMap[r.venue_id] = { rating: r.rating, text: r.text, created_at: r.created_at });
       const mrcQ = await pool.query(`SELECT venue_id, COUNT(*)::int AS cnt FROM fp1_reviews WHERE user_id=$1 GROUP BY venue_id`, [userId]);
       mrcQ.rows.forEach(r => myReviewCountMap[r.venue_id] = r.cnt);
+      const mavgQ = await pool.query(`SELECT venue_id, AVG(rating)::numeric AS avg FROM fp1_reviews WHERE user_id=$1 AND rating IS NOT NULL GROUP BY venue_id`, [userId]);
+      mavgQ.rows.forEach(r => { if (myReviewsMap[r.venue_id]) myReviewsMap[r.venue_id].avg_rating = parseFloat(parseFloat(r.avg).toFixed(1)); });
     }
     rsQ.rows.forEach(r => reviewStatsMap[r.venue_id] = { review_count: r.review_count, avg_rating: r.rated_count > 0 ? parseFloat(parseFloat(r.avg_rating).toFixed(1)) : null, rated_count: r.rated_count });
 
@@ -5436,12 +5438,18 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       </div>` : `<div class="muted" style="margin-bottom:8px">Brak ocen od Fox'ów</div>`}
     </div>
     <div class="card">
-      <h2>💬 Opinie Fox'ów</h2>
-      ${reviewStats.rows[0].cnt > 0 ? `<div style="margin-bottom:12px;padding:12px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.15);border-radius:10px;text-align:center"><span style="font-size:24px;font-weight:800;color:#f5a623">${parseFloat(reviewStats.rows[0].avg).toFixed(1)}</span><span style="font-size:14px;color:rgba(255,255,255,.5)"> / 5</span><div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Średnia ocena na podstawie ${reviewStats.rows[0].cnt} opinii</div></div>` : `<div class="muted" style="margin-bottom:8px">Brak opinii</div>`}
-      ${venueReviews.rows.map(r => {
+      <button type="button" onclick="togglePanelReviews()" style="width:100%;background:transparent;border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:10px;color:#f5a623;font-size:14px;font-weight:700;cursor:pointer;text-align:left;font-family:var(--font)">💬 Opinie Fox'ów (${reviewStats.rows[0].cnt}) <span id="panelReviewArrow" style="float:right">▾</span></button>
+      <div id="panelReviewsWrap" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+          <button onclick="sortPanelReviews('all')" class="prs-btn prs-active" style="padding:4px 10px;border-radius:16px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.1);color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)">Wszystkie</button>
+          <button onclick="sortPanelReviews('newest')" class="prs-btn" style="padding:4px 10px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:transparent;color:rgba(255,255,255,.5);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)">Najnowsze</button>
+          <button onclick="sortPanelReviews('highest')" class="prs-btn" style="padding:4px 10px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:transparent;color:rgba(255,255,255,.5);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)">Najwyższe</button>
+          <button onclick="sortPanelReviews('lowest')" class="prs-btn" style="padding:4px 10px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:transparent;color:rgba(255,255,255,.5);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)">Najniższe</button>
+        </div>
+        <div id="panelReviewsList">${venueReviews.rows.map(r => {
         const stars = r.rating ? ('★'.repeat(r.rating) + '☆'.repeat(5 - r.rating)) : '';
         const date = new Date(r.created_at).toLocaleDateString("pl-PL", { timeZone: "Europe/Warsaw" });
-        return `<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+        return `<div class="pr-item" data-rating="${r.rating||0}" data-date="${r.created_at}" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
             <div><span style="font-weight:700">@${escapeHtml(r.username||'Fox')}</span>${stars ? ` <span style="color:#f5a623;font-size:13px">${stars}</span>` : ''}</div>
             <span style="font-size:11px;color:rgba(255,255,255,.3)">${date}</span>
@@ -5449,8 +5457,13 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
           ${r.text ? `<div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.5;margin-bottom:4px">${escapeHtml(r.text)}</div>` : ''}
           ${r.venue_reply ? `<div style="margin-top:6px;padding:8px;background:rgba(46,204,113,.08);border-left:2px solid rgba(46,204,113,.3);border-radius:0 6px 6px 0;font-size:12px;color:rgba(255,255,255,.5)"><span style="color:#2ecc71;font-weight:700">Odpowiedź:</span> ${escapeHtml(r.venue_reply)}</div>` : `<form method="POST" action="/panel/review/${r.id}/reply" style="margin-top:4px;display:flex;gap:4px"><input name="reply" placeholder="Odpowiedz..." maxlength="500" style="flex:1;padding:6px 8px;font-size:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#f0f0f5;font-family:inherit"/><button type="submit" style="padding:6px 12px;font-size:11px;background:rgba(46,204,113,.15);border:1px solid rgba(46,204,113,.3);color:#2ecc71;border-radius:6px;cursor:pointer;font-weight:700">Wyślij</button></form>`}
         </div>`;
-      }).join('')}
+      }).join('')}</div>
+      </div>
     </div>
+    <script>
+    function togglePanelReviews(){const w=document.getElementById('panelReviewsWrap'),a=document.getElementById('panelReviewArrow');if(!w)return;w.style.display=w.style.display==='none'?'block':'none';a.textContent=w.style.display==='none'?'▾':'▴';}
+    function sortPanelReviews(mode){const list=document.getElementById('panelReviewsList');if(!list)return;const items=[...list.querySelectorAll('.pr-item')];document.querySelectorAll('.prs-btn').forEach(b=>{b.style.background='transparent';b.style.color='rgba(255,255,255,.5)';b.classList.remove('prs-active');});event.target.style.background='rgba(255,255,255,.1)';event.target.style.color='#fff';if(mode==='newest')items.sort((a,b)=>new Date(b.dataset.date)-new Date(a.dataset.date));else if(mode==='highest')items.sort((a,b)=>(b.dataset.rating||0)-(a.dataset.rating||0));else if(mode==='lowest')items.sort((a,b)=>(a.dataset.rating||0)-(b.dataset.rating||0));items.forEach(i=>list.appendChild(i));}
+    </script>
     <div class="card">
       <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">⚙️ Ustawienia lokalu ▾</button>
       <form method="POST" action="/panel/settings" style="display:none">
