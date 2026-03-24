@@ -3731,10 +3731,11 @@ app.get("/api/venue-review-status", requireWebAppAuth, async (req, res) => {
     const userId = String(req.tgUser.id);
     const venueId = req.query.venue_id ? Number(req.query.venue_id) : null;
     if (!venueId) return res.json({ can_review: false, last_review: null });
-    // Find unreviewed confirmed checkin
+    // Find unreviewed confirmed checkin (only from last 7 days to avoid old test data)
     const unreviewd = await pool.query(
       `SELECT c.id FROM fp1_checkins c
        WHERE c.user_id=$1::bigint AND c.venue_id=$2 AND c.confirmed_at IS NOT NULL
+       AND c.confirmed_at > NOW() - INTERVAL '7 days'
        AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id)
        ORDER BY c.confirmed_at DESC LIMIT 1`,
       [userId, venueId]
@@ -3749,24 +3750,6 @@ app.get("/api/venue-review-status", requireWebAppAuth, async (req, res) => {
       last_review: lastReview.rows[0] || null
     });
   } catch(e) { res.json({ can_review: false, last_review: null }); }
-});
-
-// TEMP DEBUG
-app.get("/api/debug-reviews", async (req, res) => {
-  try {
-    const foxId = Number(req.query.fox_id || 38);
-    const foxQ = await pool.query(`SELECT user_id FROM fp1_foxes WHERE id=$1 LIMIT 1`, [foxId]);
-    if (!foxQ.rows.length) return res.json({ error: "fox not found" });
-    const userId = String(foxQ.rows[0].user_id);
-    const unreviewed = await pool.query(
-      `SELECT c.id, c.venue_id, v.name, c.confirmed_at FROM fp1_checkins c JOIN fp1_venues v ON v.id=c.venue_id
-       WHERE c.user_id=$1::bigint AND c.confirmed_at IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id=c.id)
-       ORDER BY c.confirmed_at DESC`, [userId]);
-    const reviews = await pool.query(
-      `SELECT r.id, r.venue_id, v.name, r.checkin_id, r.rating, r.created_at FROM fp1_reviews r JOIN fp1_venues v ON v.id=r.venue_id WHERE r.user_id=$1 ORDER BY r.created_at DESC LIMIT 10`, [userId]);
-    res.json({ user_id: userId, unreviewed_checkins: unreviewed.rows, reviews: reviews.rows });
-  } catch(e) { res.json({ error: String(e?.message||e) }); }
 });
 
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking
@@ -3810,6 +3793,7 @@ app.post("/api/review", requireWebAppAuth, async (req, res) => {
       ci = await pool.query(
         `SELECT c.id, c.venue_id FROM fp1_checkins c
          WHERE c.user_id = $1::bigint AND c.venue_id = $2 AND c.confirmed_at IS NOT NULL
+         AND c.confirmed_at > NOW() - INTERVAL '7 days'
          AND NOT EXISTS (SELECT 1 FROM fp1_reviews rv WHERE rv.checkin_id = c.id)
          ORDER BY c.confirmed_at DESC LIMIT 1`,
         [userId, venue_id]
