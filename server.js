@@ -552,6 +552,7 @@ async function migrate() {
   `);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reviews_venue ON fp1_reviews(venue_id, created_at DESC)`);
   await ensureIndex(`CREATE INDEX IF NOT EXISTS idx_fp1_reviews_user ON fp1_reviews(user_id)`);
+  await ensureColumn("fp1_reviews", "reply_read_at", "TIMESTAMPTZ");
   // Migration: make rating nullable (was NOT NULL)
   await pool.query(`ALTER TABLE fp1_reviews ALTER COLUMN rating DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_reviews DROP CONSTRAINT IF EXISTS fp1_reviews_rating_check`).catch(()=>{});
@@ -2827,6 +2828,9 @@ app.get("/api/venues", async (req, res) => {
       mrcQ.rows.forEach(r => myReviewCountMap[r.venue_id] = r.cnt);
       const mavgQ = await pool.query(`SELECT venue_id, AVG(rating)::numeric AS avg FROM fp1_reviews WHERE user_id=$1 AND rating IS NOT NULL GROUP BY venue_id`, [userId]);
       mavgQ.rows.forEach(r => { if (myReviewsMap[r.venue_id]) myReviewsMap[r.venue_id].avg_rating = parseFloat(parseFloat(r.avg).toFixed(1)); });
+      // Unread venue replies
+      const unreadQ = await pool.query(`SELECT id, venue_id, venue_reply, venue_reply_at FROM fp1_reviews WHERE user_id=$1 AND venue_reply IS NOT NULL AND reply_read_at IS NULL`, [userId]);
+      unreadQ.rows.forEach(r => { if (myReviewsMap[r.venue_id]) myReviewsMap[r.venue_id].unread_reply = { review_id: r.id, text: r.venue_reply, date: r.venue_reply_at }; });
     }
     rsQ.rows.forEach(r => reviewStatsMap[r.venue_id] = { review_count: r.review_count, avg_rating: r.rated_count > 0 ? parseFloat(parseFloat(r.avg_rating).toFixed(1)) : null, rated_count: r.rated_count });
 
@@ -3775,6 +3779,16 @@ app.get("/api/debug-fox", async (req, res) => {
     const checkins = await pool.query(`SELECT c.venue_id, v.name, c.confirmed_at, c.created_at FROM fp1_checkins c JOIN fp1_venues v ON v.id=c.venue_id WHERE c.user_id=$1::bigint AND c.confirmed_at IS NOT NULL ORDER BY c.confirmed_at DESC LIMIT 10`, [userId]);
     res.json({ fox: f.rows[0], last_visits: visits.rows, last_checkins: checkins.rows });
   } catch(e) { res.json({ error: String(e?.message||e) }); }
+});
+
+// POST /api/review/:id/mark-read — Fox marks venue reply as read
+app.post("/api/review/:id/mark-read", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = String(req.tgUser.id);
+    const reviewId = Number(req.params.id);
+    await pool.query(`UPDATE fp1_reviews SET reply_read_at=NOW() WHERE id=$1 AND user_id=$2 AND venue_reply IS NOT NULL AND reply_read_at IS NULL`, [reviewId, userId]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false }); }
 });
 
 // GET /api/checkin/status?venue_id=X — last confirmed checkin for review linking

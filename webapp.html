@@ -2704,7 +2704,20 @@ async function startTrial(venueId) {
   q('venueModal').classList.add('open');
   haptic('selection');
   initVenuePhotos(v.id);
-  // review form is static in template
+  // Show unread venue reply popup
+  if (v.my_review && v.my_review.unread_reply) {
+    const ur = v.my_review.unread_reply;
+    const replyDate = new Date(ur.date).toLocaleDateString("pl-PL");
+    const popup = document.createElement('div');
+    popup.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px';
+    popup.innerHTML = `<div style="background:var(--card-bg);border:1px solid rgba(46,204,113,.3);border-radius:16px;padding:20px;max-width:340px;width:100%">
+      <div style="font-size:14px;font-weight:800;color:var(--green);margin-bottom:12px">💬 Odpowiedź od ${esc(v.name)}</div>
+      <div style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:8px">${esc(ur.text)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:16px">${replyDate}</div>
+      <button onclick="this.closest('div[style*=fixed]').remove();api('/api/review/${ur.review_id}/mark-read','POST');var lv=S_map.venues?.find(x=>x.id===${v.id});if(lv&&lv.my_review)delete lv.my_review.unread_reply;" style="width:100%;padding:12px;background:rgba(46,204,113,.15);border:1px solid rgba(46,204,113,.3);border-radius:var(--radius-sm);color:var(--green);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">OK, przeczytane ✓</button>
+    </div>`;
+    document.body.appendChild(popup);
+  }
 }
 
 // ─── Venue Review Block ───
