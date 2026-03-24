@@ -352,9 +352,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px">WARTOŚĆ Z FOXPOT</div>
           <div style="font-size:22px;font-weight:800;color:var(--green);font-family:var(--mono);line-height:1.2" id="pSaved">0 zł</div>
         </div>
-        <div class="profile-avatar" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));box-shadow:0 8px 24px rgba(245,166,35,.2)"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="58" height="58" style="display:block;margin:2px auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
-        <div class="profile-name" id="pName">Fox</div>
-        <div class="profile-tag" id="pTag">@username</div>
+        <div class="profile-avatar" onclick="openProfileDetail()" style="cursor:pointer;background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));box-shadow:0 8px 24px rgba(245,166,35,.2)"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="58" height="58" style="display:block;margin:2px auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
+        <div class="profile-name" id="pName" onclick="openProfileDetail()" style="cursor:pointer">Fox</div>
+        <div class="profile-tag" id="pTag" onclick="openProfileDetail()" style="cursor:pointer">@username</div>
         <div class="profile-tgid" id="pTgId" onclick="copyTgId()" title="Kliknij, aby skopiować">ID: —</div>
         <div class="founder-badge" id="pFounder" style="display:none">👑 <span id="pFounderTxt"></span></div>
         <div class="stats-grid">
@@ -394,18 +394,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <div style="font-size:15px;font-weight:800;color:var(--fox);margin-bottom:6px">Zrób swój pierwszy check-in!</div>
         <div style="font-size:12px;color:var(--muted);line-height:1.5">Wybierz lokal na mapie i pokaż kod personelowi.<br>Pierwszy check-in = <strong style="color:var(--fox)">+10 pkt</strong> do ratingu!</div>
       </div>
-      <!-- Best Fox / info slot (never empty) -->
-      <div id="bestFoxCard" style="display:none;border:1px solid rgba(255,215,0,.2);border-radius:var(--radius);padding:16px;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div id="bestFoxIcon" style="font-size:24px">🦊</div>
-          <div>
-            <div id="bestFoxTitle" style="font-size:14px;font-weight:800;color:var(--gold)">Fox miesiąca</div>
-            <div id="bestFoxMonth" style="font-size:11px;color:var(--muted)"></div>
-          </div>
-        </div>
-        <div id="bestFoxContent" style="font-size:13px;color:var(--text);line-height:1.5"></div>
-        <button id="bestFoxCta" onclick="go('top')" style="margin-top:10px;width:100%;padding:10px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.25);border-radius:var(--radius-sm);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">Zobacz ranking →</button>
-      </div>
+      <!-- Best Fox moved to ranking screen -->
       <!-- Nearby venues (geo-based) -->
       <div id="nearbyCard" style="display:none;margin-bottom:12px">
         <div onclick="toggleNearby()" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm);cursor:pointer;user-select:none">
@@ -449,28 +438,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">📍 Informacje</div>
-        <div class="info-grid">
-          <div class="info-cell">
-            <div class="info-lbl">Miasto</div>
-            <div class="info-val">
-              <span id="pCity">Warszawa</span>
-              <button class="change-btn" onclick="openCityModal()">zmień</button>
-            </div>
-          </div>
-          <div class="info-cell" id="pDistrictCell">
-            <div class="info-lbl">Dzielnica</div>
-            <div class="info-val">
-              <span id="pDistrict">—</span>
-              <button class="change-btn" onclick="openDistrictModal()">zmień</button>
-            </div>
-          </div>
-          <!-- P0.1: freeze & spin hidden -->
-          <div class="info-cell" style="display:none"><div class="info-lbl">❄️ Freeze</div><div class="info-val" id="pFreeze">0</div></div>
-          <div class="info-cell" style="display:none"><div class="info-lbl">Spin dziś</div><div class="info-val" id="pSpinToday">—</div></div>
-        </div>
-      </div>
+      <!-- City/District moved to profile detail modal -->
       <div class="card" id="stampsCard" style="display:none">
         <button type="button" id="stampsToggle" onclick="var c=q('stampsList');c.style.display=c.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,138,0,.2);border-radius:8px;padding:10px;color:var(--fox);font-size:14px;font-weight:700;cursor:pointer;text-align:left;font-family:var(--font)">🎫 Twoje stemple ▾</button>
         <div id="stampsList" style="display:none;margin-top:10px"></div>
@@ -535,13 +503,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     </div>
     <!-- Social bonus moved to socialBonusSlot in profile -->
 
-    <div style="display:flex;justify-content:center;gap:16px;padding:16px 0 8px">
-      <a href="#" onclick="openInlinePage('/rules','📋 Regulamin');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Regulamin</a>
-      <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
-      <a href="#" onclick="openInlinePage('/privacy','🔒 Polityka Prywatności');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">Polityka Prywatności</a>
-      <span style="font-size:11px;color:rgba(240,240,245,.15)">·</span>
-      <a href="#" onclick="openInlinePage('/faq','❓ FAQ');return false" style="font-size:11px;color:rgba(240,240,245,.35);text-decoration:none">FAQ</a>
-    </div>
+    <!-- Regulamin/Prywatność/FAQ moved to Pomoc tab -->
   </section>
 
   <!-- LEAVE CLUB MODAL -->
@@ -804,6 +766,16 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
       <div class="top-title">🦊 Top Fox</div>
       <div class="top-sub">Ranking 10 najlepszych graczy</div>
     </div>
+    <div id="bestFoxCard" style="display:none;border:1px solid rgba(255,215,0,.2);border-radius:var(--radius);padding:16px;margin:0 16px 12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div id="bestFoxIcon" style="font-size:24px">🦊</div>
+        <div>
+          <div id="bestFoxTitle" style="font-size:14px;font-weight:800;color:var(--gold)">Fox miesiąca</div>
+          <div id="bestFoxMonth" style="font-size:11px;color:var(--muted)"></div>
+        </div>
+      </div>
+      <div id="bestFoxContent" style="font-size:13px;color:var(--text);line-height:1.5"></div>
+    </div>
     <div id="topLoading" class="loading"><div class="spinner"></div></div>
     <div id="topContent"></div>
   </section>
@@ -888,6 +860,34 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
     <div class="modal-sheet" id="venueModalContent"></div>
   </div>
 
+  <!-- PROFILE DETAIL MODAL -->
+  <div class="modal-overlay" id="profileDetailModal" onclick="if(event.target===this)this.classList.remove('open')">
+    <div class="modal-sheet" style="max-height:70vh;overflow-y:auto;padding:24px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:16px;font-weight:800;color:var(--text)">🦊 Profil</div>
+        <button onclick="q('profileDetailModal').classList.remove('open')" style="background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:4px 8px">✕</button>
+      </div>
+      <div style="text-align:center;margin-bottom:20px">
+        <div class="profile-avatar" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));box-shadow:0 8px 24px rgba(245,166,35,.2);margin:0 auto 10px"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="58" height="58" style="display:block;margin:2px auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
+        <div id="pdName" style="font-size:18px;font-weight:800;color:var(--text)">Fox</div>
+        <div id="pdTag" style="font-size:13px;color:var(--muted)">@username</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm)">
+          <div><div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Miasto</div><span id="pCity" style="font-size:14px;font-weight:700;color:var(--text)">Warszawa</span></div>
+          <button class="change-btn" onclick="openCityModal()" style="padding:6px 14px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);border-radius:var(--radius-sm);color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">zmień</button>
+        </div>
+        <div id="pDistrictCell" style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm)">
+          <div><div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Dzielnica</div><span id="pDistrict" style="font-size:14px;font-weight:700;color:var(--text)">—</span></div>
+          <button class="change-btn" onclick="openDistrictModal()" style="padding:6px 14px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);border-radius:var(--radius-sm);color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">zmień</button>
+        </div>
+      </div>
+      <!-- P0.1: freeze & spin hidden -->
+      <div id="pFreeze" style="display:none">0</div>
+      <div id="pSpinToday" style="display:none">—</div>
+    </div>
+  </div>
+
   <!-- INLINE PAGE MODAL (Regulamin, FAQ, Privacy) -->
   <div class="modal-overlay" id="inlinePageModal" onclick="if(event.target===this)this.classList.remove('open')">
     <div class="modal-sheet" style="max-height:85vh;overflow-y:auto">
@@ -911,6 +911,14 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         <a href="#" onclick="openExternal('https://www.tiktok.com/@thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">🎵 TikTok</a>
         <a href="#" onclick="openExternal('https://www.youtube.com/@thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">▶️ YouTube</a>
         <a href="#" onclick="openExternal('https://www.facebook.com/thefoxpotclub');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">👍 Facebook</a>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px">📄 Dokumenty</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <a href="#" onclick="openInlinePage('/rules','📋 Regulamin');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">📋 Regulamin</a>
+        <a href="#" onclick="openInlinePage('/privacy','🔒 Polityka Prywatności');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">🔒 Polityka Prywatności</a>
+        <a href="#" onclick="openInlinePage('/faq','❓ FAQ');return false" style="color:var(--gold);font-size:13px;font-weight:600;text-decoration:none">❓ FAQ</a>
       </div>
     </div>
     <!-- Logout + Leave (moved from profile) -->
@@ -1334,7 +1342,6 @@ async function loadBestFox() {
       q('bestFoxTitle').style.color = 'var(--gold)';
       q('bestFoxMonth').textContent = 'Największe oszczędności w ' + b.month_name;
       q('bestFoxContent').innerHTML = `<strong style="color:var(--fox)">@${esc(b.username)}</strong> zaoszczędził <strong style="color:var(--green)">${b.total_saved.toFixed(2)} zł</strong> w ${b.venues_count} ${b.venues_count===1?'lokalu':'lokalach'}`;
-      q('bestFoxCta').style.display = '';
     } else {
       // Fallback: show a system info card so slot is never empty
       card.style.display = 'block';
@@ -1345,7 +1352,6 @@ async function loadBestFox() {
       q('bestFoxTitle').style.color = 'var(--fox)';
       q('bestFoxMonth').textContent = 'Program lojalnościowy';
       q('bestFoxContent').innerHTML = 'Odwiedzaj lokale, zbieraj punkty i oszczędzaj! Najlepszy Fox miesiąca pojawi się tutaj.';
-      q('bestFoxCta').style.display = 'none';
     }
   } catch(e) {
     card.style.display = 'block';
@@ -1356,7 +1362,6 @@ async function loadBestFox() {
     q('bestFoxTitle').style.color = 'var(--fox)';
     q('bestFoxMonth').textContent = 'Program lojalnościowy';
     q('bestFoxContent').innerHTML = 'Odkrywaj lokale z FoxPot Club i oszczędzaj!';
-    q('bestFoxCta').style.display = 'none';
   }
 }
 
@@ -1473,6 +1478,15 @@ async function verifySocial(platform) {
     haptic('error');
     if (btn) { btn.textContent = 'Sprawdź'; btn.disabled = false; }
   }
+}
+
+// ── Profile detail modal ──
+function openProfileDetail(){
+  const d=S.profile||{};
+  q('pdName').textContent=d.first_name||d.username||'Fox';
+  q('pdTag').textContent='@'+(d.username||'fox');
+  q('profileDetailModal').classList.add('open');
+  haptic('selection');
 }
 
 // ── City modal ──
