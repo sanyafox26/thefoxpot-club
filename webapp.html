@@ -884,6 +884,18 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
           <button class="change-btn" onclick="openDistrictModal()" style="padding:6px 14px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);border-radius:var(--radius-sm);color:var(--fox);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">zmień</button>
         </div>
       </div>
+      <!-- Fox miesiąca -->
+      <div id="pdBestFoxCard" style="display:none;margin-top:16px;border:1px solid rgba(255,215,0,.2);border-radius:var(--radius);padding:14px;background:linear-gradient(135deg,rgba(255,215,0,.08),rgba(245,166,35,.05))">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div id="pdBestFoxIcon" style="font-size:24px">🦊</div>
+          <div>
+            <div id="pdBestFoxTitle" style="font-size:14px;font-weight:800;color:var(--gold)">Fox miesiąca</div>
+            <div id="pdBestFoxMonth" style="font-size:11px;color:var(--muted)"></div>
+          </div>
+        </div>
+        <div id="pdBestFoxContent" style="font-size:13px;color:var(--text);line-height:1.5"></div>
+        <button onclick="q('profileDetailModal').classList.remove('open');go('top')" style="margin-top:10px;width:100%;padding:10px;background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.25);border-radius:var(--radius-sm);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)">Zobacz ranking →</button>
+      </div>
       <!-- P0.1: freeze & spin hidden -->
       <div id="pFreeze" style="display:none">0</div>
       <div id="pSpinToday" style="display:none">—</div>
@@ -1345,6 +1357,8 @@ async function loadBestFox() {
       q('bestFoxTitle').style.color = 'var(--gold)';
       q('bestFoxMonth').textContent = 'Największe oszczędności w ' + b.month_name;
       q('bestFoxContent').innerHTML = `<strong style="color:var(--fox)">@${esc(b.username)}</strong> zaoszczędził <strong style="color:var(--green)">${b.total_saved.toFixed(2)} zł</strong> w ${b.venues_count} ${b.venues_count===1?'lokalu':'lokalach'}`;
+      // Sync to profile detail modal
+      syncBestFoxToModal('Fox miesiąca', 'var(--gold)', 'Największe oszczędności w ' + b.month_name, q('bestFoxContent').innerHTML);
     } else {
       // Fallback: show a system info card so slot is never empty
       card.style.display = 'block';
@@ -1355,6 +1369,7 @@ async function loadBestFox() {
       q('bestFoxTitle').style.color = 'var(--fox)';
       q('bestFoxMonth').textContent = 'Program lojalnościowy';
       q('bestFoxContent').innerHTML = 'Odwiedzaj lokale, zbieraj punkty i oszczędzaj! Najlepszy Fox miesiąca pojawi się tutaj.';
+      syncBestFoxToModal('FoxPot Club', 'var(--fox)', 'Program lojalnościowy', q('bestFoxContent').innerHTML);
     }
   } catch(e) {
     card.style.display = 'block';
@@ -1365,6 +1380,7 @@ async function loadBestFox() {
     q('bestFoxTitle').style.color = 'var(--fox)';
     q('bestFoxMonth').textContent = 'Program lojalnościowy';
     q('bestFoxContent').innerHTML = 'Odkrywaj lokale z FoxPot Club i oszczędzaj!';
+    syncBestFoxToModal('FoxPot Club', 'var(--fox)', 'Program lojalnościowy', q('bestFoxContent').innerHTML);
   }
 }
 
@@ -1484,6 +1500,16 @@ async function verifySocial(platform) {
 }
 
 // ── Profile detail modal ──
+function syncBestFoxToModal(title, color, month, content) {
+  const pd = q('pdBestFoxCard');
+  if (!pd) return;
+  pd.style.display = 'block';
+  q('pdBestFoxIcon').textContent = '🦊';
+  q('pdBestFoxTitle').textContent = title;
+  q('pdBestFoxTitle').style.color = color;
+  q('pdBestFoxMonth').textContent = month;
+  q('pdBestFoxContent').innerHTML = content;
+}
 function openProfileDetail(){
   const d=S.profile||{};
   q('pdName').textContent=d.first_name||d.username||'Fox';
