@@ -3858,18 +3858,17 @@ app.post("/panel/review/:id/reply", requirePanelAuth, async (req, res) => {
     const venueId = Number(req.panel.venue_id);
     const reviewId = Number(req.params.id);
     const reply = String(req.body.reply || "").trim().slice(0, 500);
-    if (!reply) return res.status(400).json({ error: "Treść odpowiedzi jest wymagana" });
+    if (!reply) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Treść odpowiedzi jest wymagana")}`);
     const r = await pool.query(
       `UPDATE fp1_reviews SET venue_reply=$1, venue_reply_at=NOW() WHERE id=$2 AND venue_id=$3 AND venue_reply IS NULL RETURNING id`,
       [reply, reviewId, venueId]
     );
     if (r.rowCount === 0) {
-      const dbg = await pool.query(`SELECT id, venue_id, venue_reply FROM fp1_reviews WHERE id=$1`, [reviewId]);
-      console.log(`[reply] FAIL reviewId=${reviewId} panelVenueId=${venueId} dbRow=`, dbg.rows[0]||'not found');
-      return res.status(404).json({ error: "Nie znaleziono opinii lub już odpowiedziano" });
+      console.log(`[reply] FAIL reviewId=${reviewId} panelVenueId=${venueId}`);
+      return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Nie znaleziono opinii lub już odpowiedziano")}`);
     }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: String(e?.message || e) }); }
+    res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Odpowiedź wysłana ✅")}`);
+  } catch (e) { res.redirect(`/panel/dashboard?err=${encodeURIComponent("Błąd: "+String(e?.message||e).slice(0,100))}`); }
 });
 
 // P0.1: Obligation CRON вимкнено (штрафна система схована)
