@@ -2635,7 +2635,7 @@ async function startTrial(venueId) {
         <div id="vPhotoDots${v.id}" style="position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:6px"></div>
       </div>` : `<div style="font-size:48px;margin-bottom:8px">&#127978;</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(v.name)}</div>
-      <div id="foxReviewBadge${v.id}" style="display:none;font-size:12px;color:var(--green);margin-bottom:4px"></div>
+      ${v.my_review ? `<div style="font-size:12px;color:var(--green);margin-bottom:4px">Twoja ocena: ${v.my_review.rating ? '<span style="color:var(--fox)">' + '★'.repeat(v.my_review.rating) + '☆'.repeat(5-v.my_review.rating) + '</span>' : '<span style="color:var(--muted)">tylko tekst</span>'}</div>` : ''}
       ${typeLine}
       <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📍 ${esc(v.city)}${v.address?' · '+esc(v.address):''}</div>
       <div>${badge}${topBadges}${dietBadges}</div>
@@ -2696,14 +2696,6 @@ async function loadVenueReviewBlock(venueId) {
   try {
     const d = await api('/api/venue-review-status?venue_id=' + venueId);
     let html = '';
-    // Show fox's last review badge at top of modal
-    const badge = q('foxReviewBadge' + venueId);
-    if (badge && d.last_review) {
-      const lr = d.last_review;
-      const stars = lr.rating ? '★'.repeat(lr.rating) + '☆'.repeat(5 - lr.rating) : '';
-      badge.style.display = 'block';
-      badge.innerHTML = stars ? `Twoja ocena: <span style="color:var(--fox)">${stars}</span>` : `Twoja ocena: <span style="color:var(--muted)">tylko tekst</span>`;
-    }
     // Review form — only if there's an unreviewed confirmed checkin
     if (d.can_review) {
       html += `<div style="padding:12px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-sm)">

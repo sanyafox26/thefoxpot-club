@@ -2816,6 +2816,13 @@ app.get("/api/venues", async (req, res) => {
     // Review stats per venue (avg rating + count)
     const reviewStatsMap = {};
     const rsQ = await pool.query(`SELECT venue_id, COUNT(*)::int AS review_count, COALESCE(AVG(rating),0)::numeric AS avg_rating, COUNT(rating)::int AS rated_count FROM fp1_reviews GROUP BY venue_id`);
+
+    // Fox's own last review per venue
+    const myReviewsMap = {};
+    if (userId) {
+      const mrQ = await pool.query(`SELECT DISTINCT ON (venue_id) venue_id, rating, text, created_at FROM fp1_reviews WHERE user_id=$1 ORDER BY venue_id, created_at DESC`, [userId]);
+      mrQ.rows.forEach(r => myReviewsMap[r.venue_id] = { rating: r.rating, text: r.text, created_at: r.created_at });
+    }
     rsQ.rows.forEach(r => reviewStatsMap[r.venue_id] = { review_count: r.review_count, avg_rating: r.rated_count > 0 ? parseFloat(parseFloat(r.avg_rating).toFixed(1)) : null, rated_count: r.rated_count });
 
     // Individual Fox discounts
@@ -2845,6 +2852,7 @@ app.get("/api/venues", async (req, res) => {
         top_reason: topReason[v.id]?.reason || null,
         top_dish_name: topDish[v.id] || null,
     has_photos: (photoCounts[v.id] || 0) > 0,
+    my_review: myReviewsMap[v.id] || null,
     review_count: reviewStatsMap[v.id]?.review_count || 0,
     avg_rating: reviewStatsMap[v.id]?.avg_rating || null,
     rated_count: reviewStatsMap[v.id]?.rated_count || 0,
