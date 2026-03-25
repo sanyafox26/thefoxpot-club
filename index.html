@@ -210,7 +210,10 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
     <h2 class="section-title" id="top-title">Gdzie warto być.</h2>
     <p class="section-desc" style="margin:0 auto" id="top-desc">Sprawdzone miejsca, które warto odwiedzić.</p>
     <div class="top-list" id="topList"><div style="text-align:center;padding:40px;color:var(--muted)">Ładowanie…</div></div>
-    <div style="margin-top:36px"><a class="btn-primary" href="https://t.me/thefoxpot_club_bot" target="_blank" style="margin:0 auto;display:inline-flex" id="top-btn">🦊 Otwórz pełną mapę lokali</a></div>
+    <div id="topRestWrap" style="display:none;margin-top:12px">
+      <div class="top-list" id="topRestList" style="max-height:0;overflow:hidden;transition:max-height .4s ease;margin-top:0"></div>
+    </div>
+    <div style="margin-top:24px"><button onclick="toggleTopRest()" class="btn-primary" style="margin:0 auto;display:inline-flex;cursor:pointer;border:none;font-family:inherit" id="top-btn">🦊 Pokaż wszystkie lokale</button></div>
   </div>
 </section>
 
@@ -294,7 +297,7 @@ const T = {
     "top-label": "🏆 Lokale partnerskie",
     "top-title": "Gdzie warto być.",
     "top-desc": "Sprawdzone miejsca, które warto odwiedzić.",
-    "top-btn": "🦊 Otwórz pełną mapę lokali",
+    "top-btn": "🦊 Pokaż wszystkie lokale",
     "footer-how": "Jak to działa", "footer-venues": "Dla lokali"
   },
   en: {
@@ -339,7 +342,7 @@ const T = {
     "top-label": "🏆 Partner venues",
     "top-title": "Where it's worth being.",
     "top-desc": "Curated places worth visiting.",
-    "top-btn": "🦊 Open full venue map",
+    "top-btn": "🦊 Show all venues",
     "footer-how": "How it works", "footer-venues": "For venues"
   }
 };
@@ -363,19 +366,46 @@ function setLang(l) {
 setLang(LANG);
 
 // ─── VENUES ───
+let _topRestOpen = false;
+function venueCard(v, i) {
+  const medals = ['🥇','🥈','🥉'];
+  const ranks = ['rank-1','rank-2','rank-3'];
+  return `<div class="top-item">
+    <div class="top-rank ${ranks[i]||''}">${medals[i]||i+1}</div>
+    <div class="top-info"><div class="top-name">${v.name}</div><div class="top-addr">📍 ${v.city}${v.address?' · '+v.address:''}</div></div>
+    <span class="top-badge ${v.is_trial?'badge-t':'badge-p'}">${v.is_trial?'Testowa':'Partner'}</span>
+  </div>`;
+}
+function toggleTopRest() {
+  const list = document.getElementById('topRestList');
+  const btn = document.getElementById('top-btn');
+  _topRestOpen = !_topRestOpen;
+  if (_topRestOpen) {
+    list.style.maxHeight = list.scrollHeight + 'px';
+    btn.textContent = '🦊 Zwiń listę';
+  } else {
+    list.style.maxHeight = '0';
+    btn.textContent = '🦊 Pokaż wszystkie lokale';
+  }
+}
 async function loadVenues() {
   try {
     const r = await fetch(API+'/api/venues');
     const d = await r.json();
-    const medals = ['🥇','🥈','🥉'];
-    const ranks = ['rank-1','rank-2','rank-3'];
-    document.getElementById('topList').innerHTML = (d.venues||[]).slice(0,6).map((v,i) =>
-      `<div class="top-item">
-        <div class="top-rank ${ranks[i]||''}">${medals[i]||i+1}</div>
-        <div class="top-info"><div class="top-name">${v.name}</div><div class="top-addr">📍 ${v.city}${v.address?' · '+v.address:''}</div></div>
-        <span class="top-badge ${v.is_trial?'badge-t':'badge-p'}">${v.is_trial?'Testowa':'Partner'}</span>
-      </div>`
-    ).join('') || '';
+    const venues = d.venues || [];
+    const top3 = venues.slice(0, 3);
+    const rest = venues.slice(3);
+    document.getElementById('topList').innerHTML = top3.map((v,i) => venueCard(v,i)).join('') || '';
+    const wrap = document.getElementById('topRestWrap');
+    const btn = document.getElementById('top-btn');
+    if (rest.length > 0) {
+      document.getElementById('topRestList').innerHTML = rest.map((v,i) => venueCard(v, i+3)).join('');
+      wrap.style.display = 'block';
+      btn.textContent = '🦊 Pokaż wszystkie lokale (' + rest.length + ')';
+    } else {
+      wrap.style.display = 'none';
+      btn.style.display = 'none';
+    }
   } catch(e) { document.getElementById('topList').innerHTML = ''; }
 }
 loadVenues();
