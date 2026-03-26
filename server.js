@@ -1998,8 +1998,8 @@ app.post("/api/auth/onboard", express.json(), async (req, res) => {
       if (foxQ.rows.length) {
         const result = await redeemInviteCode(foxQ.rows[0].user_id, inviteCode);
         if (result.ok) {
-          // Invited fox gets rating=3 (bonus +2 on top of base 1)
-          await pool.query(`UPDATE fp1_foxes SET rating = GREATEST(rating, 3) WHERE id=$1`, [decoded.fox_id]);
+          // Invited fox gets +1 rating and +3 invites
+          await pool.query(`UPDATE fp1_foxes SET rating = rating + 1, invites = invites + 3 WHERE id=$1`, [decoded.fox_id]);
         }
       }
     }
