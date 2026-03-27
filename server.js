@@ -1173,29 +1173,42 @@ const TOP_FOX_LABELS = { year: "🏆 Top Fox roku", month: "👑 Top Fox miesią
 async function getTopFoxBadges() {
   const warsawNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
   const dow = warsawNow.getDay();
-  const weekStart = new Date(warsawNow); weekStart.setDate(weekStart.getDate() - dow); weekStart.setHours(0,0,0,0);
+  const weekStart  = new Date(warsawNow); weekStart.setDate(weekStart.getDate() - dow); weekStart.setHours(0,0,0,0);
   const monthStart = new Date(warsawNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-  const yearStart = new Date(warsawNow); yearStart.setMonth(0,1); yearStart.setHours(0,0,0,0);
-
-  // Exclude admin from TOP rankings (parameterized)
-  const adminExclude = ADMIN_TG_ID ? ` AND user_id != $2` : '';
-  const mkParams = (dateStr) => ADMIN_TG_ID ? [dateStr, ADMIN_TG_ID] : [dateStr];
-  const [tw, tm, ty] = await Promise.all([
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(weekStart.toISOString())),
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(monthStart.toISOString())),
-    pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(yearStart.toISOString())),
-  ]);
+  const yearStart  = new Date(warsawNow); yearStart.setMonth(0,1); yearStart.setHours(0,0,0,0);
 
   // TOP roku only if at least 30 days have passed since Jan 1
   const yearOldEnough = (warsawNow - yearStart) > 30 * 24 * 60 * 60 * 1000;
 
+  // Exclusive cascading TOP — same logic as venues:
+  // year leader found first, then month excludes year leader, week excludes both
+  async function findTopFox(since, excludeIds) {
+    const adminClause  = ADMIN_TG_ID ? ` AND cv.user_id != '${ADMIN_TG_ID}'` : '';
+    const excludeClause = excludeIds.length
+      ? ` AND cv.user_id != ALL($2::text[])`
+      : '';
+    const params = excludeIds.length ? [since.toISOString(), excludeIds] : [since.toISOString()];
+    const r = await pool.query(
+      `SELECT cv.user_id FROM fp1_counted_visits cv
+       WHERE cv.created_at >= $1 AND cv.is_credited = TRUE${adminClause}${excludeClause}
+       GROUP BY cv.user_id
+       ORDER BY COUNT(*) DESC, MIN(cv.created_at) ASC LIMIT 1`,
+      params
+    );
+    return r.rows[0]?.user_id ? String(r.rows[0].user_id) : null;
+  }
+
+  const excludeIds = [];
+  const yId = yearOldEnough ? await findTopFox(yearStart, []) : null;
+  if (yId) excludeIds.push(yId);
+  const mId = await findTopFox(monthStart, excludeIds);
+  if (mId) excludeIds.push(mId);
+  const wId = await findTopFox(weekStart, excludeIds);
+
   const badges = {};
-  const yId = yearOldEnough && ty.rows[0]?.user_id ? String(ty.rows[0].user_id) : null;
-  const mId = tm.rows[0]?.user_id ? String(tm.rows[0].user_id) : null;
-  const wId = tw.rows[0]?.user_id ? String(tw.rows[0].user_id) : null;
   if (yId) badges[yId] = "year";
-  if (mId && !badges[mId]) badges[mId] = "month";
-  if (wId && !badges[wId]) badges[wId] = "week";
+  if (mId) badges[mId] = "month";
+  if (wId) badges[wId] = "week";
   return badges;
 }
 
@@ -4059,22 +4072,26 @@ setInterval(async () => {
       });
     }
 
-    // Top Fox by credited visits: week, month, year
-    // TOP roku only if at least 30 days have passed since Jan 1
+    // Top Fox — exclusive cascading: year leader excluded from month, both excluded from week
     const yearOldEnough = (warsawNow - yearStart) > 30 * 24 * 60 * 60 * 1000;
-    const foxPeriods = [['top_fox_week','week',weekStart],['top_fox_month','month',monthStart]];
-    if (yearOldEnough) foxPeriods.push(['top_fox_year','year',yearStart]);
+    const foxExclude = [];
+    const foxPeriods = yearOldEnough
+      ? [['top_fox_year','year',yearStart],['top_fox_month','month',monthStart],['top_fox_week','week',weekStart]]
+      : [['top_fox_month','month',monthStart],['top_fox_week','week',weekStart]];
     for (const [key, pLabel, start] of foxPeriods) {
+      const excludeClause = foxExclude.length ? ` AND f.user_id != ALL($2::text[])` : '';
+      const params = foxExclude.length ? [start.toISOString(), foxExclude] : [start.toISOString()];
       const tq = await pool.query(`
         SELECT f.user_id, f.username, COUNT(*)::int AS cnt, MIN(cv.created_at) AS first_at
         FROM fp1_counted_visits cv
         JOIN fp1_foxes f ON f.user_id = cv.user_id AND f.is_deleted = FALSE${adminExclude}
-        WHERE cv.created_at >= $1 AND cv.is_credited = TRUE
+        WHERE cv.created_at >= $1 AND cv.is_credited = TRUE${excludeClause}
         GROUP BY f.user_id, f.username
         ORDER BY cnt DESC, first_at ASC LIMIT 1
-      `, [start.toISOString()]);
+      `, params);
       if (tq.rowCount > 0) {
         const t = tq.rows[0];
+        foxExclude.push(String(t.user_id));
         await upsertCache(key, pLabel, { user_id: t.user_id, username: t.username, value: t.cnt, achieved_at: t.first_at });
       }
     }
