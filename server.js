@@ -1185,7 +1185,7 @@ async function getTopFoxBadges() {
   async function findTopFox(since, excludeIds) {
     const adminClause  = ADMIN_TG_ID ? ` AND cv.user_id != '${ADMIN_TG_ID}'` : '';
     const excludeClause = excludeIds.length
-      ? ` AND cv.user_id != ALL($2::text[])`
+      ? ` AND cv.user_id::text != ALL($2::text[])`
       : '';
     const params = excludeIds.length ? [since.toISOString(), excludeIds] : [since.toISOString()];
     const r = await pool.query(
@@ -4079,7 +4079,7 @@ setInterval(async () => {
       ? [['top_fox_year','year',yearStart],['top_fox_month','month',monthStart],['top_fox_week','week',weekStart]]
       : [['top_fox_month','month',monthStart],['top_fox_week','week',weekStart]];
     for (const [key, pLabel, start] of foxPeriods) {
-      const excludeClause = foxExclude.length ? ` AND f.user_id != ALL($2::text[])` : '';
+      const excludeClause = foxExclude.length ? ` AND f.user_id::text != ALL($2::text[])` : '';
       const params = foxExclude.length ? [start.toISOString(), foxExclude] : [start.toISOString()];
       const tq = await pool.query(`
         SELECT f.user_id, f.username, COUNT(*)::int AS cnt, MIN(cv.created_at) AS first_at
