@@ -1190,6 +1190,7 @@ async function getTopFoxBadges() {
     const params = excludeIds.length ? [since.toISOString(), excludeIds] : [since.toISOString()];
     const r = await pool.query(
       `SELECT cv.user_id FROM fp1_counted_visits cv
+       JOIN fp1_foxes f ON f.user_id = cv.user_id AND f.is_deleted = FALSE
        WHERE cv.created_at >= $1 AND cv.is_credited = TRUE${adminClause}${excludeClause}
        GROUP BY cv.user_id
        ORDER BY COUNT(*) DESC, MIN(cv.created_at) ASC LIMIT 1`,
