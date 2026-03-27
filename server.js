@@ -1186,8 +1186,11 @@ async function getTopFoxBadges() {
     pool.query(`SELECT user_id, COUNT(*)::int AS cnt FROM fp1_counted_visits WHERE created_at >= $1 AND is_credited=TRUE${adminExclude} GROUP BY user_id ORDER BY cnt DESC, MIN(created_at) ASC LIMIT 1`, mkParams(yearStart.toISOString())),
   ]);
 
+  // TOP roku only if at least 30 days have passed since Jan 1
+  const yearOldEnough = (warsawNow - yearStart) > 30 * 24 * 60 * 60 * 1000;
+
   const badges = {};
-  const yId = ty.rows[0]?.user_id ? String(ty.rows[0].user_id) : null;
+  const yId = yearOldEnough && ty.rows[0]?.user_id ? String(ty.rows[0].user_id) : null;
   const mId = tm.rows[0]?.user_id ? String(tm.rows[0].user_id) : null;
   const wId = tw.rows[0]?.user_id ? String(tw.rows[0].user_id) : null;
   if (yId) badges[yId] = "year";
@@ -4058,7 +4061,11 @@ setInterval(async () => {
     }
 
     // Top Fox by credited visits: week, month, year
-    for (const [key, pLabel, start] of [['top_fox_week','week',weekStart],['top_fox_month','month',monthStart],['top_fox_year','year',yearStart]]) {
+    // TOP roku only if at least 30 days have passed since Jan 1
+    const yearOldEnough = (warsawNow - yearStart) > 30 * 24 * 60 * 60 * 1000;
+    const foxPeriods = [['top_fox_week','week',weekStart],['top_fox_month','month',monthStart]];
+    if (yearOldEnough) foxPeriods.push(['top_fox_year','year',yearStart]);
+    for (const [key, pLabel, start] of foxPeriods) {
       const tq = await pool.query(`
         SELECT f.user_id, f.username, COUNT(*)::int AS cnt, MIN(cv.created_at) AS first_at
         FROM fp1_counted_visits cv
