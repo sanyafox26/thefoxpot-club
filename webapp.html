@@ -2273,7 +2273,7 @@ async function loadAchievements(){
   }
 }
 
-const TOP_BADGE_COLORS={year:'#FF8A00',month:'#3B82F6',week:'#22C55E'};
+const TOP_BADGE_COLORS={year:'#8B5CF6',month:'#3B82F6',week:'#22C55E'};
 const TOP_BADGE_LABELS={year:'🏆 Top roku',month:'👑 Top miesiąca',week:'🔥 Top tygodnia'};
 async function loadTop(){
   S.topLoaded=true;
@@ -2388,7 +2388,7 @@ function updateMapMarkers(venues) {
   venues.forEach(v => {
     const xy = `${v.my_visits||0}/${v.total_visits||0}`;
     const isTop = v.is_top_alltime || v.is_top_year || v.is_top_month || v.is_top_week;
-    const markerColor = v.is_top_alltime ? '#8B5CF6' : v.is_top_year ? '#FF8A00' : v.is_top_month ? '#3B82F6' : v.is_top_week ? '#22C55E' : '#6B7280';
+    const markerColor = v.is_top_alltime ? '#8B5CF6' : v.is_top_year ? '#8B5CF6' : v.is_top_month ? '#3B82F6' : v.is_top_week ? '#22C55E' : '#6B7280';
     const markerBorder = v.is_top_alltime ? '#FF8A00' : 'none';
     const textColor = isTop ? '#FFFFFF' : '#FFFFFF';
     const markerSize = isTop ? 28 : 24;
@@ -2451,10 +2451,10 @@ function renderMapList() {
     const statusWarn = v.venue_status ? `<span style="font-size:10px;color:#EF4444;font-weight:700">${v.venue_status.type==='reserve'?'📍 Rezerwacja':'⚠️ '+(v.venue_status.reason||'Ograniczone')}</span>` : '';
     const demoTarget = S.isDemo ? `<span style="font-size:10px;color:var(--fox);font-weight:700">🦊 Zrób pierwszy check-in!</span>` : '';
     const xy = `<span style="font-size:11px;color:var(--fox);font-family:var(--mono);font-weight:700">${v.my_visits||0}/${v.total_visits||0}</span>`;
-   const topStyle = (S.isDemo && S.demoVenueId === v.id) ? 'border-color:#f5a623;border-width:2px;background:rgba(245,166,35,.08);box-shadow:0 0 12px rgba(245,166,35,.15)' : v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.1);box-shadow:0 0 16px rgba(139,92,246,.2)' : v.is_top_year ? 'border-color:#FF8A00;border-width:2px;background:rgba(255,138,0,.1);box-shadow:0 0 12px rgba(255,138,0,.15)' : v.is_top_month ? 'border-color:#3B82F6;border-width:2px;background:rgba(59,130,246,.1);box-shadow:0 0 12px rgba(59,130,246,.15)' : v.is_top_week ? 'border-color:#22C55E;border-width:2px;background:rgba(34,197,94,.1);box-shadow:0 0 12px rgba(34,197,94,.15)' : '';
+   const topStyle = (S.isDemo && S.demoVenueId === v.id) ? 'border-color:#f5a623;border-width:2px;background:rgba(245,166,35,.08);box-shadow:0 0 12px rgba(245,166,35,.15)' : v.is_top_alltime ? 'border-color:#FF8A00;border-width:3px;background:rgba(139,92,246,.1);box-shadow:0 0 16px rgba(139,92,246,.2)' : v.is_top_year ? 'border-color:#8B5CF6;border-width:2px;background:rgba(139,92,246,.1);box-shadow:0 0 12px rgba(139,92,246,.15)' : v.is_top_month ? 'border-color:#3B82F6;border-width:2px;background:rgba(59,130,246,.1);box-shadow:0 0 12px rgba(59,130,246,.15)' : v.is_top_week ? 'border-color:#22C55E;border-width:2px;background:rgba(34,197,94,.1);box-shadow:0 0 12px rgba(34,197,94,.15)' : '';
     const isTopVenue = v.is_top_alltime||v.is_top_year||v.is_top_month||v.is_top_week;
-    const iconBg = v.is_top_alltime?'rgba(139,92,246,.2)':v.is_top_year?'rgba(255,138,0,.2)':v.is_top_month?'rgba(59,130,246,.2)':v.is_top_week?'rgba(34,197,94,.2)':'rgba(107,114,128,.1)';
-    const iconBorder = v.is_top_alltime?'rgba(139,92,246,.4)':v.is_top_year?'rgba(255,138,0,.4)':v.is_top_month?'rgba(59,130,246,.4)':v.is_top_week?'rgba(34,197,94,.4)':'rgba(107,114,128,.2)';
+    const iconBg = v.is_top_alltime?'rgba(139,92,246,.2)':v.is_top_year?'rgba(139,92,246,.2)':v.is_top_month?'rgba(59,130,246,.2)':v.is_top_week?'rgba(34,197,94,.2)':'rgba(107,114,128,.1)';
+    const iconBorder = v.is_top_alltime?'rgba(139,92,246,.4)':v.is_top_year?'rgba(139,92,246,.4)':v.is_top_month?'rgba(59,130,246,.4)':v.is_top_week?'rgba(34,197,94,.4)':'rgba(107,114,128,.2)';
     const icon = v.is_top_alltime?'⭐':isTopVenue?'🏆':'🏪';
     return { idx, html: `<div class="venue-map-card" onclick="openVenueDetail(${v.id})" style="cursor:pointer;display:flex;align-items:center;gap:12px;text-decoration:none;${topStyle}">
       <div class="venue-map-icon" style="background:${iconBg};border-color:${iconBorder}">${icon}</div>
@@ -2634,7 +2634,7 @@ async function startTrial(venueId) {
   // TOP badges — show ALL active statuses
   let topBadges = '';
   if (v.is_top_alltime) topBadges += `<span style="display:inline-block;background:#8B5CF6;border:3px solid #FF8A00;border-radius:20px;padding:3px 10px;font-size:11px;color:#FFFFFF;font-weight:700;margin-left:4px">⭐ Legenda FoxPot</span>`;
-  if (v.is_top_year) topBadges += `<span style="display:inline-block;background:rgba(255,138,0,.15);border:1px solid rgba(255,138,0,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#FF8A00;font-weight:700;margin-left:4px">🏆 Top roku</span>`;
+  if (v.is_top_year) topBadges += `<span style="display:inline-block;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#8B5CF6;font-weight:700;margin-left:4px">🏆 Top roku</span>`;
   if (v.is_top_month) topBadges += `<span style="display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#3B82F6;font-weight:700;margin-left:4px">👑 Top miesiąca</span>`;
   if (v.is_top_week) topBadges += `<span style="display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#22C55E;font-weight:700;margin-left:4px">🔥 Top tygodnia</span>`;
 
