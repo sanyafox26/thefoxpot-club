@@ -3799,6 +3799,16 @@ app.get("/api/debug-fox", async (req, res) => {
   } catch(e) { res.json({ error: String(e?.message||e) }); }
 });
 
+// TMP DEBUG
+app.get("/api/dbg-uid", async (req, res) => {
+  try {
+    const uid = req.query.id;
+    const r = await pool.query(`SELECT user_id, username, rating FROM fp1_foxes WHERE user_id=$1::bigint LIMIT 1`, [uid]);
+    res.json(r.rows[0] || null);
+  } catch(e) { res.json({ error: String(e?.message||e) }); }
+});
+// END TMP DEBUG
+
 // POST /api/review/:id/mark-read — Fox marks venue reply as read
 app.post("/api/review/:id/mark-read", requireWebAppAuth, async (req, res) => {
   try {
