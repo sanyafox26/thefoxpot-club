@@ -1167,7 +1167,7 @@ async function founderSpotsLeft() {
 /* ═══════════════════════════════════════════════════════════════
    TOP FOX BADGES — P0.2: shared helper
 ═══════════════════════════════════════════════════════════════ */
-const TOP_FOX_COLORS = { year: "#22C55E", month: "#3B82F6", week: "#FF8A00" };
+const TOP_FOX_COLORS = { year: "#FF8A00", month: "#3B82F6", week: "#22C55E" };
 const TOP_FOX_LABELS = { year: "🏆 Top Fox roku", month: "🏆 Top Fox miesiąca", week: "🏆 Top Fox tygodnia" };
 
 async function getTopFoxBadges() {
@@ -5852,7 +5852,7 @@ app.post("/panel/confirm", requirePanelAuth, async (req, res) => {
     const isAdminConfirm = isAdmin(String(r.userId));
     const foxBadgesConfirm = await getTopFoxBadges();
     const foxBadge = isAdminConfirm ? null : (foxBadgesConfirm[String(r.userId)] || null);
-    const badgeEmoji = foxBadge === "year" ? "🟢" : foxBadge === "month" ? "🔵" : foxBadge === "week" ? "🟠" : "";
+    const badgeEmoji = foxBadge === "year" ? "🟠" : foxBadge === "month" ? "🔵" : foxBadge === "week" ? "🟢" : "";
     const badgeText = isAdminConfirm ? " ⭐ Założyciel" : (foxBadge ? ` ${badgeEmoji} ${TOP_FOX_LABELS[foxBadge]}` : "");
     const founderText = (!isAdminConfirm && foxQ.rows[0]?.founder_number) ? ` 👑#${foxQ.rows[0].founder_number}` : "";
     // Fox's last review for this venue
@@ -7034,7 +7034,7 @@ if (BOT_TOKEN) {
       );
       const myRating = await pool.query(`SELECT rating FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
       const foxBadgesTop = await getTopFoxBadges();
-      const badgeEmojis = { year: "🟢", month: "🔵", week: "🟠" };
+      const badgeEmojis = { year: "🟠", month: "🔵", week: "🟢" };
       const medals = ["🥇","🥈","🥉"];
       let msg = `🦊 Top Fox\n\n`;
       for (let i = 0; i < top.rows.length; i++) {
