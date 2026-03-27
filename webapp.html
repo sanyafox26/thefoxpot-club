@@ -1196,7 +1196,7 @@ async function loadProfile(){
     } else if(d.top_badge&&TOP_BADGE_COLORS[d.top_badge]){
       q('pName').style.color=TOP_BADGE_COLORS[d.top_badge];
       q('pTag').style.color=TOP_BADGE_COLORS[d.top_badge];
-      q('pTag').insertAdjacentHTML('afterend',`<div id="pTopBadge" style="font-size:11px;font-weight:700;color:${TOP_BADGE_COLORS[d.top_badge]};margin-bottom:4px">${TOP_BADGE_LABELS[d.top_badge]}</div>`);
+      q('pTag').insertAdjacentHTML('afterend',`<div id="pTopBadge" style="margin-bottom:6px">${foxBadgePill(d.top_badge,'0')}</div>`);
     }
     q('pTgId').textContent='ID: '+getUserId(d);
     if(d.founder_number){q('pFounder').style.display='inline-flex';q('pFounderTxt').textContent='Pionier Fox #'+d.founder_number}
@@ -2274,7 +2274,10 @@ async function loadAchievements(){
 }
 
 const TOP_BADGE_COLORS={year:'#8B5CF6',month:'#3B82F6',week:'#22C55E'};
+const TOP_BADGE_RGB={year:'139,92,246',month:'59,130,246',week:'34,197,94'};
 const TOP_BADGE_LABELS={year:'🏆 Top roku',month:'👑 Top miesiąca',week:'🔥 Top tygodnia'};
+function foxBadgePill(period,ml='4px'){const c=TOP_BADGE_COLORS[period],r=TOP_BADGE_RGB[period];return`<span style="display:inline-block;background:rgba(${r},.15);border:1px solid rgba(${r},.3);border-radius:20px;padding:3px 10px;font-size:11px;color:${c};font-weight:700;margin-left:${ml}">${TOP_BADGE_LABELS[period]}</span>`;}
+
 async function loadTop(){
   S.topLoaded=true;
   const $l=q('topLoading'),$c=q('topContent');
@@ -2294,7 +2297,7 @@ async function loadTop(){
       const tb=f.top_badge;
       const nameColor=tb?TOP_BADGE_COLORS[tb]:'';
       const nameStyle=nameColor?`style="color:${nameColor}"`:'';
-      const topLabel=tb?`<span style="font-size:10px;color:${TOP_BADGE_COLORS[tb]};font-weight:700;margin-left:4px">${TOP_BADGE_LABELS[tb]}</span>`:'';
+      const topLabel=tb?foxBadgePill(tb):'';
       return`<div class="${cls}">
         <div class="leader-pos">${medals[i]||p}</div>
         <div class="leader-av" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(232,132,42,.08));border:none"><img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f98a/512.png" width="30" height="30" style="display:block;margin:0 auto" alt="🦊" onerror="this.outerHTML='🦊'"/></div>
@@ -2304,7 +2307,7 @@ async function loadTop(){
     }).join('');
     let myCard='';
     if(d.my_position&&d.my_position>10){
-      const myBadge=d.my_top_badge?` · <span style="color:${TOP_BADGE_COLORS[d.my_top_badge]}">${TOP_BADGE_LABELS[d.my_top_badge]}</span>`:'';
+      const myBadge=d.my_top_badge?` · ${foxBadgePill(d.my_top_badge)}`:'';
       myCard=`<div class="my-pos-card"><span>Twoja pozycja</span><span class="my-pos-right">#${d.my_position} · ${d.my_rating||0} pkt${myBadge}</span></div>`;
     }
     $c.innerHTML=rows+myCard;
