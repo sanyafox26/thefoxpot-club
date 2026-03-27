@@ -3799,16 +3799,6 @@ app.get("/api/debug-fox", async (req, res) => {
   } catch(e) { res.json({ error: String(e?.message||e) }); }
 });
 
-// TMP DEBUG — DELETE AFTER USE
-app.get("/api/dbg-top", async (req, res) => {
-  try {
-    const cache = await pool.query(`SELECT key, username, user_id, value FROM fp1_leaderboard_cache WHERE key LIKE 'top_fox%' ORDER BY key`);
-    const live = await getTopFoxBadges();
-    res.json({ cache: cache.rows, live });
-  } catch(e) { res.json({ error: String(e?.message||e) }); }
-});
-// END TMP DEBUG
-
 // POST /api/review/:id/mark-read — Fox marks venue reply as read
 app.post("/api/review/:id/mark-read", requireWebAppAuth, async (req, res) => {
   try {
