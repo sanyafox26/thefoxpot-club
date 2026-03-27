@@ -2047,6 +2047,15 @@ app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting
 app.get("/delete-account", (_req, res) => res.send(`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usuwanie konta — The FoxPot Club</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#f0f0f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{max-width:480px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:32px 24px;text-align:center}h1{font-size:20px;margin-bottom:16px;color:#f5a623}p{font-size:15px;line-height:1.7;color:rgba(255,255,255,.7)}a{color:#f5a623;text-decoration:none;font-weight:600}</style></head><body><div class="card"><h1>🦊 Usuwanie konta</h1><p>Aby usunąć konto w The FoxPot Club, skorzystaj z opcji <strong>Opuść klub</strong> w zakładce <strong>Pomoc</strong> w aplikacji, lub napisz na <a href="mailto:kontakt@thefoxpot.club">kontakt@thefoxpot.club</a>.</p></div></body></html>`));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V29_BIGINT_FIX"));
 
+// DEBUG TEMP
+app.get("/debug-visits", async (_req, res) => {
+  try {
+    const all = await pool.query(`SELECT user_id, COUNT(*)::int AS cnt, SUM(CASE WHEN is_credited THEN 1 ELSE 0 END)::int AS credited FROM fp1_counted_visits GROUP BY user_id ORDER BY cnt DESC LIMIT 20`);
+    const cache = await pool.query(`SELECT key, username, user_id, value FROM fp1_leaderboard_cache WHERE key LIKE 'top_fox%' ORDER BY key`);
+    res.json({ visits: all.rows, cache: cache.rows });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
 // ── Invite link without Telegram ──
 app.get("/invite/:code", async (req, res) => {
   try {
