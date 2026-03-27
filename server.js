@@ -1183,7 +1183,7 @@ async function getTopFoxBadges() {
   // Exclusive cascading TOP — same logic as venues:
   // year leader found first, then month excludes year leader, week excludes both
   async function findTopFox(since, excludeIds) {
-    const adminClause  = ADMIN_TG_ID ? ` AND cv.user_id != '${ADMIN_TG_ID}'` : '';
+    const adminClause  = ADMIN_TG_ID ? ` AND cv.user_id != ${Number(ADMIN_TG_ID)}` : '';
     const excludeClause = excludeIds.length
       ? ` AND cv.user_id::text != ALL($2::text[])`
       : '';
@@ -4037,7 +4037,7 @@ setInterval(async () => {
     const weekStart = new Date(warsawNow); weekStart.setDate(weekStart.getDate() - dayOfWeek); weekStart.setHours(0,0,0,0);
     const monthStart = new Date(warsawNow); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
     const yearStart = new Date(warsawNow); yearStart.setMonth(0, 1); yearStart.setHours(0,0,0,0);
-    const adminExclude = ADMIN_TG_ID ? ` AND f.user_id != '${ADMIN_TG_ID}'` : '';
+    const adminExclude = ADMIN_TG_ID ? ` AND f.user_id != ${Number(ADMIN_TG_ID)}` : '';
 
     const upsertCache = async (key, period, data) => {
       await pool.query(`
