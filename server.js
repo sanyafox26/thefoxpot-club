@@ -39,7 +39,7 @@ const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
 const { setupSupport, migrateSupport } = require("./fox_support");
 const jwt      = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -70,11 +70,7 @@ const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "").trim();
 const JWT_SECRET     = (process.env.JWT_SECRET     || COOKIE_SECRET).trim();
 const ADMIN_TG_ID              = (process.env.ADMIN_TG_ID              || "").trim();
 const ADMIN_TELEGRAM_CHAT_ID   = (process.env.ADMIN_TELEGRAM_CHAT_ID   || "").trim();
-const SMTP_HOST      = (process.env.SMTP_HOST      || "").trim();
-const SMTP_PORT      = parseInt(process.env.SMTP_PORT || "587");
-const SMTP_SECURE    = process.env.SMTP_SECURE === "true" || SMTP_PORT === 465;
-const SMTP_USER      = (process.env.SMTP_USER      || "").trim();
-const SMTP_PASS      = (process.env.SMTP_PASS      || "").trim();
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
 const SMTP_FROM      = (process.env.SMTP_FROM      || "The FoxPot Club <kontakt@thefoxpot.club>").trim();
 const PORT           = process.env.PORT || 8080;
 
@@ -103,26 +99,14 @@ async function dbNow() {
 /* ═══════════════════════════════════════════════════════════════
    EMAIL (nodemailer)
 ═══════════════════════════════════════════════════════════════ */
-const emailTransporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_SECURE,
-  auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
+const resendClient = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 async function sendEmail(to, subject, html) {
-  if (!SMTP_HOST || !SMTP_USER) { console.warn("[EMAIL] SMTP not configured — skipping:", to, subject); return; }
+  if (!resendClient) { console.warn("[EMAIL] RESEND_API_KEY not configured — skipping:", to, subject); return; }
   try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("sendEmail timeout")), 20000));
-    await Promise.race([
-      emailTransporter.sendMail({ from: SMTP_FROM, to, subject, html }),
-      timeout,
-    ]);
-    console.log("[EMAIL] sent to", to);
-  } catch(e) {
-    console.error("[EMAIL] failed:", e.message);
+    const result = await resendClient.emails.send({ from: SMTP_FROM, to, subject, html });
+    console.log("[EMAIL] Sent:", result);
+  } catch(err) {
+    console.error("[EMAIL] Error:", err);
   }
 }
 
