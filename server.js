@@ -6412,7 +6412,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
   const pending = await pool.query(`SELECT * FROM fp1_venues WHERE approved=FALSE ORDER BY created_at ASC`);
   const pendingAdmin = await pool.query(`SELECT * FROM fp1_venues WHERE status='pending_admin' ORDER BY email_confirmed_at ASC`);
   const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id AND cv.is_credited=TRUE WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
-  const foxes   = await pool.query(`SELECT f.user_id,f.username,f.rating,f.invites,f.city,f.district,f.founder_number,f.streak_current,f.streak_best,f.created_at,
+  const foxes   = await pool.query(`SELECT f.user_id,f.username,f.rating,f.invites,f.city,f.district,f.founder_number,f.streak_current,f.streak_best,f.created_at,f.phone,
     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.is_credited=TRUE) AS visits_total
     FROM fp1_foxes f WHERE f.is_deleted=FALSE ORDER BY f.rating DESC LIMIT 50`);
   const growth  = await getGrowthLeaderboard(10);
@@ -6487,7 +6487,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       }).join("");
 
   const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td><td><form method="POST" action="/api/admin/reset-venue-password/${v.id}" style="margin:0" onsubmit="return confirm('Resetować hasło dla ${escapeHtml(v.name.replace(/'/g,""))}?')"><button type="submit" style="font-size:11px;padding:3px 10px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.4);color:#c9a84c;border-radius:6px;cursor:pointer">🔑 Resetuj hasło</button></form></td></tr>`).join("");
-  const foxesHtml  = foxes.rows.map(f => `<tr><td>${escapeHtml(f.username||"—")}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td><b>${f.rating}</b></td><td>${f.invites}</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td><td>${f.visits_total||0}</td><td>${new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"})}</td></tr>`).join("");
+  const foxesHtml  = foxes.rows.map(f => `<tr><td>${escapeHtml(f.username||"—")}</td><td>${escapeHtml(f.phone||"brak")}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td><b>${f.rating}</b></td><td>${f.invites}</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td><td>${f.visits_total||0}</td><td>${new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"})}</td></tr>`).join("");
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
   const achHtml  = achStats.rows.map(a => { const ach = ACHIEVEMENTS[a.achievement_code]; return `<tr><td>${ach?ach.emoji:"?"} ${escapeHtml(a.achievement_code)}</td><td><b>${a.cnt}</b></td></tr>`; }).join("");
@@ -6636,7 +6636,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card">
       <h2>Fox (top 50)</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>Nick</th><th>Miasto</th><th>Dzielnica</th><th>Rating</th><th>Zapr.</th><th>Pionier</th><th>Wizyty</th><th>Rejestracja</th></tr>${foxesHtml}
+        <tr style="opacity:.6"><th>Nick</th><th>Telefon</th><th>Miasto</th><th>Dzielnica</th><th>Rating</th><th>Zapr.</th><th>Pionier</th><th>Wizyty</th><th>Rejestracja</th></tr>${foxesHtml}
       </table>
     </div>
     <div class="card" style="border:1px solid rgba(124,92,252,.3);background:rgba(124,92,252,.06)">
