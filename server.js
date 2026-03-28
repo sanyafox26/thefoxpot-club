@@ -6473,7 +6473,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <form method="POST" action="/admin/venues/${v.id}/reject" style="display:inline"><button type="submit" class="danger">❌ Odrzuć</button></form>
       </div>`).join("");
 
-  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td></tr>`).join("");
+  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td><td><form method="POST" action="/api/admin/reset-venue-password/${v.id}" style="margin:0" onsubmit="return confirm('Resetować hasło dla ${escapeHtml(v.name.replace(/'/g,""))}?')"><button type="submit" style="font-size:11px;padding:3px 10px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.4);color:#c9a84c;border-radius:6px;cursor:pointer">🔑 Resetuj hasło</button></form></td></tr>`).join("");
   const foxesHtml  = foxes.rows.map(f => `<tr><td>${escapeHtml(f.username||"—")}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td><b>${f.rating}</b></td><td>${f.invites}</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td><td>${f.visits_total||0}</td><td>${new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"})}</td></tr>`).join("");
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
@@ -6608,7 +6608,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card">
       <h2>Aktywne lokale</h2>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="opacity:.6"><th>ID</th><th>Nazwa</th><th>Miasto</th><th>Wizyty</th><th>Status</th></tr>${venuesHtml}
+        <tr style="opacity:.6"><th>ID</th><th>Nazwa</th><th>Miasto</th><th>Wizyty</th><th>Status</th><th>Akcje</th></tr>${venuesHtml}
       </table>
     </div>
     <div class="card">
@@ -6892,6 +6892,81 @@ app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
   const v = await getVenue(venueId);
   await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
   res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
+});
+
+// ── STEP 5: Admin reset venue password ──
+app.post("/api/admin/reset-venue-password/:venue_id", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.params.venue_id);
+  try {
+    const vr = await pool.query(
+      `SELECT id, name, email, owner_name FROM fp1_venues WHERE id=$1 AND status='active' LIMIT 1`,
+      [venueId]
+    );
+    if (vr.rowCount === 0)
+      return res.redirect(`/admin?err=${encodeURIComponent("Lokal nie znaleziony lub nieaktywny.")}`);
+    const venue = vr.rows[0];
+
+    // Generate temp password
+    const digits = String(Math.floor(1000 + Math.random() * 9000));
+    const prefix = (venue.name || "LOK").replace(/[^a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, "").slice(0, 3).toUpperCase() || "LOK";
+    const plainPassword = `Fox${digits}#${prefix}`;
+
+    const newSalt = crypto.randomBytes(16).toString("hex");
+    const newHash = pinHash(plainPassword, newSalt);
+    await pool.query(
+      `UPDATE fp1_venues SET pin_hash=$1, pin_salt=$2, password_reset_token=NULL, password_reset_expires=NULL WHERE id=$3`,
+      [newHash, newSalt, venueId]
+    );
+
+    // Send email to venue
+    try {
+      await sendEmail(
+        venue.email,
+        "Reset hasła — The FoxPot Club",
+        `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
+          <h2 style="color:#c9a84c;margin-bottom:8px">Reset hasła</h2>
+          <p>Witaj ${escapeHtml(venue.owner_name)}!</p>
+          <p>Twoje hasło do panelu lokalu zostało zresetowane przez administratora.</p>
+          <p><strong>Dane do logowania:</strong></p>
+          <p>📧 Login: <code>${escapeHtml(venue.email)}</code><br>
+          🔑 Hasło tymczasowe: <code>${escapeHtml(plainPassword)}</code></p>
+          <p style="margin:24px 0">
+            <a href="https://thefoxpot.club/panel" style="background:#c9a84c;color:#080b12;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
+              🔗 Panel lokalu
+            </a>
+          </p>
+          <p style="color:#888;font-size:13px">Zalecamy zmianę hasła po zalogowaniu.</p>
+          <p style="color:#888;font-size:13px">W razie pytań: kontakt@thefoxpot.club</p>
+          <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+          <p style="color:#aaa;font-size:12px">The FoxPot Club 🦊 · kontakt@thefoxpot.club</p>
+        </body></html>`
+      );
+    } catch(e) {
+      console.error("[admin-reset-password] email failed:", e.message);
+    }
+
+    // Notify admin in Telegram
+    if (bot && ADMIN_TELEGRAM_CHAT_ID) {
+      try {
+        await bot.telegram.sendMessage(Number(ADMIN_TELEGRAM_CHAT_ID),
+          `🔑 Hasło zresetowane\n\n` +
+          `🏪 Lokal: ${venue.name}\n` +
+          `📧 Login: ${venue.email}\n` +
+          `🔑 Hasło: ${plainPassword}\n` +
+          `🔗 Panel: https://thefoxpot.club/panel\n\n` +
+          `Wyślij te dane lokalowi jeśli nie otrzymał emaila.`
+        );
+      } catch(e) {
+        console.error("[admin-reset-password] Telegram failed:", e.message);
+      }
+    }
+
+    res.redirect(`/admin?ok=${encodeURIComponent(`Hasło zresetowane dla ${venue.name}. Email wysłany.`)}`);
+  } catch(e) {
+    console.error("[admin-reset-password]", e);
+    res.redirect(`/admin?err=${encodeURIComponent("Błąd serwera.")}`);
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
