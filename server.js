@@ -2054,8 +2054,8 @@ app.get("/privacy", (_req, res) => res.sendFile(path.join(__dirname, "privacy.ht
 app.get("/rules.html",   (_req, res) => res.sendFile(path.join(__dirname, "rules.html")));
 app.get("/privacy.html", (_req, res) => res.sendFile(path.join(__dirname, "privacy.html")));
 app.get("/partners.html", (_req, res) => res.sendFile(path.join(__dirname, "partners.html")));
-app.get("/faq",      (_req, res) => res.sendFile(path.join(__dirname, "faq.html")));
-app.get("/faq.html", (_req, res) => res.sendFile(path.join(__dirname, "faq.html")));
+app.get("/faq",      (_req, res) => { res.setHeader("Cache-Control","no-store"); res.sendFile(path.join(__dirname, "faq.html")); });
+app.get("/faq.html", (_req, res) => { res.setHeader("Cache-Control","no-store"); res.sendFile(path.join(__dirname, "faq.html")); });
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/delete-account", (_req, res) => res.send(`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usuwanie konta — The FoxPot Club</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#f0f0f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{max-width:480px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:32px 24px;text-align:center}h1{font-size:20px;margin-bottom:16px;color:#f5a623}p{font-size:15px;line-height:1.7;color:rgba(255,255,255,.7)}a{color:#f5a623;text-decoration:none;font-weight:600}</style></head><body><div class="card"><h1>🦊 Usuwanie konta</h1><p>Aby usunąć konto w The FoxPot Club, skorzystaj z opcji <strong>Opuść klub</strong> w zakładce <strong>Pomoc</strong> w aplikacji, lub napisz na <a href="mailto:kontakt@thefoxpot.club">kontakt@thefoxpot.club</a>.</p></div></body></html>`));
