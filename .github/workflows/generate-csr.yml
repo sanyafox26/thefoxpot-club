@@ -12,16 +12,30 @@ jobs:
           # Generate RSA private key
           openssl genrsa -out distribution.key 2048
 
-          # Generate CSR (Certificate Signing Request)
-          openssl req -new -key distribution.key \
-            -out distribution.csr \
-            -subj "/emailAddress=kontakt@thefoxpot.club/CN=The FoxPot Club/C=PL"
+          # Write OpenSSL config to avoid -subj parsing issues
+          cat > csr.conf << 'EOF'
+          [req]
+          default_bits       = 2048
+          prompt             = no
+          default_md         = sha256
+          distinguished_name = dn
+          [dn]
+          C  = PL
+          CN = The FoxPot Club
+          emailAddress = kontakt@thefoxpot.club
+          EOF
 
-          echo "=== CSR CONTENT (copy this to Apple Developer Portal) ==="
+          # Generate CSR using config file
+          openssl req -new \
+            -key distribution.key \
+            -out distribution.csr \
+            -config csr.conf
+
+          echo "=== CSR CONTENT (upload this to Apple Developer Portal) ==="
           cat distribution.csr
 
           echo ""
-          echo "=== PRIVATE KEY BASE64 (save this — needed later for p12) ==="
+          echo "=== PRIVATE KEY BASE64 (save this for the create-p12 workflow) ==="
           base64 distribution.key
 
       - name: Upload CSR and key as artifacts
