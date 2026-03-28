@@ -9,23 +9,10 @@ jobs:
     steps:
       - name: Generate private key and CSR
         run: |
-          # Generate RSA private key
           openssl genrsa -out distribution.key 2048
 
-          # Write OpenSSL config to avoid -subj parsing issues
-          cat > csr.conf << 'EOF'
-          [req]
-          default_bits       = 2048
-          prompt             = no
-          default_md         = sha256
-          distinguished_name = dn
-          [dn]
-          C  = PL
-          CN = The FoxPot Club
-          emailAddress = kontakt@thefoxpot.club
-          EOF
+          printf '[req]\ndefault_bits=2048\nprompt=no\ndefault_md=sha256\ndistinguished_name=dn\n[dn]\nC=PL\nCN=The FoxPot Club\nemailAddress=kontakt@thefoxpot.club\n' > csr.conf
 
-          # Generate CSR using config file
           openssl req -new \
             -key distribution.key \
             -out distribution.csr \
@@ -36,7 +23,7 @@ jobs:
 
           echo ""
           echo "=== PRIVATE KEY BASE64 (save this for the create-p12 workflow) ==="
-          base64 < distribution.key | tr -d '\n'
+          cat distribution.key | base64 | tr -d '\n'
 
       - name: Upload CSR and key as artifacts
         uses: actions/upload-artifact@v4
