@@ -6753,7 +6753,7 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
       const fp = [dateFrom, dateTo]; let fpi = 3; let fdf = "";
       if (district) { fdf = ` AND f.district = $${fpi}`; fp.push(district); fpi++; }
       const rows = await pool.query(`
-        SELECT f.user_id, f.username, f.city, f.district, f.rating, f.invites,
+        SELECT f.user_id, f.username, f.phone, f.city, f.district, f.rating, f.invites,
                f.founder_number, f.streak_current, f.streak_best, f.created_at,
                (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.is_credited=TRUE AND cv.created_at >= $1 AND cv.created_at < ($2::date + INTERVAL '1 day')) AS visits_period,
                (SELECT COUNT(*)::int FROM fp1_counted_visits cv2 WHERE cv2.user_id=f.user_id AND cv2.is_credited=TRUE) AS visits_total
@@ -6761,8 +6761,8 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
         WHERE f.is_deleted=FALSE${fdf}
         ORDER BY f.rating DESC LIMIT 5000
       `, fp);
-      header = "user_id,nick,miasto,dzielnica,rating,zaproszenia,pionier_nr,streak,streak_best,rejestracja,wizyty_okres,wizyty_total\n";
-      csvRows = rows.rows.map(r => [r.user_id,esc_csv(r.username),r.city||"",r.district||"",r.rating,r.invites,r.founder_number||"",r.streak_current||0,r.streak_best||0,fmtDate(r.created_at),r.visits_period,r.visits_total].join(",")).join("\n");
+      header = "user_id,nick,telefon,miasto,dzielnica,rating,zaproszenia,pionier_nr,streak,streak_best,rejestracja,wizyty_okres,wizyty_total\n";
+      csvRows = rows.rows.map(r => [r.user_id,esc_csv(r.username),r.phone||"",r.city||"",r.district||"",r.rating,r.invites,r.founder_number||"",r.streak_current||0,r.streak_best||0,fmtDate(r.created_at),r.visits_period,r.visits_total].join(",")).join("\n");
       filename = `foxpot_foxy_${dateFrom}_${dateTo}.csv`;
 
     } else {
