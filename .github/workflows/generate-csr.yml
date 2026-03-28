@@ -11,14 +11,26 @@ jobs:
         run: |
           openssl genrsa -out distribution.key 2048
 
-          printf '[req]\ndefault_bits=2048\nprompt=no\ndefault_md=sha256\ndistinguished_name=dn\n[dn]\nC=PL\nCN=The FoxPot Club\nemailAddress=kontakt@thefoxpot.club\n' > csr.conf
+          python3 -c "
+          config = '''[req]
+default_bits=2048
+prompt=no
+default_md=sha256
+distinguished_name=dn
+[dn]
+C=PL
+CN=The FoxPot Club
+emailAddress=kontakt@thefoxpot.club
+'''
+          open('csr.conf', 'w').write(config)
+          "
 
           openssl req -new \
             -key distribution.key \
             -out distribution.csr \
             -config csr.conf
 
-          echo "=== CSR CONTENT (upload this to Apple Developer Portal) ==="
+          echo "=== CSR CONTENT ==="
           cat distribution.csr
 
       - name: Upload CSR and key as artifacts
