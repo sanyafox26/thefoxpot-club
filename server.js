@@ -6825,7 +6825,7 @@ app.get("/admin/lokale", requireAdminAuth, async (req, res) => {
 
     if (req.query.format === "html") {
       const cols = ["ID","Nazwa","Adres","Miasto","Telefon","Email","Instagram","TikTok","YouTube","Facebook","Zniżka","Status","Data","Wizyty"];
-      const lnk = (url) => url ? `<a href="${escapeHtml(url)}" target="_blank" style="color:#7c5cfc">✓</a>` : `—`;
+      const lnk = (url) => url ? `<a href="${escapeHtml(url)}" target="_blank" style="color:#7c5cfc;max-width:140px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom">${escapeHtml(url)}</a>` : `—`;
       let html = `<div style="font-size:11px;color:#888;margin-bottom:8px">${rows.rows.length} lokali</div>`;
       html += `<table style="width:100%;border-collapse:collapse;font-size:11px"><tr style="background:#1a1f35;position:sticky;top:0">${cols.map(c=>`<th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#aaa">${c}</th>`).join("")}</tr>`;
       html += rows.rows.map(r => {
