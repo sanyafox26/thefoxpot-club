@@ -5107,13 +5107,6 @@ app.post("/api/register-venue", async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       return res.status(400).json({ error: "Podaj prawidłowy adres email." });
 
-    // Verify NIP via checksum algorithm (weights: 6,5,7,2,3,4,5,6,7)
-    const nipDigits = nip.split("").map(Number);
-    const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
-    const checksum = weights.reduce((sum, w, i) => sum + w * nipDigits[i], 0) % 11;
-    if (checksum !== nipDigits[8])
-      return res.status(400).json({ error: "Nieprawidłowy NIP. Sprawdź poprawność numeru." });
-
     // Check for duplicate email
     const existing = await pool.query(`SELECT id, status FROM fp1_venues WHERE email=$1`, [email.toLowerCase()]);
     if (existing.rows.length > 0) {
