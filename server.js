@@ -921,6 +921,7 @@ async function migrate() {
   await ensureColumn("fp1_venues", "email_token_expires",  "TIMESTAMPTZ");
   await ensureColumn("fp1_venues", "password_reset_token", "TEXT");
   await ensureColumn("fp1_venues", "password_reset_expires","TIMESTAMPTZ");
+  await ensureColumn("fp1_venues", "email_confirmed_at",   "TIMESTAMPTZ");
 
   console.log("✅ Migrations OK (V28 + Support)");
 }
@@ -5190,9 +5191,9 @@ app.get("/confirm-venue", async (req, res) => {
     if (new Date() > new Date(venue.email_token_expires))
       return errPage("Link wygasł (ważny 24 godziny). Wypełnij formularz ponownie, aby otrzymać nowy link.");
 
-    // Update status to pending_admin, clear token
+    // Update status to pending_admin, clear token, record confirmation time
     await pool.query(
-      `UPDATE fp1_venues SET status='pending_admin', email_token=NULL, email_token_expires=NULL WHERE id=$1`,
+      `UPDATE fp1_venues SET status='pending_admin', email_token=NULL, email_token_expires=NULL, email_confirmed_at=NOW() WHERE id=$1`,
       [venue.id]
     );
 
@@ -6425,6 +6426,7 @@ app.get("/admin/logout", (req, res) => { clearCookie(res); res.redirect("/admin/
 
 app.get("/admin", requireAdminAuth, async (req, res) => {
   const pending = await pool.query(`SELECT * FROM fp1_venues WHERE approved=FALSE ORDER BY created_at ASC`);
+  const pendingAdmin = await pool.query(`SELECT * FROM fp1_venues WHERE status='pending_admin' ORDER BY email_confirmed_at ASC`);
   const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id AND cv.is_credited=TRUE WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
   const foxes   = await pool.query(`SELECT f.user_id,f.username,f.rating,f.invites,f.city,f.district,f.founder_number,f.streak_current,f.streak_best,f.created_at,
     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.is_credited=TRUE) AS visits_total
@@ -6472,6 +6474,33 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <form method="POST" action="/admin/venues/${v.id}/approve" style="display:inline"><button type="submit" style="margin-top:6px;margin-right:6px">✅ Zatwierdź</button></form>
         <form method="POST" action="/admin/venues/${v.id}/reject" style="display:inline"><button type="submit" class="danger">❌ Odrzuć</button></form>
       </div>`).join("");
+
+  const pendingAdminHtml = pendingAdmin.rows.length === 0
+    ? `<p class="muted">Brak nowych wniosków</p>`
+    : pendingAdmin.rows.map(v => {
+        const confirmedAt = v.email_confirmed_at
+          ? new Date(v.email_confirmed_at).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" })
+          : "—";
+        return `
+        <div style="padding:14px;margin-bottom:12px;border-radius:10px;border:1px solid rgba(255,138,0,.3);background:rgba(255,138,0,.05)">
+          <div style="font-size:15px;font-weight:700;margin-bottom:6px">${escapeHtml(v.name)}</div>
+          <div style="font-size:13px;color:#ccc;display:grid;gap:3px">
+            <div>🔢 NIP: <b>${escapeHtml(v.nip||"—")}</b></div>
+            <div>📍 Adres: ${escapeHtml(v.address||"—")}</div>
+            <div>📧 Email: ${escapeHtml(v.email||"—")}</div>
+            <div>👤 Właściciel: ${escapeHtml(v.owner_name||"—")}</div>
+            <div style="color:#888;font-size:11px">✅ Email potwierdzony: ${confirmedAt}</div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <form method="POST" action="/admin/venues/${v.id}/activate" style="margin:0">
+              <button type="submit" style="background:rgba(46,204,113,.2);border:1px solid rgba(46,204,113,.4);color:#2ecc71;padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">✅ Aktywuj</button>
+            </form>
+            <form method="POST" action="/admin/venues/${v.id}/reject" style="margin:0" onsubmit="return confirm('Odrzucić wniosek od ${escapeHtml(v.name.replace(/'/g,""))}?')">
+              <button type="submit" style="background:rgba(231,76,60,.2);border:1px solid rgba(231,76,60,.4);color:#e74c3c;padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">❌ Odrzuć</button>
+            </form>
+          </div>
+        </div>`;
+      }).join("");
 
   const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td><td><form method="POST" action="/api/admin/reset-venue-password/${v.id}" style="margin:0" onsubmit="return confirm('Resetować hasło dla ${escapeHtml(v.name.replace(/'/g,""))}?')"><button type="submit" style="font-size:11px;padding:3px 10px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.4);color:#c9a84c;border-radius:6px;cursor:pointer">🔑 Resetuj hasło</button></form></td></tr>`).join("");
   const foxesHtml  = foxes.rows.map(f => `<tr><td>${escapeHtml(f.username||"—")}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td><b>${f.rating}</b></td><td>${f.invites}</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td><td>${f.visits_total||0}</td><td>${new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"})}</td></tr>`).join("");
@@ -6542,14 +6571,23 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
   }).join("");
   const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
 
+  const pendingAdminCount = pendingAdmin.rows.length;
+  const pendingBadge = pendingAdminCount > 0
+    ? `<span style="display:inline-flex;align-items:center;justify-content:center;background:#ff8a00;color:#000;font-size:12px;font-weight:700;border-radius:50%;width:22px;height:22px;margin-left:8px;animation:pulse 1.5s infinite">🔔${pendingAdminCount}</span>
+       <style>@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,138,0,.6)}50%{box-shadow:0 0 0 8px rgba(255,138,0,0)}}</style>`
+    : "";
   res.send(pageShell("Admin — FoxPot", `
     <div class="card">
-      <div class="topbar"><h1>🛡️ Panel Admina</h1><a href="/admin/logout">Wyloguj</a></div>
+      <div class="topbar"><h1>🛡️ Panel Admina${pendingBadge}</h1><a href="/admin/logout">Wyloguj</a></div>
       ${flash(req)}
       <div class="muted" style="margin-top:8px">👑 Pionier Fox: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
       <a href="/admin/backup" style="display:inline-block;margin-top:8px;padding:8px 16px;background:rgba(124,92,252,.15);border:1px solid rgba(124,92,252,.3);border-radius:8px;color:#7c5cfc;font-size:12px;font-weight:700;text-decoration:none">💾 Pobierz backup bazy</a>
     </div>
-    <div class="card"><h2>Wnioski do zatwierdzenia (${pending.rows.length})</h2>${pendingHtml}</div>
+    <div class="card" style="${pendingAdminCount > 0 ? 'border:1px solid rgba(255,138,0,.4);background:rgba(255,138,0,.04)' : ''}">
+      <h2 style="margin-bottom:16px">📋 Wnioski do zatwierdzenia${pendingAdminCount > 0 ? ` <span style="background:#ff8a00;color:#000;font-size:12px;font-weight:700;border-radius:12px;padding:2px 9px;margin-left:6px">${pendingAdminCount}</span>` : ""}</h2>
+      ${pendingAdminHtml}
+    </div>
+    <div class="card"><h2>Wnioski do zatwierdzenia — legacy (${pending.rows.length})</h2>${pendingHtml}</div>
     <div class="card"><h2>🗳️ Głosowanie na lokale (${noms.rows.length})</h2>${nomsHtml}</div>
     <div class="card"><h2>🏙️ Głosowanie na miasta (${cityNoms.rows.length})</h2>${cityNomsHtml}</div>
     <div class="card">
@@ -6887,11 +6925,94 @@ app.post("/admin/venues/:id/approve", requireAdminAuth, async (req, res) => {
   res.redirect(`/admin?ok=${encodeURIComponent("Zatwierdzono: "+(v?.name||venueId))}`);
 });
 
+// ── Activate venue from admin panel (same logic as Telegram callback) ──
+app.post("/admin/venues/:id/activate", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.params.id);
+  try {
+    const vr = await pool.query(
+      `SELECT id, name, email, owner_name FROM fp1_venues WHERE id=$1 AND status='pending_admin' LIMIT 1`,
+      [venueId]
+    );
+    if (vr.rowCount === 0)
+      return res.redirect(`/admin?err=${encodeURIComponent("Lokal nie znaleziony lub zły status.")}`);
+    const venue = vr.rows[0];
+
+    const digits = String(Math.floor(1000 + Math.random() * 9000));
+    const prefix = (venue.name || "LOK").replace(/[^a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, "").slice(0, 3).toUpperCase() || "LOK";
+    const plainPassword = `Fox${digits}#${prefix}`;
+    const newSalt = crypto.randomBytes(16).toString("hex");
+    const newHash = pinHash(plainPassword, newSalt);
+
+    await pool.query(
+      `UPDATE fp1_venues SET status='active', approved=TRUE, pin_hash=$1, pin_salt=$2 WHERE id=$3`,
+      [newHash, newSalt, venueId]
+    );
+
+    // Send activation email to venue
+    try {
+      await sendEmail(
+        venue.email,
+        "Twój lokal został aktywowany w The FoxPot Club! 🦊",
+        `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
+          <h2 style="color:#c9a84c;margin-bottom:8px">Witaj ${escapeHtml(venue.owner_name)}!</h2>
+          <p>Twój lokal <strong>${escapeHtml(venue.name)}</strong> został aktywowany.</p>
+          <p><strong>Dane do logowania:</strong></p>
+          <p>📧 Login: <code>${escapeHtml(venue.email)}</code><br>
+          🔑 Hasło tymczasowe: <code>${escapeHtml(plainPassword)}</code></p>
+          <p style="margin:24px 0">
+            <a href="https://thefoxpot.club/panel" style="background:#c9a84c;color:#080b12;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">🔗 Panel lokalu</a>
+          </p>
+          <p style="color:#888;font-size:13px">Zalecamy zmianę hasła po pierwszym logowaniu.</p>
+          <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+          <p style="color:#aaa;font-size:12px">The FoxPot Club 🦊 · kontakt@thefoxpot.club</p>
+        </body></html>`
+      );
+    } catch(e) { console.error("[admin-activate] email failed:", e.message); }
+
+    // Notify admin via Telegram
+    if (bot && ADMIN_TELEGRAM_CHAT_ID) {
+      try {
+        await bot.telegram.sendMessage(Number(ADMIN_TELEGRAM_CHAT_ID),
+          `✅ Aktywowano!\n\n🏪 ${venue.name}\n📧 Login: ${venue.email}\n🔑 Hasło: ${plainPassword}\n🔗 Panel: https://thefoxpot.club/panel\n\nWyślij te dane lokalowi jeśli nie otrzymał emaila.`
+        );
+      } catch(e) { console.error("[admin-activate] Telegram failed:", e.message); }
+    }
+
+    res.redirect(`/admin?ok=${encodeURIComponent(`Aktywowano: ${venue.name}`)}`);
+  } catch(e) {
+    console.error("[admin-activate]", e);
+    res.redirect(`/admin?err=${encodeURIComponent("Błąd serwera.")}`);
+  }
+});
+
 app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
   const venueId = Number(req.params.id);
   const v = await getVenue(venueId);
-  await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
-  res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
+  if (v?.status === "pending_admin") {
+    // New self-registration flow: mark rejected, send email
+    await pool.query(`UPDATE fp1_venues SET status='rejected' WHERE id=$1`, [venueId]);
+    try {
+      await sendEmail(
+        v.email,
+        "Zgłoszenie lokalu — odpowiedź",
+        `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
+          <h2 style="color:#c9a84c;margin-bottom:8px">Witaj ${escapeHtml(v.owner_name||"")}!</h2>
+          <p>Niestety nie mogliśmy aktywować lokalu <strong>${escapeHtml(v.name)}</strong> w The FoxPot Club.</p>
+          <p>W razie pytań napisz do nas:<br>
+          <a href="mailto:kontakt@thefoxpot.club" style="color:#c9a84c">kontakt@thefoxpot.club</a></p>
+          <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+          <p style="color:#aaa;font-size:12px">The FoxPot Club 🦊 · kontakt@thefoxpot.club</p>
+        </body></html>`
+      );
+    } catch(e) { console.error("[admin-reject] email failed:", e.message); }
+    res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
+  } else {
+    // Legacy flow: delete
+    await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
+    res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
+  }
 });
 
 // ── STEP 5: Admin reset venue password ──
