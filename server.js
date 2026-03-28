@@ -6824,13 +6824,13 @@ app.get("/admin/lokale", requireAdminAuth, async (req, res) => {
     const fmtDate = (d) => new Date(d).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
 
     if (req.query.format === "html") {
-      const cols = ["ID","Nazwa","Adres","Miasto","Telefon","Email","Social","Zniżka","Status","Data","Wizyty"];
+      const cols = ["ID","Nazwa","Adres","Miasto","Telefon","Email","Instagram","TikTok","YouTube","Facebook","Zniżka","Status","Data","Wizyty"];
+      const lnk = (url) => url ? `<a href="${escapeHtml(url)}" target="_blank" style="color:#7c5cfc">✓</a>` : `—`;
       let html = `<div style="font-size:11px;color:#888;margin-bottom:8px">${rows.rows.length} lokali</div>`;
       html += `<table style="width:100%;border-collapse:collapse;font-size:11px"><tr style="background:#1a1f35;position:sticky;top:0">${cols.map(c=>`<th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#aaa">${c}</th>`).join("")}</tr>`;
       html += rows.rows.map(r => {
-        const social = [r.instagram_url&&`IG`,r.tiktok_url&&`TT`,r.youtube_url&&`YT`,r.facebook_url&&`FB`].filter(Boolean).join(" ");
-        const cells = [r.id, escapeHtml(r.name||""), escapeHtml(r.address||""), r.city||"", r.phone||"", r.email||"", social, r.discount_percent||0, r.status||"", fmtDate(r.created_at), r.visit_count];
-        return `<tr>${cells.map(c=>`<td style="padding:4px 6px;border-bottom:1px solid #1a1f35;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis">${c}</td>`).join("")}</tr>`;
+        const cells = [r.id, escapeHtml(r.name||""), escapeHtml(r.address||""), r.city||"", r.phone||"", r.email||"", lnk(r.instagram_url), lnk(r.tiktok_url), lnk(r.youtube_url), lnk(r.facebook_url), r.discount_percent||0, r.status||"", fmtDate(r.created_at), r.visit_count];
+        return `<tr>${cells.map(c=>`<td style="padding:4px 6px;border-bottom:1px solid #1a1f35;white-space:nowrap">${c}</td>`).join("")}</tr>`;
       }).join("");
       html += "</table>";
       return res.send(html);
