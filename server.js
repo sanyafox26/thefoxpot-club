@@ -107,11 +107,18 @@ const emailTransporter = nodemailer.createTransport({
   port: SMTP_PORT,
   secure: SMTP_PORT === 465,
   auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 async function sendEmail(to, subject, html) {
   if (!SMTP_HOST || !SMTP_USER) { console.warn("[EMAIL] SMTP not configured — skipping:", to, subject); return; }
   try {
-    await emailTransporter.sendMail({ from: SMTP_FROM, to, subject, html });
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("sendEmail timeout")), 20000));
+    await Promise.race([
+      emailTransporter.sendMail({ from: SMTP_FROM, to, subject, html }),
+      timeout,
+    ]);
     console.log("[EMAIL] sent to", to);
   } catch(e) {
     console.error("[EMAIL] failed:", e.message);
@@ -5134,9 +5141,9 @@ app.post("/api/register-venue", async (req, res) => {
       );
     }
 
-    // Send confirmation email
+    // Send confirmation email (non-blocking — respond to client immediately after)
     const confirmUrl = `${PUBLIC_URL}/confirm-venue?token=${emailToken}`;
-    await sendEmail(
+    sendEmail(
       email,
       "Potwierdź rejestrację lokalu w The FoxPot Club",
       `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
