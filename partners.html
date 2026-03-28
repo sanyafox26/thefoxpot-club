@@ -270,7 +270,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
 </section>
 
 <!-- FOUNDING PARTNER -->
-<section style="padding:80px 24px;background:var(--bg2)">
+<section id="pionier-lokal-section" style="padding:80px 24px;background:var(--bg2)">
   <div class="section-inner">
     <div class="founder-box">
       <div class="founder-num">50</div>
@@ -536,6 +536,27 @@ function showRegError(msg) {
   const el = document.getElementById('reg-error');
   el.textContent = msg; el.style.display = 'block';
 }
+
+// ── Pionier Lokal availability ──
+(async function checkPionierLokal() {
+  try {
+    const r = await fetch('/api/pionier-lokal-count');
+    const d = await r.json();
+    const section = document.getElementById('pionier-lokal-section');
+    const btn = document.getElementById('fp-btn');
+    const spotsEl = document.getElementById('fp-spots');
+    if (!d.available) {
+      if (section) {
+        section.innerHTML = '<p style="text-align:center;color:var(--muted);padding:40px 0;font-size:16px">50 miejsc Pionier Lokal zostało zajętych.</p>';
+      } else if (btn) {
+        btn.style.display = 'none';
+      }
+    } else {
+      const left = d.max - d.count;
+      if (spotsEl) spotsEl.textContent = `Zostało ${left} miejsc Pionier Lokal`;
+    }
+  } catch(e) { /* silent fail — button stays visible */ }
+})();
 </script>
 </body>
 </html>

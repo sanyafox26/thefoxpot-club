@@ -2626,6 +2626,20 @@ app.get("/api/places-autocomplete", async (req, res) => {
 });
 
 // GET /api/venues
+app.get("/api/pionier-lokal-count", async (req, res) => {
+  try {
+    const MAX = 50;
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM fp1_venues WHERE approved=TRUE AND status='active' AND pioneer_number IS NOT NULL`
+    );
+    const count = r.rows[0].count;
+    res.json({ count, max: MAX, available: count < MAX });
+  } catch(e) {
+    console.error("[pionier-lokal-count]", e);
+    res.status(500).json({ count: 0, max: 50, available: true });
+  }
+});
+
 app.get("/api/venues", async (req, res) => {
   try {
     let userId = null;
@@ -5085,28 +5099,12 @@ app.post("/api/register-venue", async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       return res.status(400).json({ error: "Podaj prawidłowy adres email." });
 
-    // Verify NIP via GUS API
-    const today = new Date().toISOString().split("T")[0];
-    let nipValid = false;
-    try {
-      const https = require("https");
-      const gusResult = await new Promise((resolve, reject) => {
-        const url = `https://wl-api.mf.gov.pl/api/search/nip/${nip}?date=${today}`;
-        const req2 = https.get(url, { headers: { "User-Agent": "FoxPot/1.0", "Accept": "application/json" } }, (r) => {
-          let data = "";
-          r.on("data", c => data += c);
-          r.on("end", () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-        });
-        req2.on("error", reject);
-        req2.setTimeout(8000, () => { req2.destroy(); reject(new Error("GUS timeout")); });
-      });
-      nipValid = !!(gusResult?.result?.subject);
-    } catch(e) {
-      console.error("[GUS] error:", e.message);
-      return res.status(500).json({ error: "Błąd weryfikacji NIP. Spróbuj ponownie za chwilę." });
-    }
-    if (!nipValid)
-      return res.status(400).json({ error: "Nie znaleziono firmy o podanym NIP. Sprawdź poprawność numeru." });
+    // Verify NIP via checksum algorithm (weights: 6,5,7,2,3,4,5,6,7)
+    const nipDigits = nip.split("").map(Number);
+    const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+    const checksum = weights.reduce((sum, w, i) => sum + w * nipDigits[i], 0) % 11;
+    if (checksum !== nipDigits[8])
+      return res.status(400).json({ error: "Nieprawidłowy NIP. Sprawdź poprawność numeru." });
 
     // Check for duplicate email
     const existing = await pool.query(`SELECT id, status FROM fp1_venues WHERE email=$1`, [email.toLowerCase()]);
