@@ -914,6 +914,7 @@ async function migrate() {
   await pool.query(`UPDATE fp1_foxes SET rating=21 WHERE username='Proba3' AND rating=24`).catch(()=>{});
 
   // V28: Venue self-registration
+  await ensureColumn("fp1_venues", "status",               "TEXT NOT NULL DEFAULT 'active'");
   await ensureColumn("fp1_venues", "owner_name",           "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues", "nip",                  "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("fp1_venues", "email",                "TEXT NOT NULL DEFAULT ''");
