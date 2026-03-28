@@ -21,10 +21,6 @@ jobs:
           echo "=== CSR CONTENT (upload this to Apple Developer Portal) ==="
           cat distribution.csr
 
-          echo ""
-          echo "=== PRIVATE KEY BASE64 (save this for the create-p12 workflow) ==="
-          cat distribution.key | base64 | tr -d '\n'
-
       - name: Upload CSR and key as artifacts
         uses: actions/upload-artifact@v4
         with:
