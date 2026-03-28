@@ -63,9 +63,19 @@ jobs:
             -scheme App \
             -archivePath App.xcarchive \
             -configuration Release \
+            -destination "generic/platform=iOS" \
+            -allowProvisioningUpdates \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            PROVISIONING_PROFILE_SPECIFIER="FoxPot App Store"
+            PROVISIONING_PROFILE_SPECIFIER="FoxPot App Store" \
+            SWIFT_OPTIMIZATION_LEVEL="-Onone" \
+            OTHER_SWIFT_FLAGS="" 2>&1 | tee xcodebuild.log; \
+          EXIT_CODE=${PIPESTATUS[0]}; \
+          if [ $EXIT_CODE -ne 0 ]; then \
+            echo "=== BUILD ERRORS ==="; \
+            grep -E "error:|warning:|BUILD FAILED" xcodebuild.log | tail -30; \
+            exit $EXIT_CODE; \
+          fi
 
       - name: Export IPA
         run: |
