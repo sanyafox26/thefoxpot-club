@@ -72,6 +72,7 @@ const ADMIN_TG_ID              = (process.env.ADMIN_TG_ID              || "").tr
 const ADMIN_TELEGRAM_CHAT_ID   = (process.env.ADMIN_TELEGRAM_CHAT_ID   || "").trim();
 const SMTP_HOST      = (process.env.SMTP_HOST      || "").trim();
 const SMTP_PORT      = parseInt(process.env.SMTP_PORT || "587");
+const SMTP_SECURE    = process.env.SMTP_SECURE === "true" || SMTP_PORT === 465;
 const SMTP_USER      = (process.env.SMTP_USER      || "").trim();
 const SMTP_PASS      = (process.env.SMTP_PASS      || "").trim();
 const SMTP_FROM      = (process.env.SMTP_FROM      || "The FoxPot Club <kontakt@thefoxpot.club>").trim();
@@ -105,7 +106,7 @@ async function dbNow() {
 const emailTransporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
-  secure: SMTP_PORT === 465,
+  secure: SMTP_SECURE,
   auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
   connectionTimeout: 10000,
   greetingTimeout: 10000,
