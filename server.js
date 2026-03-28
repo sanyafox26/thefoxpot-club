@@ -6810,7 +6810,7 @@ app.get("/admin/lokale", requireAdminAuth, async (req, res) => {
   try {
     const rows = await pool.query(`
       SELECT id, name, address, city, phone, email,
-             instagram, tiktok, youtube, facebook, discount_percent,
+             instagram_url, tiktok_url, youtube_url, facebook_url, discount_percent,
              slug, status, created_at,
              (SELECT COUNT(*)::int FROM fp1_counted_visits WHERE venue_id = fp1_venues.id) AS visit_count
       FROM fp1_venues
@@ -6828,7 +6828,7 @@ app.get("/admin/lokale", requireAdminAuth, async (req, res) => {
       let html = `<div style="font-size:11px;color:#888;margin-bottom:8px">${rows.rows.length} lokali</div>`;
       html += `<table style="width:100%;border-collapse:collapse;font-size:11px"><tr style="background:#1a1f35;position:sticky;top:0">${cols.map(c=>`<th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#aaa">${c}</th>`).join("")}</tr>`;
       html += rows.rows.map(r => {
-        const social = [r.instagram&&`IG`,r.tiktok&&`TT`,r.youtube&&`YT`,r.facebook&&`FB`].filter(Boolean).join(" ");
+        const social = [r.instagram_url&&`IG`,r.tiktok_url&&`TT`,r.youtube_url&&`YT`,r.facebook_url&&`FB`].filter(Boolean).join(" ");
         const cells = [r.id, escapeHtml(r.name||""), escapeHtml(r.address||""), r.city||"", r.phone||"", r.email||"", social, r.discount_percent||0, r.status||"", fmtDate(r.created_at), r.visit_count];
         return `<tr>${cells.map(c=>`<td style="padding:4px 6px;border-bottom:1px solid #1a1f35;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis">${c}</td>`).join("")}</tr>`;
       }).join("");
@@ -6838,7 +6838,7 @@ app.get("/admin/lokale", requireAdminAuth, async (req, res) => {
 
     // CSV
     const header = "id,nazwa,adres,miasto,telefon,email,instagram,tiktok,youtube,facebook,znizka,slug,status,data,wizyty\n";
-    const csvRows = rows.rows.map(r => [r.id, esc_csv(r.name), esc_csv(r.address), r.city||"", r.phone||"", r.email||"", r.instagram||"", r.tiktok||"", r.youtube||"", r.facebook||"", r.discount_percent||0, r.slug||"", r.status||"", fmtDate(r.created_at), r.visit_count].join(",")).join("\n");
+    const csvRows = rows.rows.map(r => [r.id, esc_csv(r.name), esc_csv(r.address), r.city||"", r.phone||"", r.email||"", r.instagram_url||"", r.tiktok_url||"", r.youtube_url||"", r.facebook_url||"", r.discount_percent||0, r.slug||"", r.status||"", fmtDate(r.created_at), r.visit_count].join(",")).join("\n");
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="foxpot_lokale_${new Date().toISOString().slice(0,10)}.csv"`);
     res.send("\uFEFF" + header + csvRows);
