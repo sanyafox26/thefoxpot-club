@@ -20,10 +20,10 @@ jobs:
       - name: Create p12
         run: |
           # Decode certificate
-          echo "${{ github.event.inputs.certificate_base64 }}" | base64 --decode > distribution.cer
+          echo "${{ github.event.inputs.certificate_base64 }}" | tr -d '\n' | base64 --decode > distribution.cer
 
           # Decode private key
-          echo "${{ github.event.inputs.private_key_base64 }}" | base64 --decode > distribution.key
+          echo "${{ github.event.inputs.private_key_base64 }}" | tr -d '\n' | base64 --decode > distribution.key
 
           # Convert .cer to .pem
           openssl x509 -in distribution.cer -inform DER -out distribution.pem -outform PEM
@@ -37,7 +37,7 @@ jobs:
 
           echo ""
           echo "=== APPLE_CERTIFICATE (base64) — paste this as GitHub secret ==="
-          base64 distribution.p12
+          base64 distribution.p12 | tr -d '\n'
 
       - name: Upload p12
         uses: actions/upload-artifact@v4

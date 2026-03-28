@@ -36,7 +36,7 @@ jobs:
 
           echo ""
           echo "=== PRIVATE KEY BASE64 (save this for the create-p12 workflow) ==="
-          base64 distribution.key
+          base64 distribution.key | tr -d '\n'
 
       - name: Upload CSR and key as artifacts
         uses: actions/upload-artifact@v4
