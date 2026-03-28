@@ -123,6 +123,12 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
 .footer-copy{font-size:11px;color:rgba(138,128,112,.4)}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+/* REGISTRATION FORM */
+.form-group{margin-bottom:20px}
+.form-label{display:block;font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text)}
+.form-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:12px 16px;font-family:var(--font);font-size:14px;color:var(--text);outline:none;transition:border-color .2s;-webkit-appearance:none}
+.form-input:focus{border-color:rgba(201,168,76,.5)}
+.form-input::placeholder{color:var(--muted)}
 @media(max-width:768px){
   .benefits-grid,.safety-grid{grid-template-columns:1fr}
   .steps-grid{grid-template-columns:1fr}
@@ -151,7 +157,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
   <p class="hero-sub" id="hero-sub">Ustalasz min. 10% zniżki dla członków → proste potwierdzanie wizyty w panelu.<br><strong style="color:var(--text)">Bez prowizji. Bez integracji.</strong></p>
   <p class="hero-exit" id="hero-exit">Możesz zakończyć współpracę w dowolnym momencie — bez konsekwencji finansowych.</p>
   <div class="hero-btns">
-    <a class="btn-primary" href="https://t.me/thefoxpot_club_bot" target="_blank" id="btn-join">✈️ Zostań partnerem</a>
+    <a class="btn-primary" href="#rejestracja" id="btn-join">Zostań partnerem →</a>
     <a class="btn-secondary" href="#korzysci" id="btn-more">Dowiedz się więcej ↓</a>
   </div>
 </section>
@@ -279,31 +285,52 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
         <span class="founder-perk" id="fp-b5">🎯 Status Pionier Lokal</span>
       </div>
       <p class="founder-promo" id="fp-promo">Pierwsze 50 lokali otrzymuje <strong style="color:var(--gold)">możliwość bezpłatnej promocji</strong> na kanałach The FoxPot Club (TikTok, Instagram, YouTube, Facebook).</p>
-      <a class="btn-primary" href="https://t.me/thefoxpot_club_bot" target="_blank" style="margin:0 auto;display:inline-flex" id="fp-btn">✈️ Zarezerwuj miejsce Pionier Lokal</a>
+      <a class="btn-primary" href="#rejestracja" style="margin:0 auto;display:inline-flex" id="fp-btn">Zarezerwuj miejsce Pionier Lokal →</a>
     </div>
   </div>
 </section>
 
-<!-- CTA — double with badges (E6: Bez prowizji, Bez integracji, Bez ryzyka x2) -->
-<section style="padding:80px 24px">
-  <div class="cta-box">
-    <h2 class="cta-title" id="cta-title">Gotowy dołączyć?</h2>
-    <p class="cta-desc" id="cta-desc">Nie podpisujesz umowy na start. Konfiguracja zajmuje jeden dzień.<br>System jest gotowy do przyjmowania wizyt od startu.</p>
-    <div class="cta-badges">
-      <span class="cta-badge" id="cb1">Bez prowizji</span>
-      <span class="cta-badge" id="cb2">Bez integracji</span>
-      <span class="cta-badge" id="cb3">Bez ryzyka</span>
+<!-- REGISTRATION FORM -->
+<section id="rejestracja" style="padding:80px 24px">
+  <div class="section-inner" style="max-width:600px;margin:0 auto">
+    <div class="section-label" style="justify-content:center">📝 Zgłoszenie lokalu</div>
+    <h2 class="section-title" style="text-align:center" id="reg-title">Dołącz do FoxPot Club</h2>
+    <p class="section-desc" style="text-align:center;margin:0 auto 40px" id="reg-subtitle">Wypełnij formularz — zweryfikujemy NIP i wyślemy link potwierdzający na email.</p>
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);padding:36px">
+      <form id="reg-form" onsubmit="submitRegForm(event)" novalidate>
+        <div class="form-group">
+          <label class="form-label">Nazwa lokalu</label>
+          <input type="text" id="reg-name" class="form-input" placeholder="np. Bistro Złoty Fox" autocomplete="organization" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">NIP <span style="color:var(--muted);font-weight:400">(9 cyfr, bez myślników)</span></label>
+          <input type="text" id="reg-nip" class="form-input" placeholder="123456789" maxlength="9" inputmode="numeric" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Adres lokalu</label>
+          <input type="text" id="reg-address" class="form-input" placeholder="ul. Przykładowa 1, Warszawa" autocomplete="street-address" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email kontaktowy</label>
+          <input type="email" id="reg-email" class="form-input" placeholder="kontakt@twojlokal.pl" autocomplete="email" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Imię i nazwisko właściciela</label>
+          <input type="text" id="reg-owner" class="form-input" placeholder="Jan Kowalski" autocomplete="name" required/>
+        </div>
+        <label style="display:flex;align-items:flex-start;gap:10px;margin:20px 0 4px;cursor:pointer">
+          <input type="checkbox" id="reg-consent" style="margin-top:3px;accent-color:var(--gold);width:18px;height:18px;flex-shrink:0;cursor:pointer"/>
+          <span style="font-size:13px;color:var(--muted);line-height:1.6">Zapoznałem się i akceptuję <a href="/rules" target="_blank" style="color:var(--gold);text-decoration:underline">Regulamin</a> oraz <a href="/privacy" target="_blank" style="color:var(--gold);text-decoration:underline">Politykę Prywatności</a>.</span>
+        </label>
+        <div id="reg-error" style="display:none;background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.3);border-radius:10px;padding:12px 16px;font-size:13px;color:#e74c3c;margin:16px 0 4px"></div>
+        <button type="submit" id="reg-submit" class="btn-primary" style="width:100%;justify-content:center;margin-top:20px">Wyślij zgłoszenie</button>
+      </form>
+      <div id="reg-success" style="display:none;text-align:center;padding:16px 0">
+        <div style="font-size:40px;margin-bottom:16px">📬</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:10px">Sprawdź swoją skrzynkę!</div>
+        <div id="reg-success-text" style="font-size:14px;color:var(--muted);line-height:1.8"></div>
+      </div>
     </div>
-    <label style="display:flex;align-items:flex-start;gap:10px;max-width:500px;margin:0 auto 24px;text-align:left;cursor:pointer">
-      <input type="checkbox" id="consent-check" style="margin-top:3px;accent-color:var(--gold);width:18px;height:18px;flex-shrink:0;cursor:pointer"/>
-      <span style="font-size:13px;color:var(--muted);line-height:1.6" id="consent-text">Zapoznałem się i akceptuję <a href="/rules" target="_blank" style="color:var(--gold);text-decoration:underline">Regulamin</a> oraz <a href="/privacy" target="_blank" style="color:var(--gold);text-decoration:underline">Politykę Prywatności</a>.</span>
-    </label>
-    <div class="cta-btns">
-      <a class="btn-primary" href="https://t.me/thefoxpot_club_bot" target="_blank" id="cta-btn1">✈️ Zostań partnerem</a>
-      <a class="btn-secondary" href="https://t.me/thefoxpot_club_bot" target="_blank" id="cta-btn2" style="font-size:14px;padding:12px 28px">💬 Zadaj pytanie (2 min)</a>
-    </div>
-    <p class="cta-small" id="cta-small">Odpowiadamy zwykle tego samego dnia.</p>
-    <p class="cta-small" id="cta-config" style="margin-top:4px">Konfiguracja: ~1 dzień • Bez zobowiązań na start</p>
   </div>
 </section>
 
@@ -348,7 +375,7 @@ const T = {
     "hero-title": "Zostań partnerem<br><span class='gold'>FoxPot Club</span>",
     "hero-sub": "Ustalasz min. 10% zniżki dla członków → proste potwierdzanie wizyty w panelu.<br><strong style='color:var(--text)'>Bez prowizji. Bez integracji.</strong>",
     "hero-exit": "Możesz zakończyć współpracę w dowolnym momencie — bez konsekwencji finansowych.",
-    "btn-join": "✈️ Zostań partnerem", "btn-more": "Dowiedz się więcej ↓",
+    "btn-join": "Zostań partnerem →", "btn-more": "Dowiedz się więcej ↓",
 
     "ben-label": "💰 Korzyści", "ben-title": "Co zyskujesz?",
     "ben-desc": "System, który realnie przyprowadza gości — i daje Ci dane, by podejmować lepsze decyzje.",
@@ -383,7 +410,7 @@ const T = {
     "fp-desc": "Status <strong style='color:var(--gold)'>Pionier Lokal</strong> aktywny w czasie współpracy. Dodatkowa widoczność i wyróżnienie w systemie.",
     "fp-b1": "👑 Odznaka Pionier Lokal", "fp-b2": "📣 Promocja na kanałach FoxPot", "fp-b3": "🔢 Numer seryjny #1–50", "fp-b4": "⚡ Priorytetowe wsparcie", "fp-b5": "🎯 Status Pionier Lokal",
     "fp-promo": "Pierwsze 50 lokali otrzymuje <strong style='color:var(--gold)'>możliwość bezpłatnej promocji</strong> na kanałach The FoxPot Club (TikTok, Instagram, YouTube, Facebook).",
-    "fp-btn": "✈️ Zarezerwuj miejsce Pionier Lokal",
+    "fp-btn": "Zarezerwuj miejsce Pionier Lokal →",
 
     "cta-title": "Gotowy dołączyć?",
     "cta-desc": "Nie podpisujesz umowy na start. Konfiguracja zajmuje jeden dzień.<br>System jest gotowy do przyjmowania wizyt od startu.",
@@ -400,7 +427,7 @@ const T = {
     "hero-title": "Become a partner of<br><span class='gold'>FoxPot Club</span>",
     "hero-sub": "Set min. 10% discount for members → simple visit confirmation in your panel.<br><strong style='color:var(--text)'>No commissions. No integration.</strong>",
     "hero-exit": "You can end the partnership at any time — no financial consequences.",
-    "btn-join": "✈️ Become a partner", "btn-more": "Learn more ↓",
+    "btn-join": "Become a partner →", "btn-more": "Learn more ↓",
 
     "ben-label": "💰 Benefits", "ben-title": "What do you get?",
     "ben-desc": "A system that actually brings guests — and gives you data to make better decisions.",
@@ -434,7 +461,7 @@ const T = {
     "fp-desc": "<strong style='color:var(--gold)'>Pionier Lokal</strong> status active during partnership. Extra visibility and distinction in the system.",
     "fp-b1": "👑 Pionier Lokal Badge", "fp-b2": "📣 Promotion on FoxPot channels", "fp-b3": "🔢 Serial number #1–50", "fp-b4": "⚡ Priority support", "fp-b5": "🎯 Pionier Lokal Status",
     "fp-promo": "The first 50 venues receive <strong style='color:var(--gold)'>free promotion</strong> on The FoxPot Club channels (TikTok, Instagram, YouTube, Facebook).",
-    "fp-btn": "✈️ Secure your Pionier Lokal spot",
+    "fp-btn": "Secure your Pionier Lokal spot →",
 
     "cta-title": "Ready to join?",
     "cta-desc": "No contracts required. Setup takes one day.<br>The system is ready to receive visits from day one.",
@@ -470,22 +497,44 @@ const obs = new IntersectionObserver(e => e.forEach(x => {
   if(x.isIntersecting) x.target.classList.add('visible');
 }), {threshold:0.12});
 document.querySelectorAll('.benefit-card, .step, .safety-card').forEach(el => obs.observe(el));
-  // Consent checkbox — block CTA buttons until checked
-const consentBox = document.getElementById('consent-check');
-const ctaBtn1 = document.getElementById('cta-btn1');
-const ctaBtn2 = document.getElementById('cta-btn2');
-function updateCtaState() {
-  const ok = consentBox.checked;
-  [ctaBtn1, ctaBtn2].forEach(btn => {
-    if (btn) {
-      btn.style.opacity = ok ? '1' : '0.4';
-      btn.style.pointerEvents = ok ? 'auto' : 'none';
+
+// Registration form
+async function submitRegForm(e) {
+  e.preventDefault();
+  const nip = (document.getElementById('reg-nip').value||'').replace(/\D/g,'');
+  if (!/^\d{9}$/.test(nip)) return showRegError('NIP musi składać się dokładnie z 9 cyfr.');
+  if (!document.getElementById('reg-consent').checked) return showRegError('Zaakceptuj Regulamin i Politykę Prywatności.');
+  const name     = (document.getElementById('reg-name').value||'').trim();
+  const address  = (document.getElementById('reg-address').value||'').trim();
+  const email    = (document.getElementById('reg-email').value||'').trim();
+  const ownerName= (document.getElementById('reg-owner').value||'').trim();
+  if (!name||!address||!email||!ownerName) return showRegError('Wypełnij wszystkie pola.');
+  const btn = document.getElementById('reg-submit');
+  btn.disabled = true; btn.textContent = 'Wysyłanie...';
+  document.getElementById('reg-error').style.display = 'none';
+  try {
+    const r = await fetch('/api/register-venue', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, nip, address, email, owner_name: ownerName})
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      showRegError(data.error || 'Wystąpił błąd. Spróbuj ponownie.');
+    } else {
+      document.getElementById('reg-form').style.display = 'none';
+      document.getElementById('reg-success').style.display = 'block';
+      document.getElementById('reg-success-text').innerHTML =
+        `Wysłaliśmy email na <strong style="color:var(--text)">${email}</strong>.<br>Kliknij link potwierdzający, aby dokończyć rejestrację.<br><br><span style="font-size:12px;color:var(--muted)">Nie widzisz wiadomości? Sprawdź folder SPAM.</span>`;
     }
-  });
+  } catch(err) {
+    showRegError('Błąd połączenia. Spróbuj ponownie.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Wyślij zgłoszenie';
+  }
 }
-if (consentBox) {
-  consentBox.addEventListener('change', updateCtaState);
-  updateCtaState();
+function showRegError(msg) {
+  const el = document.getElementById('reg-error');
+  el.textContent = msg; el.style.display = 'block';
 }
 </script>
 </body>

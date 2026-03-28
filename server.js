@@ -39,6 +39,7 @@ const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
 const { setupSupport, migrateSupport } = require("./fox_support");
 const jwt      = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -67,7 +68,13 @@ const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || require("crypto").randomBy
 const COOKIE_SECRET  = (process.env.COOKIE_SECRET  || require("crypto").randomBytes(32).toString("hex")).trim();
 const ADMIN_SECRET   = (process.env.ADMIN_SECRET   || "").trim();
 const JWT_SECRET     = (process.env.JWT_SECRET     || COOKIE_SECRET).trim();
-const ADMIN_TG_ID    = (process.env.ADMIN_TG_ID    || "").trim();
+const ADMIN_TG_ID              = (process.env.ADMIN_TG_ID              || "").trim();
+const ADMIN_TELEGRAM_CHAT_ID   = (process.env.ADMIN_TELEGRAM_CHAT_ID   || "").trim();
+const SMTP_HOST      = (process.env.SMTP_HOST      || "").trim();
+const SMTP_PORT      = parseInt(process.env.SMTP_PORT || "587");
+const SMTP_USER      = (process.env.SMTP_USER      || "").trim();
+const SMTP_PASS      = (process.env.SMTP_PASS      || "").trim();
+const SMTP_FROM      = (process.env.SMTP_FROM      || "The FoxPot Club <kontakt@thefoxpot.club>").trim();
 const PORT           = process.env.PORT || 8080;
 
 if (!DATABASE_URL)            console.error("❌ DATABASE_URL missing");
@@ -90,6 +97,25 @@ const pool = new Pool({
 async function dbNow() {
   const r = await pool.query("SELECT NOW() AS now");
   return r.rows[0].now;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EMAIL (nodemailer)
+═══════════════════════════════════════════════════════════════ */
+const emailTransporter = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_PORT === 465,
+  auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
+});
+async function sendEmail(to, subject, html) {
+  if (!SMTP_HOST || !SMTP_USER) { console.warn("[EMAIL] SMTP not configured — skipping:", to, subject); return; }
+  try {
+    await emailTransporter.sendMail({ from: SMTP_FROM, to, subject, html });
+    console.log("[EMAIL] sent to", to);
+  } catch(e) {
+    console.error("[EMAIL] failed:", e.message);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -887,7 +913,16 @@ async function migrate() {
   // One-time fix: Proba3 got inflated rating from old INSERT (rating=1 base instead of 0)
   await pool.query(`UPDATE fp1_foxes SET rating=21 WHERE username='Proba3' AND rating=24`).catch(()=>{});
 
-  console.log("✅ Migrations OK (V26 + Support)");
+  // V28: Venue self-registration
+  await ensureColumn("fp1_venues", "owner_name",           "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues", "nip",                  "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues", "email",                "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("fp1_venues", "email_token",          "TEXT");
+  await ensureColumn("fp1_venues", "email_token_expires",  "TIMESTAMPTZ");
+  await ensureColumn("fp1_venues", "password_reset_token", "TEXT");
+  await ensureColumn("fp1_venues", "password_reset_expires","TIMESTAMPTZ");
+
+  console.log("✅ Migrations OK (V28 + Support)");
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -5033,6 +5068,97 @@ app.get("/api/top", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   VENUE SELF-REGISTRATION
+═══════════════════════════════════════════════════════════════ */
+app.post("/api/register-venue", async (req, res) => {
+  try {
+    const { name, nip, address, email, owner_name } = req.body;
+    if (!name || !nip || !address || !email || !owner_name)
+      return res.status(400).json({ error: "Wszystkie pola są wymagane." });
+    if (!/^\d{9}$/.test(nip))
+      return res.status(400).json({ error: "NIP musi składać się dokładnie z 9 cyfr." });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      return res.status(400).json({ error: "Podaj prawidłowy adres email." });
+
+    // Verify NIP via GUS API
+    const today = new Date().toISOString().split("T")[0];
+    let nipValid = false;
+    try {
+      const https = require("https");
+      const gusResult = await new Promise((resolve, reject) => {
+        const url = `https://wl-api.mf.gov.pl/api/search/nip/${nip}?date=${today}`;
+        const req2 = https.get(url, { headers: { "User-Agent": "FoxPot/1.0", "Accept": "application/json" } }, (r) => {
+          let data = "";
+          r.on("data", c => data += c);
+          r.on("end", () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+        });
+        req2.on("error", reject);
+        req2.setTimeout(8000, () => { req2.destroy(); reject(new Error("GUS timeout")); });
+      });
+      nipValid = !!(gusResult?.result?.subject);
+    } catch(e) {
+      console.error("[GUS] error:", e.message);
+      return res.status(500).json({ error: "Błąd weryfikacji NIP. Spróbuj ponownie za chwilę." });
+    }
+    if (!nipValid)
+      return res.status(400).json({ error: "Nie znaleziono firmy o podanym NIP. Sprawdź poprawność numeru." });
+
+    // Check for duplicate email
+    const existing = await pool.query(`SELECT id, status FROM fp1_venues WHERE email=$1`, [email.toLowerCase()]);
+    if (existing.rows.length > 0) {
+      const s = existing.rows[0].status;
+      if (s === "active") return res.status(409).json({ error: "Ten email jest już zarejestrowany w systemie." });
+      if (s === "pending_admin") return res.status(409).json({ error: "Zgłoszenie z tym emailem czeka już na weryfikację administratora." });
+    }
+
+    // Generate email_token (UUID)
+    const emailToken = crypto.randomUUID();
+    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    if (existing.rows.length > 0 && existing.rows[0].status === "pending_email") {
+      // Re-send confirmation email (refresh token)
+      await pool.query(
+        `UPDATE fp1_venues SET name=$1, nip=$2, address=$3, owner_name=$4, email_token=$5, email_token_expires=$6 WHERE id=$7`,
+        [name.trim(), nip, address.trim(), owner_name.trim(), emailToken, tokenExpires, existing.rows[0].id]
+      );
+    } else {
+      // New registration
+      await pool.query(
+        `INSERT INTO fp1_venues(name, nip, address, email, owner_name, status, approved, email_token, email_token_expires)
+         VALUES($1,$2,$3,$4,$5,'pending_email',FALSE,$6,$7)`,
+        [name.trim(), nip, address.trim(), email.toLowerCase(), owner_name.trim(), emailToken, tokenExpires]
+      );
+    }
+
+    // Send confirmation email
+    const confirmUrl = `${PUBLIC_URL}/confirm-venue?token=${emailToken}`;
+    await sendEmail(
+      email,
+      "Potwierdź rejestrację lokalu w The FoxPot Club",
+      `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+        <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
+        <h2 style="color:#c9a84c;margin-bottom:8px">Dziękujemy za zgłoszenie!</h2>
+        <p>Dziękujemy za zgłoszenie lokalu <strong>${escapeHtml(name)}</strong> do The FoxPot Club!</p>
+        <p>Kliknij poniższy link, aby potwierdzić swój adres email:</p>
+        <p style="margin:24px 0">
+          <a href="${confirmUrl}" style="background:#c9a84c;color:#080b12;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
+            ✅ Potwierdź email
+          </a>
+        </p>
+        <p style="color:#888;font-size:13px">Link ważny 24 godziny.<br>Jeśli to nie Ty — zignoruj tę wiadomość.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#aaa;font-size:12px">The FoxPot Club · kontakt@thefoxpot.club</p>
+      </body></html>`
+    );
+
+    return res.json({ ok: true });
+  } catch(e) {
+    console.error("[register-venue]", e);
+    res.status(500).json({ error: "Błąd serwera. Spróbuj ponownie." });
   }
 });
 
