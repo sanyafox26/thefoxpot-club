@@ -19,13 +19,13 @@ jobs:
 
       - name: Build web assets
         run: |
+          rm -rf public/*
           mkdir -p public/icons
           cp webapp.html public/index.html
           cp manifest.json public/ || true
           cp sw.js public/ || true
           cp offline.html public/ || true
           cp icons/*.png public/icons/ 2>/dev/null || true
-          echo "public/index.html exists: $(ls -la public/index.html)"
 
       - name: Sync Capacitor iOS
         run: npx cap sync ios
