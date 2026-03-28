@@ -7,33 +7,27 @@ jobs:
   generate:
     runs-on: macos-latest
     steps:
-      - name: Generate private key and CSR
+      - name: Generate private key
+        run: openssl genrsa -out distribution.key 2048
+
+      - name: Write OpenSSL config
         run: |
-          openssl genrsa -out distribution.key 2048
+          echo "[req]" > csr.conf
+          echo "default_bits=2048" >> csr.conf
+          echo "prompt=no" >> csr.conf
+          echo "default_md=sha256" >> csr.conf
+          echo "distinguished_name=dn" >> csr.conf
+          echo "[dn]" >> csr.conf
+          echo "C=PL" >> csr.conf
+          echo "CN=The FoxPot Club" >> csr.conf
+          echo "emailAddress=kontakt@thefoxpot.club" >> csr.conf
 
-          python3 -c "
-          config = '''[req]
-default_bits=2048
-prompt=no
-default_md=sha256
-distinguished_name=dn
-[dn]
-C=PL
-CN=The FoxPot Club
-emailAddress=kontakt@thefoxpot.club
-'''
-          open('csr.conf', 'w').write(config)
-          "
-
-          openssl req -new \
-            -key distribution.key \
-            -out distribution.csr \
-            -config csr.conf
-
-          echo "=== CSR CONTENT ==="
+      - name: Generate CSR
+        run: |
+          openssl req -new -key distribution.key -out distribution.csr -config csr.conf
           cat distribution.csr
 
-      - name: Upload CSR and key as artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: apple-csr-and-key
