@@ -5253,6 +5253,9 @@ app.get("/panel", (req, res) => {
         <input name="pin" type="password" maxlength="6" required placeholder="••••••"/>
         <button type="submit" style="width:100%;margin-top:12px">Zaloguj →</button>
       </form>
+      <p style="text-align:center;margin-top:16px;font-size:13px">
+        <a href="/panel/forgot-password" style="color:#c9a84c;text-decoration:none">Zapomniałem hasła</a>
+      </p>
     </div>`));
 });
 
@@ -5750,6 +5753,37 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
         <button type="submit" style="margin-top:12px;width:100%">💾 Zapisz ustawienia</button>
       </form>
     </div>
+    <div class="card">
+      <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;text-align:left">🔑 Zmień hasło ▾</button>
+      <div style="display:none;margin-top:12px">
+        <div id="pw-msg" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+        <label>Obecne hasło</label>
+        <input id="pw-current" type="password" placeholder="Obecne hasło" style="width:100%"/>
+        <label style="margin-top:8px">Nowe hasło <span style="color:#888;font-weight:400">(min. 8 znaków)</span></label>
+        <input id="pw-new" type="password" placeholder="Nowe hasło" style="width:100%"/>
+        <label style="margin-top:8px">Potwierdź nowe hasło</label>
+        <input id="pw-confirm" type="password" placeholder="Potwierdź nowe hasło" style="width:100%"/>
+        <button onclick="changeVenuePassword()" style="margin-top:12px;width:100%">💾 Zapisz hasło</button>
+      </div>
+    </div>
+    <script>
+    async function changeVenuePassword(){
+      const cur=document.getElementById('pw-current').value;
+      const nw=document.getElementById('pw-new').value;
+      const con=document.getElementById('pw-confirm').value;
+      const msg=document.getElementById('pw-msg');
+      const show=(txt,ok)=>{msg.textContent=txt;msg.style.display='block';msg.style.background=ok?'rgba(46,204,113,.15)':'rgba(231,76,60,.15)';msg.style.color=ok?'#2ecc71':'#e74c3c';};
+      if(!cur||!nw||!con){show('Wypełnij wszystkie pola.',false);return;}
+      if(nw.length<8){show('Nowe hasło musi mieć min. 8 znaków.',false);return;}
+      if(nw!==con){show('Hasła nie są zgodne.',false);return;}
+      try{
+        const r=await fetch('/api/venue/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+        const d=await r.json();
+        if(d.ok){show('Hasło zostało zmienione.',true);document.getElementById('pw-current').value='';document.getElementById('pw-new').value='';document.getElementById('pw-confirm').value='';}
+        else show(d.error||'Błąd.',false);
+      }catch{show('Błąd sieci.',false);}
+    }
+    </script>
     `));
   } catch (e) {
     console.error("DASHBOARD ERROR:", e);
@@ -6017,6 +6051,187 @@ app.post("/panel/settings", requirePanelAuth, async (req, res) => {
     res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Ustawienia zapisane ✅")}`);
   } catch (e) {
     res.redirect(`/panel/dashboard?err=${encodeURIComponent("Błąd: "+String(e?.message||e).slice(0,120))}`);
+  }
+});
+
+// ── 4a: Change password (logged-in venue) ──
+app.post("/api/venue/change-password", requirePanelAuth, async (req, res) => {
+  try {
+    const venueId = Number(req.panel.venue_id);
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password)
+      return res.status(400).json({ error: "Wypełnij wszystkie pola." });
+    if (new_password.length < 8)
+      return res.status(400).json({ error: "Nowe hasło musi mieć min. 8 znaków." });
+
+    const vr = await pool.query(`SELECT pin_hash, pin_salt FROM fp1_venues WHERE id=$1`, [venueId]);
+    if (vr.rowCount === 0) return res.status(404).json({ error: "Lokal nie znaleziony." });
+    const venue = vr.rows[0];
+
+    if (!venue.pin_salt || pinHash(current_password, venue.pin_salt) !== venue.pin_hash)
+      return res.status(400).json({ error: "Obecne hasło jest nieprawidłowe." });
+
+    const newSalt = crypto.randomBytes(16).toString("hex");
+    const newHash = pinHash(new_password, newSalt);
+    await pool.query(`UPDATE fp1_venues SET pin_hash=$1, pin_salt=$2 WHERE id=$3`, [newHash, newSalt, venueId]);
+    res.json({ ok: true });
+  } catch(e) {
+    console.error("[change-password]", e);
+    res.status(500).json({ error: "Błąd serwera." });
+  }
+});
+
+// ── 4b: Forgot password — show form ──
+app.get("/panel/forgot-password", (req, res) => {
+  const ok = req.query.ok ? `<div style="padding:10px 14px;border-radius:8px;background:rgba(46,204,113,.15);color:#2ecc71;font-size:13px;margin-bottom:12px">${escapeHtml(req.query.ok)}</div>` : "";
+  const err = req.query.err ? `<div style="padding:10px 14px;border-radius:8px;background:rgba(231,76,60,.15);color:#e74c3c;font-size:13px;margin-bottom:12px">${escapeHtml(req.query.err)}</div>` : "";
+  res.send(pageShell("Reset hasła — Panel", `
+    <div class="card" style="max-width:400px;margin:60px auto">
+      <h2 style="margin-bottom:4px">🔑 Reset hasła</h2>
+      <p style="color:#888;font-size:13px;margin-bottom:20px">Podaj email przypisany do lokalu — wyślemy link do zmiany hasła.</p>
+      ${ok}${err}
+      <form method="POST" action="/api/venue/forgot-password">
+        <label>Email lokalu</label>
+        <input name="email" type="email" required placeholder="email@lokal.pl"/>
+        <button type="submit" style="width:100%;margin-top:12px">Wyślij link →</button>
+      </form>
+      <p style="text-align:center;margin-top:16px;font-size:13px">
+        <a href="/panel" style="color:#c9a84c;text-decoration:none">← Wróć do logowania</a>
+      </p>
+    </div>`));
+});
+
+// ── 4b: Forgot password — send reset email ──
+app.post("/api/venue/forgot-password", async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  if (!email) return res.redirect(`/panel/forgot-password?err=${encodeURIComponent("Podaj email.")}`);
+  try {
+    const vr = await pool.query(
+      `SELECT id, name, owner_name FROM fp1_venues WHERE email=$1 AND status='active' LIMIT 1`,
+      [email]
+    );
+    // Always show success (security: don't leak whether email exists)
+    if (vr.rowCount > 0) {
+      const venue = vr.rows[0];
+      const resetToken = crypto.randomUUID();
+      const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await pool.query(
+        `UPDATE fp1_venues SET password_reset_token=$1, password_reset_expires=$2 WHERE id=$3`,
+        [resetToken, resetExpires, venue.id]
+      );
+      const resetUrl = `${PUBLIC_URL}/reset-venue-password?token=${resetToken}`;
+      await sendEmail(
+        email,
+        "Reset hasła — The FoxPot Club",
+        `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
+          <h2 style="color:#c9a84c;margin-bottom:8px">Reset hasła</h2>
+          <p>Witaj ${escapeHtml(venue.owner_name)},</p>
+          <p>Otrzymaliśmy prośbę o reset hasła do panelu lokalu <strong>${escapeHtml(venue.name)}</strong>.</p>
+          <p>Kliknij poniższy link, aby ustawić nowe hasło:</p>
+          <p style="margin:24px 0">
+            <a href="${resetUrl}" style="background:#c9a84c;color:#080b12;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
+              🔑 Resetuj hasło
+            </a>
+          </p>
+          <p style="color:#888;font-size:13px">Link ważny 1 godzinę.<br>Jeśli to nie Ty — zignoruj tę wiadomość.</p>
+          <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+          <p style="color:#aaa;font-size:12px">The FoxPot Club · kontakt@thefoxpot.club</p>
+        </body></html>`
+      );
+    }
+    res.redirect(`/panel/forgot-password?ok=${encodeURIComponent("Jeśli ten email istnieje w systemie, wysłaliśmy link do resetu hasła.")}`);
+  } catch(e) {
+    console.error("[forgot-password]", e);
+    res.redirect(`/panel/forgot-password?err=${encodeURIComponent("Błąd serwera. Spróbuj ponownie.")}`);
+  }
+});
+
+// ── 4b: Reset password — show new password form ──
+app.get("/reset-venue-password", async (req, res) => {
+  const { token } = req.query;
+  const errPage = (msg) => res.status(400).send(pageShell("Błąd resetu hasła", `
+    <div class="card" style="max-width:480px;margin:80px auto;text-align:center">
+      <div style="font-size:48px;margin-bottom:16px">❌</div>
+      <h2 style="color:#c9a84c;margin-bottom:12px">Błąd resetu hasła</h2>
+      <p style="color:#ccc">${escapeHtml(msg)}</p>
+      <a href="/panel/forgot-password" style="display:inline-block;margin-top:24px;color:#c9a84c">← Wyślij nowy link</a>
+    </div>`));
+
+  if (!token) return errPage("Brakuje tokenu.");
+  try {
+    const vr = await pool.query(
+      `SELECT id FROM fp1_venues WHERE password_reset_token=$1 AND status='active' LIMIT 1`,
+      [token]
+    );
+    if (vr.rowCount === 0) return errPage("Link jest nieprawidłowy lub już wykorzystany.");
+    const venue = vr.rows[0];
+    const texp = await pool.query(`SELECT password_reset_expires FROM fp1_venues WHERE id=$1`, [venue.id]);
+    if (new Date() > new Date(texp.rows[0].password_reset_expires))
+      return errPage("Link wygasł (ważny 1 godzinę). Wyślij nowy link.");
+
+    res.send(pageShell("Nowe hasło — Panel", `
+      <div class="card" style="max-width:400px;margin:60px auto">
+        <h2 style="margin-bottom:4px">🔑 Nowe hasło</h2>
+        <p style="color:#888;font-size:13px;margin-bottom:20px">Ustaw nowe hasło do panelu lokalu.</p>
+        <div id="rp-msg" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+        <label>Nowe hasło <span style="color:#888;font-weight:400">(min. 8 znaków)</span></label>
+        <input id="rp-new" type="password" placeholder="Nowe hasło"/>
+        <label style="margin-top:8px">Potwierdź nowe hasło</label>
+        <input id="rp-confirm" type="password" placeholder="Potwierdź nowe hasło"/>
+        <button onclick="submitReset()" style="width:100%;margin-top:12px">Zapisz hasło →</button>
+      </div>
+      <script>
+      async function submitReset(){
+        const nw=document.getElementById('rp-new').value;
+        const con=document.getElementById('rp-confirm').value;
+        const msg=document.getElementById('rp-msg');
+        const show=(txt,ok)=>{msg.textContent=txt;msg.style.display='block';msg.style.background=ok?'rgba(46,204,113,.15)':'rgba(231,76,60,.15)';msg.style.color=ok?'#2ecc71':'#e74c3c';};
+        if(!nw||!con){show('Wypełnij wszystkie pola.',false);return;}
+        if(nw.length<8){show('Hasło musi mieć min. 8 znaków.',false);return;}
+        if(nw!==con){show('Hasła nie są zgodne.',false);return;}
+        try{
+          const r=await fetch('/api/venue/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:${JSON.stringify(token)},new_password:nw})});
+          const d=await r.json();
+          if(d.ok){show('Hasło zostało zmienione! Możesz się zalogować.',true);setTimeout(()=>window.location='/panel',2500);}
+          else show(d.error||'Błąd.',false);
+        }catch{show('Błąd sieci.',false);}
+      }
+      </script>`));
+  } catch(e) {
+    console.error("[reset-venue-password]", e);
+    res.status(500).send(pageShell("Błąd serwera", `<div class="card" style="max-width:480px;margin:80px auto;text-align:center"><p>Błąd serwera.</p></div>`));
+  }
+});
+
+// ── 4b: Reset password — save new password ──
+app.post("/api/venue/reset-password", async (req, res) => {
+  try {
+    const { token, new_password } = req.body;
+    if (!token || !new_password)
+      return res.status(400).json({ error: "Brakuje danych." });
+    if (new_password.length < 8)
+      return res.status(400).json({ error: "Hasło musi mieć min. 8 znaków." });
+
+    const vr = await pool.query(
+      `SELECT id, password_reset_expires FROM fp1_venues WHERE password_reset_token=$1 AND status='active' LIMIT 1`,
+      [token]
+    );
+    if (vr.rowCount === 0) return res.status(400).json({ error: "Link nieprawidłowy lub już wykorzystany." });
+    const venue = vr.rows[0];
+    if (new Date() > new Date(venue.password_reset_expires))
+      return res.status(400).json({ error: "Link wygasł. Wyślij nowy." });
+
+    const newSalt = crypto.randomBytes(16).toString("hex");
+    const newHash = pinHash(new_password, newSalt);
+    await pool.query(
+      `UPDATE fp1_venues SET pin_hash=$1, pin_salt=$2, password_reset_token=NULL, password_reset_expires=NULL WHERE id=$3`,
+      [newHash, newSalt, venue.id]
+    );
+    res.json({ ok: true });
+  } catch(e) {
+    console.error("[reset-password]", e);
+    res.status(500).json({ error: "Błąd serwera." });
   }
 });
 
