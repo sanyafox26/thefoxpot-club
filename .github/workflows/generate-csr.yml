@@ -1,0 +1,34 @@
+name: Generate CSR for Apple Certificate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: macos-latest
+    steps:
+      - name: Generate private key and CSR
+        run: |
+          # Generate RSA private key
+          openssl genrsa -out distribution.key 2048
+
+          # Generate CSR (Certificate Signing Request)
+          openssl req -new -key distribution.key \
+            -out distribution.csr \
+            -subj "/emailAddress=kontakt@thefoxpot.club/CN=The FoxPot Club/C=PL"
+
+          echo "=== CSR CONTENT (copy this to Apple Developer Portal) ==="
+          cat distribution.csr
+
+          echo ""
+          echo "=== PRIVATE KEY BASE64 (save this — needed later for p12) ==="
+          base64 distribution.key
+
+      - name: Upload CSR and key as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-csr-and-key
+          path: |
+            distribution.csr
+            distribution.key
+          retention-days: 1

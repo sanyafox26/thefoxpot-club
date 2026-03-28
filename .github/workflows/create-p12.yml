@@ -1,0 +1,47 @@
+name: Create p12 from Apple Certificate
+
+on:
+  workflow_dispatch:
+    inputs:
+      certificate_base64:
+        description: 'Apple .cer file content (base64) — download from developer.apple.com and run: base64 distribution.cer'
+        required: true
+      private_key_base64:
+        description: 'Private key base64 — from generate-csr artifact (distribution.key)'
+        required: true
+      p12_password:
+        description: 'Password for the p12 file (choose any password, save it as APPLE_CERTIFICATE_PASSWORD)'
+        required: true
+
+jobs:
+  create-p12:
+    runs-on: macos-latest
+    steps:
+      - name: Create p12
+        run: |
+          # Decode certificate
+          echo "${{ github.event.inputs.certificate_base64 }}" | base64 --decode > distribution.cer
+
+          # Decode private key
+          echo "${{ github.event.inputs.private_key_base64 }}" | base64 --decode > distribution.key
+
+          # Convert .cer to .pem
+          openssl x509 -in distribution.cer -inform DER -out distribution.pem -outform PEM
+
+          # Create p12
+          openssl pkcs12 -export \
+            -inkey distribution.key \
+            -in distribution.pem \
+            -out distribution.p12 \
+            -passout "pass:${{ github.event.inputs.p12_password }}"
+
+          echo ""
+          echo "=== APPLE_CERTIFICATE (base64) — paste this as GitHub secret ==="
+          base64 distribution.p12
+
+      - name: Upload p12
+        uses: actions/upload-artifact@v4
+        with:
+          name: distribution-p12
+          path: distribution.p12
+          retention-days: 1
