@@ -37,7 +37,7 @@ jobs:
 
           echo ""
           echo "=== APPLE_CERTIFICATE (base64) — paste this as GitHub secret ==="
-          base64 distribution.p12 | tr -d '\n'
+          base64 < distribution.p12 | tr -d '\n'
 
       - name: Upload p12
         uses: actions/upload-artifact@v4
