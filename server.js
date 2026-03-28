@@ -7359,6 +7359,82 @@ if (BOT_TOKEN) {
     } catch (e) { console.error("DISTRICT_ACTION_ERR", e); await ctx.answerCbQuery("❌ Błąd."); }
   });
 
+  // ── ACTIVATE VENUE (admin inline button) ──
+  bot.action(/^activate_(\d+)$/, async (ctx) => {
+    try {
+      const venueId = ctx.match[1];
+      const isAdmin = ADMIN_TELEGRAM_CHAT_ID && String(ctx.from.id) === String(ADMIN_TELEGRAM_CHAT_ID);
+      if (!isAdmin) { await ctx.answerCbQuery("❌ Brak uprawnień."); return; }
+
+      const vr = await pool.query(
+        `SELECT id, name, email, owner_name FROM fp1_venues WHERE id=$1 AND status='pending_admin' LIMIT 1`,
+        [venueId]
+      );
+      if (vr.rows.length === 0) {
+        await ctx.answerCbQuery("❌ Lokal nie istnieje lub już aktywowany.");
+        return;
+      }
+      const venue = vr.rows[0];
+
+      // Generate temp password: Fox + 4 random digits + # + first 3 letters of name uppercase
+      const digits = String(Math.floor(1000 + Math.random() * 9000));
+      const prefix = (venue.name || "LOK").replace(/[^a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, "").slice(0, 3).toUpperCase() || "LOK";
+      const plainPassword = `Fox${digits}#${prefix}`;
+
+      // Hash using existing pinHash mechanism
+      const salt = crypto.randomBytes(16).toString("hex");
+      const hash = pinHash(plainPassword, salt);
+
+      await pool.query(
+        `UPDATE fp1_venues SET status='active', approved=TRUE, pin_hash=$1, pin_salt=$2 WHERE id=$3`,
+        [hash, salt, venue.id]
+      );
+
+      // Reply to admin in Telegram
+      await ctx.answerCbQuery("✅ Aktywowano!");
+      try {
+        await ctx.editMessageText(
+          `✅ Aktywowano!\n\n` +
+          `🏪 ${venue.name}\n` +
+          `📧 Login: ${venue.email}\n` +
+          `🔑 Hasło: ${plainPassword}\n` +
+          `🔗 Panel: https://thefoxpot.club/panel\n\n` +
+          `Wyślij te dane lokalowi jeśli nie otrzymał emaila.`
+        );
+      } catch {}
+
+      // Send activation email to venue owner
+      try {
+        await sendEmail(
+          venue.email,
+          "Twój lokal został aktywowany w The FoxPot Club! 🦊",
+          `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+            <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
+            <h2 style="color:#c9a84c;margin-bottom:8px">Witaj ${escapeHtml(venue.owner_name)}!</h2>
+            <p>Twój lokal <strong>${escapeHtml(venue.name)}</strong> został aktywowany.</p>
+            <p><strong>Dane do logowania:</strong></p>
+            <p>📧 Login: <code>${escapeHtml(venue.email)}</code><br>
+            🔑 Hasło tymczasowe: <code>${escapeHtml(plainPassword)}</code></p>
+            <p style="margin:24px 0">
+              <a href="https://thefoxpot.club/panel" style="background:#c9a84c;color:#080b12;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
+                🔗 Panel lokalu
+              </a>
+            </p>
+            <p style="color:#888;font-size:13px">Zalecamy zmianę hasła po pierwszym logowaniu.</p>
+            <p style="color:#888;font-size:13px">W razie pytań: kontakt@thefoxpot.club</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+            <p style="color:#aaa;font-size:12px">The FoxPot Club 🦊 · kontakt@thefoxpot.club</p>
+          </body></html>`
+        );
+      } catch(e) {
+        console.error("[activate-venue] email failed:", e.message);
+      }
+    } catch(e) {
+      console.error("[activate-venue]", e);
+      try { await ctx.answerCbQuery("❌ Błąd serwera."); } catch {}
+    }
+  });
+
   // ── FOX SUPPORT: intercept escalation messages before main text handler ──
   bot.on("text", getSupportTextHandler());
 
