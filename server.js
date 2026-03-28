@@ -5162,6 +5162,81 @@ app.post("/api/register-venue", async (req, res) => {
   }
 });
 
+/* ─── CONFIRM VENUE EMAIL ─────────────────────────────────── */
+app.get("/confirm-venue", async (req, res) => {
+  const { token } = req.query;
+
+  const errPage = (msg) => res.status(400).send(pageShell("Błąd potwierdzenia", `
+    <div class="card" style="max-width:480px;margin:80px auto;text-align:center">
+      <div style="font-size:48px;margin-bottom:16px">❌</div>
+      <h2 style="color:#c9a84c;margin-bottom:12px">Błąd potwierdzenia</h2>
+      <p style="color:#ccc">${escapeHtml(msg)}</p>
+      <a href="/" style="display:inline-block;margin-top:24px;color:#c9a84c">← Strona główna</a>
+    </div>`));
+
+  if (!token) return errPage("Brakuje tokenu potwierdzającego.");
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, nip, address, email, owner_name, email_token_expires
+       FROM fp1_venues WHERE email_token=$1 AND status='pending_email' LIMIT 1`,
+      [token]
+    );
+
+    if (result.rows.length === 0)
+      return errPage("Link jest nieprawidłowy lub lokal został już potwierdzony.");
+
+    const venue = result.rows[0];
+    if (new Date() > new Date(venue.email_token_expires))
+      return errPage("Link wygasł (ważny 24 godziny). Wypełnij formularz ponownie, aby otrzymać nowy link.");
+
+    // Update status to pending_admin, clear token
+    await pool.query(
+      `UPDATE fp1_venues SET status='pending_admin', email_token=NULL, email_token_expires=NULL WHERE id=$1`,
+      [venue.id]
+    );
+
+    // Notify admin via Telegram
+    if (bot && ADMIN_TELEGRAM_CHAT_ID) {
+      const now = new Date().toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+      const msg =
+        `✅ Lokal potwierdził email!\n\n` +
+        `🏪 Nazwa: ${venue.name}\n` +
+        `🔢 NIP: ${venue.nip} ✅ GUS\n` +
+        `📍 Adres: ${venue.address}\n` +
+        `📧 Email: ${venue.email}\n` +
+        `👤 Właściciel: ${venue.owner_name}\n` +
+        `📅 Data: ${now}`;
+      try {
+        await bot.telegram.sendMessage(Number(ADMIN_TELEGRAM_CHAT_ID), msg, {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "✅ Aktywuj lokal", callback_data: `activate_${venue.id}` }
+            ]]
+          }
+        });
+      } catch(e) {
+        console.error("[confirm-venue] Telegram notify failed:", e.message);
+      }
+    }
+
+    // Show success page to venue owner
+    res.send(pageShell("Email potwierdzony — The FoxPot Club", `
+      <div class="card" style="max-width:480px;margin:80px auto;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">🎉</div>
+        <h2 style="color:#c9a84c;margin-bottom:12px">Email potwierdzony!</h2>
+        <p style="color:#ccc;line-height:1.6">
+          Twoje zgłoszenie zostało przyjęte.<br>
+          Aktywacja nastąpi w ciągu 24 godzin —<br>wyślemy dane dostępowe na email.
+        </p>
+        <a href="/" style="display:inline-block;margin-top:28px;color:#c9a84c">← Strona główna</a>
+      </div>`));
+  } catch(e) {
+    console.error("[confirm-venue]", e);
+    res.status(500).send(pageShell("Błąd serwera", `<div class="card" style="max-width:480px;margin:80px auto;text-align:center"><p>Błąd serwera. Spróbuj ponownie.</p></div>`));
+  }
+});
+
 /* ═══════════════════════════════════════════════════════════════
    ROUTES — PANEL
 ═══════════════════════════════════════════════════════════════ */
