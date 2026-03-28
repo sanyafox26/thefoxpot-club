@@ -6651,15 +6651,17 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         <div id="csvToWrap" style="display:none"><label>Do</label><input type="date" id="csvTo" value="${new Date().toISOString().slice(0,10)}"/></div>
         <div><label>Lokal</label><select id="csvVenue"><option value="">— wszystkie —</option>${venues.rows.map(v=>`<option value="${v.id}">${escapeHtml(v.name)}</option>`).join("")}</select></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
         <button type="button" onclick="downloadCsv('visits')" style="background:rgba(124,92,252,.8);font-size:12px;padding:10px">📥 Wizyty CSV</button>
         <button type="button" onclick="downloadCsv('dishes')" style="background:rgba(46,204,113,.7);font-size:12px;padding:10px">📥 Dania CSV</button>
         <button type="button" onclick="downloadCsv('foxes')" style="background:rgba(255,138,0,.7);font-size:12px;padding:10px">📥 Foxy CSV</button>
+        <button type="button" onclick="downloadCsv('lokale')" style="background:rgba(124,92,252,.8);font-size:12px;padding:10px">🏪 Lokale CSV</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
         <button type="button" onclick="previewData('visits')" style="background:rgba(124,92,252,.2);border:1px solid rgba(124,92,252,.4);font-size:12px;padding:10px;color:#7c5cfc">👁 Podgląd wizyt</button>
         <button type="button" onclick="previewData('dishes')" style="background:rgba(46,204,113,.15);border:1px solid rgba(46,204,113,.3);font-size:12px;padding:10px;color:#2ecc71">👁 Podgląd dań</button>
         <button type="button" onclick="previewData('foxes')" style="background:rgba(255,138,0,.15);border:1px solid rgba(255,138,0,.3);font-size:12px;padding:10px;color:#ff8a00">👁 Podgląd Fox</button>
+        <button type="button" onclick="previewData('lokale')" style="background:rgba(46,204,113,.15);border:1px solid rgba(46,204,113,.3);font-size:12px;padding:10px;color:#2ecc71">👁 Podgląd Lokali</button>
       </div>
       <div id="previewTable" style="margin-top:12px;max-height:400px;overflow:auto;display:none"></div>
       <script>
@@ -6679,6 +6681,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
           return{from:new Date(Date.now()-days*86400000).toISOString().slice(0,10),to:today};
         }
         function downloadCsv(type){
+          if(type==='lokale'){window.location.href='/admin/lokale?format=csv';return;}
           const dt=getCsvDates();
           const d=document.getElementById('csvDistrict').value;
           const v=document.getElementById('csvVenue').value;
@@ -6688,14 +6691,18 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
           window.location.href=url;
         }
         async function previewData(type){
+          const box=document.getElementById('previewTable');
+          box.style.display='block';box.innerHTML='<div style="text-align:center;padding:20px;color:#888">Ładowanie...</div>';
+          if(type==='lokale'){
+            try{const r=await fetch('/admin/lokale?format=html');box.innerHTML=await r.text();}catch(e){box.innerHTML='<div style="color:#e74c3c">Błąd</div>';}
+            return;
+          }
           const dt=getCsvDates();
           const d=document.getElementById('csvDistrict').value;
           const v=document.getElementById('csvVenue').value;
           let url='/admin/export-csv?type='+type+'&from='+dt.from+'&to='+dt.to+'&format=html';
           if(d) url+='&district='+encodeURIComponent(d);
           if(v) url+='&venue_id='+v;
-          const box=document.getElementById('previewTable');
-          box.style.display='block';box.innerHTML='<div style="text-align:center;padding:20px;color:#888">Ładowanie...</div>';
           try{const r=await fetch(url);box.innerHTML=await r.text();}catch(e){box.innerHTML='<div style="color:#e74c3c">Błąd</div>';}
         }
       </script>
@@ -6792,6 +6799,50 @@ app.get("/admin/export-csv", requireAdminAuth, async (req, res) => {
     res.send("\uFEFF" + header + csvRows);
   } catch (e) {
     console.error("CSV_EXPORT_ERR", e);
+    res.status(500).send("Błąd eksportu: " + String(e?.message || e).slice(0, 200));
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN LOKALE EXPORT
+═══════════════════════════════════════════════════════════════ */
+app.get("/admin/lokale", requireAdminAuth, async (req, res) => {
+  try {
+    const rows = await pool.query(`
+      SELECT v.id, v.name, v.address, v.city, v.district, v.phone, v.email,
+             v.instagram, v.tiktok, v.youtube, v.facebook, v.discount_percent,
+             v.slug, v.status, v.created_at,
+             (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.venue_id=v.id AND cv.is_credited=TRUE) AS visit_count
+      FROM fp1_venues v
+      ORDER BY v.created_at DESC
+    `);
+    const esc_csv = (s) => {
+      const str = String(s ?? "");
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) return '"' + str.replace(/"/g, '""') + '"';
+      return str;
+    };
+    const fmtDate = (d) => new Date(d).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+
+    if (req.query.format === "html") {
+      const cols = ["ID","Nazwa","Adres","Miasto","Dzielnica","Telefon","Email","Instagram","TikTok","YouTube","Facebook","Zniżka","Slug","Status","Data","Wizyty"];
+      let html = `<div style="font-size:11px;color:#888;margin-bottom:8px">${rows.rows.length} lokali</div>`;
+      html += `<table style="width:100%;border-collapse:collapse;font-size:11px"><tr style="background:#1a1f35;position:sticky;top:0">${cols.map(c=>`<th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#aaa">${c}</th>`).join("")}</tr>`;
+      html += rows.rows.map(r => {
+        const cells = [r.id, escapeHtml(r.name||""), escapeHtml(r.address||""), r.city||"", r.district||"", r.phone||"", r.email||"", r.instagram||"", r.tiktok||"", r.youtube||"", r.facebook||"", r.discount_percent||0, r.slug||"", r.status||"", fmtDate(r.created_at), r.visit_count];
+        return `<tr>${cells.map(c=>`<td style="padding:4px 6px;border-bottom:1px solid #1a1f35;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis">${c}</td>`).join("")}</tr>`;
+      }).join("");
+      html += "</table>";
+      return res.send(html);
+    }
+
+    // CSV
+    const header = "id,nazwa,adres,miasto,dzielnica,telefon,email,instagram,tiktok,youtube,facebook,znizka,slug,status,data,wizyty\n";
+    const csvRows = rows.rows.map(r => [r.id, esc_csv(r.name), esc_csv(r.address), r.city||"", r.district||"", r.phone||"", r.email||"", r.instagram||"", r.tiktok||"", r.youtube||"", r.facebook||"", r.discount_percent||0, r.slug||"", r.status||"", fmtDate(r.created_at), r.visit_count].join(",")).join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="foxpot_lokale_${new Date().toISOString().slice(0,10)}.csv"`);
+    res.send("\uFEFF" + header + csvRows);
+  } catch (e) {
+    console.error("LOKALE_EXPORT_ERR", e);
     res.status(500).send("Błąd eksportu: " + String(e?.message || e).slice(0, 200));
   }
 });
