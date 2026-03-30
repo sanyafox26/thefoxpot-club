@@ -2074,6 +2074,17 @@ app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/delete-account", (_req, res) => res.send(`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usuwanie konta — The FoxPot Club</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#f0f0f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{max-width:480px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:32px 24px;text-align:center}h1{font-size:20px;margin-bottom:16px;color:#f5a623}p{font-size:15px;line-height:1.7;color:rgba(255,255,255,.7)}a{color:#f5a623;text-decoration:none;font-weight:600}</style></head><body><div class="card"><h1>🦊 Usuwanie konta</h1><p>Aby usunąć konto w The FoxPot Club, skorzystaj z opcji <strong>Opuść klub</strong> w zakładce <strong>Pomoc</strong> w aplikacji, lub napisz na <a href="mailto:kontakt@thefoxpot.club">kontakt@thefoxpot.club</a>.</p></div></body></html>`));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V29_BIGINT_FIX"));
+
+app.get("/app", (req, res) => {
+  const ua = req.headers["user-agent"] || "";
+  if (/Android/i.test(ua)) {
+    return res.redirect("https://play.google.com/store/apps/details?id=club.thefoxpot.app");
+  }
+  if (/iPhone|iPad/i.test(ua)) {
+    return res.redirect("https://apps.apple.com/app/id6761313641");
+  }
+  res.send(`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pobierz aplikację — The FoxPot Club</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f1a;color:#f0ebe0;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}.card{max-width:400px;width:100%;text-align:center}.logo{font-size:48px;margin-bottom:16px}.title{font-size:24px;font-weight:800;margin-bottom:8px}.sub{font-size:15px;color:rgba(240,235,224,.6);margin-bottom:36px;line-height:1.6}.btns{display:flex;flex-direction:column;gap:14px}.btn{display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 24px;border-radius:14px;font-size:16px;font-weight:700;text-decoration:none;transition:opacity .2s}.btn:hover{opacity:.85}.btn-android{background:#F97E00;color:#fff}.btn-ios{background:rgba(249,126,0,.12);border:2px solid #F97E00;color:#F97E00}</style></head><body><div class="card"><div class="logo">🦊</div><h1 class="title">The FoxPot Club</h1><p class="sub">Prywatny klub lojalnościowy.<br>Pobierz aplikację i dołącz.</p><div class="btns"><a class="btn btn-android" href="https://play.google.com/store/apps/details?id=club.thefoxpot.app" target="_blank">▶ Pobierz na Android</a><a class="btn btn-ios" href="https://apps.apple.com/app/id6761313641" target="_blank"> Pobierz na iOS</a></div></div></body></html>`);
+});
 // ── Invite link without Telegram ──
 app.get("/invite/:code", async (req, res) => {
   try {
