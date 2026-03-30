@@ -40,6 +40,10 @@ const { Pool }             = require("pg");
 const { setupSupport, migrateSupport } = require("./fox_support");
 const jwt      = require("jsonwebtoken");
 const { Resend } = require("resend");
+const twilio   = require("twilio");
+const twilioClient = (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
+  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -1885,19 +1889,14 @@ app.post("/api/auth/send-otp", express.json(), async (req, res) => {
       return res.status(429).json({ error: "Za dużo prób. Spróbuj ponownie za godzinę." });
     }
 
-    // Generate 6-digit code
-    // TODO: remove hardcoded OTP, use random + Twilio
-    const code = "123456";
-    await pool.query(
-      `INSERT INTO fp1_otp_codes(phone, code) VALUES($1, $2)`,
-      [cleaned, code]
-    );
+    // Send OTP via Twilio Verify
+    if (!twilioClient) return res.status(500).json({ error: "SMS service not configured" });
+    await twilioClient.verify.v2
+      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+      .verifications.create({ to: cleaned, channel: "sms" });
 
-    // TODO: Twilio integration — send SMS
-    // For now: return code in response for testing
-    console.log(`[OTP] ${cleaned} → ${code}`);
-
-    res.json({ ok: true, phone: cleaned, _debug_code: code });
+    console.log(`[OTP] verification sent to ${cleaned}`);
+    res.json({ ok: true, phone: cleaned });
   } catch(e) {
     console.error("SEND_OTP_ERR", e.message);
     res.status(500).json({ error: "Błąd serwera" });
@@ -1924,29 +1923,15 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
       return res.status(429).json({ error: `Zbyt wiele błędnych prób. Numer zablokowany na ${minsLeft} min.` });
     }
 
-    // Find valid OTP: not used, < 5 min old, < 5 attempts
-    const otpQ = await pool.query(
-      `SELECT id, code, attempts FROM fp1_otp_codes
-       WHERE phone=$1 AND used=FALSE AND created_at > NOW() - INTERVAL '5 minutes' AND attempts < 5
-       ORDER BY created_at DESC LIMIT 1`,
-      [cleaned]
-    );
+    // Verify OTP via Twilio Verify
+    if (!twilioClient) return res.status(500).json({ error: "SMS service not configured" });
+    const verification = await twilioClient.verify.v2
+      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+      .verificationChecks.create({ to: cleaned, code: String(code).trim() });
 
-    if (!otpQ.rows.length) {
-      return res.status(400).json({ error: "Kod wygasł lub nie istnieje. Wyślij nowy." });
+    if (verification.status !== "approved") {
+      return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
     }
-
-    const otp = otpQ.rows[0];
-
-    if (otp.code !== String(code).trim()) {
-      // Wrong code — increment attempts
-      await pool.query(`UPDATE fp1_otp_codes SET attempts=attempts+1 WHERE id=$1`, [otp.id]);
-      const left = 4 - otp.attempts;
-      return res.status(400).json({ error: `Nieprawidłowy kod. Pozostało prób: ${left}` });
-    }
-
-    // Mark OTP as used
-    await pool.query(`UPDATE fp1_otp_codes SET used=TRUE WHERE id=$1`, [otp.id]);
 
     // Find or create Fox
     let foxQ = await pool.query(`SELECT id, user_id, username, city FROM fp1_foxes WHERE phone=$1 AND is_deleted=FALSE LIMIT 1`, [cleaned]);
