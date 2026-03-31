@@ -1990,6 +1990,8 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
             streak_current = 0, streak_best = 0, streak_last_date = NULL,
             streak_freeze_available = 0, city = 'Warszawa', district = NULL,
             consent_at = NULL, consent_version = NULL,
+            consent_analytics = FALSE, consent_analytics_at = NULL,
+            consent_marketing = FALSE, consent_marketing_at = NULL,
             sub_instagram = FALSE, sub_tiktok = FALSE, sub_youtube = FALSE,
             sub_telegram = FALSE, sub_facebook = FALSE, sub_bonus_claimed = FALSE,
             invited_by_user_id = NULL, invite_code_used = NULL, invite_used_at = NULL,
