@@ -1890,13 +1890,17 @@ app.post("/api/auth/send-otp", express.json(), async (req, res) => {
       return res.status(429).json({ error: "Za dużo prób. Spróbuj ponownie za godzinę." });
     }
 
-    // Send OTP via Twilio Verify
-    if (!twilioClient) return res.status(500).json({ error: "SMS service not configured" });
-    await twilioClient.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
-      .verifications.create({ to: cleaned, channel: "sms" });
-
-    console.log(`[OTP] verification sent to ${cleaned}`);
+    // Send OTP via Twilio Verify (or test fallback)
+    if (twilioClient) {
+      await twilioClient.verify.v2
+        .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+        .verifications.create({ to: cleaned, channel: "sms" });
+      console.log(`[OTP] verification sent to ${cleaned}`);
+    } else {
+      // TEST MODE — no Twilio configured
+      await pool.query(`INSERT INTO fp1_otp_codes(phone, code) VALUES($1, $2) ON CONFLICT DO NOTHING`, [cleaned, "123456"]);
+      console.log(`[OTP] TEST MODE: OTP code is 123456 for ${cleaned}`);
+    }
     res.json({ ok: true, phone: cleaned });
   } catch(e) {
     console.error("SEND_OTP_ERR", e.message);
@@ -1924,14 +1928,22 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
       return res.status(429).json({ error: `Zbyt wiele błędnych prób. Numer zablokowany na ${minsLeft} min.` });
     }
 
-    // Verify OTP via Twilio Verify
-    if (!twilioClient) return res.status(500).json({ error: "SMS service not configured" });
-    const verification = await twilioClient.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
-      .verificationChecks.create({ to: cleaned, code: String(code).trim() });
-
-    if (verification.status !== "approved") {
-      return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
+    // Verify OTP via Twilio Verify (or test fallback)
+    if (twilioClient) {
+      const verification = await twilioClient.verify.v2
+        .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+        .verificationChecks.create({ to: cleaned, code: String(code).trim() });
+      if (verification.status !== "approved") {
+        return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
+      }
+    } else {
+      // TEST MODE fallback — check fp1_otp_codes
+      const otpQ = await pool.query(
+        `SELECT id FROM fp1_otp_codes WHERE phone=$1 AND code=$2 AND used=FALSE AND created_at > NOW() - INTERVAL '30 minutes' ORDER BY created_at DESC LIMIT 1`,
+        [cleaned, String(code).trim()]
+      );
+      if (!otpQ.rows.length) return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
+      await pool.query(`UPDATE fp1_otp_codes SET used=TRUE WHERE id=$1`, [otpQ.rows[0].id]);
     }
 
     // Find or create Fox
