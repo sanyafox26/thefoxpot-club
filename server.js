@@ -5172,6 +5172,7 @@ app.post("/api/register-venue", async (req, res) => {
 
     // Send confirmation email (non-blocking — respond to client immediately after)
     const confirmUrl = `${PUBLIC_URL}/confirm-venue?token=${emailToken}`;
+    console.log("NEW VENUE REGISTRATION:", { name: name.trim(), email: email.toLowerCase(), token: emailToken, confirm_url: confirmUrl });
     sendEmail(
       email,
       "Potwierdź rejestrację lokalu w The FoxPot Club",
