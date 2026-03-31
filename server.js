@@ -2136,9 +2136,9 @@ app.post("/api/user/consent", express.json(), async (req, res) => {
     await pool.query(
       `UPDATE fp1_foxes SET
         consent_analytics = $1,
-        consent_analytics_at = CASE WHEN $1 = TRUE THEN $3 ELSE consent_analytics_at END,
+        consent_analytics_at = CASE WHEN $1 THEN $3 ELSE consent_analytics_at END,
         consent_marketing = $2,
-        consent_marketing_at = CASE WHEN $2 = TRUE THEN $3 ELSE consent_marketing_at END
+        consent_marketing_at = CASE WHEN $2 THEN $3 ELSE consent_marketing_at END
        WHERE id = $4 AND is_deleted = FALSE`,
       [!!consent_analytics, !!consent_marketing, now, decoded.fox_id]
     );
