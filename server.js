@@ -736,6 +736,7 @@ async function migrate() {
   await ensureColumn("fp1_invite_uses",    "code",                  "TEXT");
   await ensureColumn("fp1_invite_uses",    "used_by_tg",            "BIGINT");
   await ensureColumn("fp1_foxes",          "phone",                 "TEXT");
+  await ensureColumn("fp1_foxes",          "nickname_changed",      "BOOLEAN NOT NULL DEFAULT FALSE");
   // Drop NOT NULL constraints that may exist from old schema
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
@@ -1994,10 +1995,23 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
       }
     }
 
+    // Auto-generate username if missing
+    const foxRow = await pool.query(`SELECT username, nickname_changed FROM fp1_foxes WHERE id=$1`, [foxId]);
+    let nicknameChanged = foxRow.rows[0]?.nickname_changed || false;
+    if (!foxRow.rows[0]?.username) {
+      let autoNick, tries = 0;
+      do {
+        autoNick = "Fox" + String(Math.floor(1000 + Math.random() * 9000));
+        const clash = await pool.query(`SELECT 1 FROM fp1_foxes WHERE username=$1 LIMIT 1`, [autoNick]);
+        if (!clash.rows.length) break;
+      } while (++tries < 20);
+      await pool.query(`UPDATE fp1_foxes SET username=$1 WHERE id=$2`, [autoNick, foxId]);
+    }
+
     // Generate JWT (90 days)
     const token = jwt.sign({ fox_id: foxId, phone: cleaned }, JWT_SECRET, { expiresIn: "90d" });
 
-    res.json({ ok: true, token, is_new: isNew });
+    res.json({ ok: true, token, is_new: isNew, nickname_changed: nicknameChanged });
   } catch(e) {
     console.error("VERIFY_OTP_ERR", e.message);
     res.status(500).json({ error: "Błąd serwera" });
@@ -2042,6 +2056,35 @@ app.post("/api/auth/onboard", express.json(), async (req, res) => {
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
+
+app.patch("/api/fox/username", express.json(), async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
+    const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+    if (!decoded.fox_id) return res.status(401).json({ error: "Unauthorized" });
+
+    const { username } = req.body || {};
+    if (!username) return res.status(400).json({ error: "Podaj nowy nick" });
+    const clean = String(username).trim().replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20);
+    if (clean.length < 2) return res.status(400).json({ error: "Nick musi mieć min. 2 znaki (a-z, 0-9, _)" });
+
+    const foxQ = await pool.query(`SELECT nickname_changed FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`, [decoded.fox_id]);
+    if (!foxQ.rows.length) return res.status(404).json({ error: "Fox nie znaleziony" });
+    if (foxQ.rows[0].nickname_changed) return res.status(403).json({ error: "Nick można zmienić tylko raz." });
+
+    const clash = await pool.query(`SELECT 1 FROM fp1_foxes WHERE username=$1 AND id!=$2 LIMIT 1`, [clean, decoded.fox_id]);
+    if (clash.rows.length) return res.status(409).json({ error: "Ten nick jest już zajęty." });
+
+    await pool.query(`UPDATE fp1_foxes SET username=$1, nickname_changed=TRUE WHERE id=$2`, [clean, decoded.fox_id]);
+    res.json({ ok: true, username: clean });
+  } catch(e) {
+    if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return res.status(401).json({ error: "Sesja wygasła" });
+    console.error("USERNAME_CHANGE_ERR", e.message);
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
 
 // GET /api/invite/info/:code — public invite info (inviter nick)
 app.get("/api/invite/info/:code", async (req, res) => {
