@@ -470,10 +470,10 @@ function setLang(lang) {
     b.classList.toggle('active', b.textContent.trim().toLowerCase() === lang);
   });
   document.querySelectorAll('.lang-pl').forEach(function(el) {
-    el.style.display = lang === 'pl' ? '' : 'none';
+    el.style.display = lang === 'pl' ? 'block' : 'none';
   });
   document.querySelectorAll('.lang-en').forEach(function(el) {
-    el.style.display = lang === 'en' ? '' : 'none';
+    el.style.display = lang === 'en' ? 'block' : 'none';
   });
   document.documentElement.lang = lang;
 }
