@@ -741,6 +741,8 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "consent_analytics_at",  "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "consent_marketing",     "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes",          "consent_marketing_at",  "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "consent_image",         "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "consent_image_at",      "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "terms_accepted_at",     "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "terms_version",         "TEXT");
   // Drop NOT NULL constraints that may exist from old schema
@@ -2115,7 +2117,7 @@ app.get("/api/user/consent", async (req, res) => {
     if (!decoded.fox_id) return res.status(401).json({ error: "Unauthorized" });
 
     const r = await pool.query(
-      `SELECT consent_analytics, consent_analytics_at, consent_marketing, consent_marketing_at, terms_accepted_at, terms_version FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`,
+      `SELECT consent_analytics, consent_analytics_at, consent_marketing, consent_marketing_at, consent_image, consent_image_at, terms_accepted_at, terms_version FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`,
       [decoded.fox_id]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Fox nie znaleziony" });
@@ -2133,16 +2135,18 @@ app.post("/api/user/consent", express.json(), async (req, res) => {
     const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
     if (!decoded.fox_id) return res.status(401).json({ error: "Unauthorized" });
 
-    const { consent_analytics, consent_marketing } = req.body || {};
+    const { consent_analytics, consent_marketing, consent_image } = req.body || {};
     const now = new Date();
     await pool.query(
       `UPDATE fp1_foxes SET
         consent_analytics = $1,
-        consent_analytics_at = CASE WHEN $1 THEN $3 ELSE consent_analytics_at END,
+        consent_analytics_at = CASE WHEN $1 THEN $4 ELSE consent_analytics_at END,
         consent_marketing = $2,
-        consent_marketing_at = CASE WHEN $2 THEN $3 ELSE consent_marketing_at END
-       WHERE id = $4 AND is_deleted = FALSE`,
-      [!!consent_analytics, !!consent_marketing, now, decoded.fox_id]
+        consent_marketing_at = CASE WHEN $2 THEN $4 ELSE consent_marketing_at END,
+        consent_image = $3,
+        consent_image_at = CASE WHEN $3 THEN $4 ELSE consent_image_at END
+       WHERE id = $5 AND is_deleted = FALSE`,
+      [!!consent_analytics, !!consent_marketing, !!consent_image, now, decoded.fox_id]
     );
     res.json({ ok: true });
   } catch(e) {
