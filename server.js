@@ -737,6 +737,12 @@ async function migrate() {
   await ensureColumn("fp1_invite_uses",    "used_by_tg",            "BIGINT");
   await ensureColumn("fp1_foxes",          "phone",                 "TEXT");
   await ensureColumn("fp1_foxes",          "nickname_changed",      "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "consent_analytics",     "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "consent_analytics_at",  "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "consent_marketing",     "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes",          "consent_marketing_at",  "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "terms_accepted_at",     "TIMESTAMPTZ");
+  await ensureColumn("fp1_foxes",          "terms_version",         "TEXT");
   // Drop NOT NULL constraints that may exist from old schema
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
@@ -1986,7 +1992,8 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
             consent_at = NULL, consent_version = NULL,
             sub_instagram = FALSE, sub_tiktok = FALSE, sub_youtube = FALSE,
             sub_telegram = FALSE, sub_facebook = FALSE, sub_bonus_claimed = FALSE,
-            invited_by_user_id = NULL, invite_code_used = NULL, invite_used_at = NULL
+            invited_by_user_id = NULL, invite_code_used = NULL, invite_used_at = NULL,
+            terms_accepted_at = NOW(), terms_version = '2.1'
           WHERE id = $2
         `, [pseudoId, df.id]);
         // Clean achievements and spins (visits kept for anti-cheat)
@@ -1999,7 +2006,7 @@ app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
         // Use negative timestamp as pseudo user_id to avoid conflicts with TG ids
         const pseudoId = -Date.now();
         const ins = await pool.query(
-          `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city) VALUES($1, $2, 0, 0, 'Warszawa') RETURNING id`,
+          `INSERT INTO fp1_foxes(user_id, phone, rating, invites, city, terms_accepted_at, terms_version) VALUES($1, $2, 0, 0, 'Warszawa', NOW(), '2.1') RETURNING id`,
           [pseudoId, cleaned]
         );
         foxId = ins.rows[0].id;
@@ -2096,6 +2103,52 @@ app.patch("/api/fox/username", express.json(), async (req, res) => {
     res.status(500).json({ error: "Błąd serwera" });
   }
 });
+
+// ── GDPR/RODO consent ──
+app.get("/api/user/consent", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
+    const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+    if (!decoded.fox_id) return res.status(401).json({ error: "Unauthorized" });
+
+    const r = await pool.query(
+      `SELECT consent_analytics, consent_analytics_at, consent_marketing, consent_marketing_at, terms_accepted_at, terms_version FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`,
+      [decoded.fox_id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Fox nie znaleziony" });
+    res.json(r.rows[0]);
+  } catch(e) {
+    if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return res.status(401).json({ error: "Sesja wygasła" });
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
+app.post("/api/user/consent", express.json(), async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
+    const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+    if (!decoded.fox_id) return res.status(401).json({ error: "Unauthorized" });
+
+    const { consent_analytics, consent_marketing } = req.body || {};
+    const now = new Date();
+    await pool.query(
+      `UPDATE fp1_foxes SET
+        consent_analytics = $1,
+        consent_analytics_at = CASE WHEN $1 = TRUE THEN $3 ELSE consent_analytics_at END,
+        consent_marketing = $2,
+        consent_marketing_at = CASE WHEN $2 = TRUE THEN $3 ELSE consent_marketing_at END
+       WHERE id = $4 AND is_deleted = FALSE`,
+      [!!consent_analytics, !!consent_marketing, now, decoded.fox_id]
+    );
+    res.json({ ok: true });
+  } catch(e) {
+    if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return res.status(401).json({ error: "Sesja wygasła" });
+    res.status(500).json({ error: "Błąd serwera" });
+  }
+});
+
 
 
 // GET /api/invite/info/:code — public invite info (inviter nick)
