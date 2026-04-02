@@ -1291,8 +1291,12 @@ function topFoxHtml(badge) {
 /* ═══════════════════════════════════════════════════════════════
    SESSION
 ═══════════════════════════════════════════════════════════════ */
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-const COOKIE_NAME    = "fp1_panel_session";
+const SESSION_TTL_MS       = 8 * 60 * 60 * 1000;
+const ADMIN_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4h for admin 2FA sessions
+const COOKIE_NAME          = "fp1_panel_session";
+const ADMIN_2FA_PHONE      = "+48518611445";
+// Pending 2FA state: token → { validUntil }
+const admin2faPending = new Map();
 const PWA_COOKIE_NAME = "fp1_pwa";
 const PWA_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -6536,13 +6540,68 @@ app.get("/admin/login", (req, res) => {
     </div>`));
 });
 
-app.post("/admin/login", (req, res) => {
+app.post("/admin/login", async (req, res) => {
   if (!ADMIN_SECRET) return res.redirect(`/admin/login?msg=${encodeURIComponent("Admin panel disabled. Set ADMIN_SECRET.")}`);
   const secret = String(req.body.secret || "").trim();
   if (secret !== ADMIN_SECRET) { loginBad(getIp(req)); return res.redirect(`/admin/login?msg=${encodeURIComponent("Błędne hasło.")}`); }
   loginOk(getIp(req));
-  setCookie(res, signSession({ role:"admin", venue_id:"0", exp:Date.now()+SESSION_TTL_MS }));
+  // 2FA: send Twilio Verify OTP
+  if (twilioClient && process.env.TWILIO_SERVICE_SID) {
+    try {
+      await twilioClient.verify.v2.services(process.env.TWILIO_SERVICE_SID)
+        .verifications.create({ to: ADMIN_2FA_PHONE, channel: "sms" });
+      const token = require("crypto").randomBytes(24).toString("hex");
+      admin2faPending.set(token, { validUntil: Date.now() + 10 * 60 * 1000 });
+      return res.redirect(`/admin/login/otp?t=${token}`);
+    } catch (e) {
+      console.error("Admin 2FA send error:", e.message);
+      return res.redirect(`/admin/login?msg=${encodeURIComponent("Błąd wysyłania SMS. Spróbuj ponownie.")}`);
+    }
+  }
+  // Fallback if Twilio not configured (dev only)
+  setCookie(res, signSession({ role:"admin", venue_id:"0", exp: Date.now() + ADMIN_SESSION_TTL_MS }));
   res.redirect("/admin");
+});
+
+app.get("/admin/login/otp", (req, res) => {
+  const t = String(req.query.t || "");
+  const pending = admin2faPending.get(t);
+  const expired = !pending || Date.now() > pending.validUntil;
+  if (expired) return res.redirect(`/admin/login?msg=${encodeURIComponent("Sesja wygasła. Zaloguj się ponownie.")}`);
+  const msg = req.query.msg ? `<div class="err">${escapeHtml(req.query.msg)}</div>` : "";
+  res.send(pageShell("Admin 2FA", `
+    <div class="card" style="max-width:360px;margin:60px auto">
+      <h1>🔐 Weryfikacja 2FA</h1>
+      <p style="color:#aaa;margin-bottom:16px">Kod SMS wysłany na ${ADMIN_2FA_PHONE}</p>${msg}
+      <form method="POST" action="/admin/login/otp">
+        <input type="hidden" name="t" value="${escapeHtml(t)}"/>
+        <label>Kod SMS</label>
+        <input name="otp" type="text" required placeholder="000000" maxlength="6" autocomplete="one-time-code" inputmode="numeric"/>
+        <button type="submit" style="width:100%;margin-top:12px">Potwierdź →</button>
+      </form>
+    </div>`));
+});
+
+app.post("/admin/login/otp", async (req, res) => {
+  const t   = String(req.body.t   || "");
+  const otp = String(req.body.otp || "").trim();
+  const pending = admin2faPending.get(t);
+  if (!pending || Date.now() > pending.validUntil) {
+    return res.redirect(`/admin/login?msg=${encodeURIComponent("Sesja wygasła. Zaloguj się ponownie.")}`);
+  }
+  try {
+    const check = await twilioClient.verify.v2.services(process.env.TWILIO_SERVICE_SID)
+      .verificationChecks.create({ to: ADMIN_2FA_PHONE, code: otp });
+    if (check.status !== "approved") {
+      return res.redirect(`/admin/login/otp?t=${t}&msg=${encodeURIComponent("Nieprawidłowy kod. Spróbuj ponownie.")}`);
+    }
+    admin2faPending.delete(t);
+    setCookie(res, signSession({ role:"admin", venue_id:"0", exp: Date.now() + ADMIN_SESSION_TTL_MS }));
+    res.redirect("/admin");
+  } catch (e) {
+    console.error("Admin 2FA verify error:", e.message);
+    res.redirect(`/admin/login/otp?t=${t}&msg=${encodeURIComponent("Błąd weryfikacji. Spróbuj ponownie.")}`);
+  }
 });
 
 app.get("/admin/logout", (req, res) => { clearCookie(res); res.redirect("/admin/login"); });
