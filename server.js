@@ -63,8 +63,13 @@ const twilioClient = (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_
   : null;
 
 const helmet = require("helmet");
+const cors   = require("cors");
 const app = express();
 app.use(helmet());
+app.use(cors({
+  origin: ["https://thefoxpot.club", "https://www.thefoxpot.club"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: "12mb" }));
 // CORS for Capacitor + COOP for popups (Google Maps)
