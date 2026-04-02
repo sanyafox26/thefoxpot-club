@@ -1293,7 +1293,7 @@ function topFoxHtml(badge) {
 /* ═══════════════════════════════════════════════════════════════
    SESSION
 ═══════════════════════════════════════════════════════════════ */
-const SESSION_TTL_MS       = 8 * 60 * 60 * 1000;
+const SESSION_TTL_MS       = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4h for admin 2FA sessions
 const COOKIE_NAME          = "fp1_panel_session";
 const ADMIN_2FA_PHONE      = "+48518611445";
