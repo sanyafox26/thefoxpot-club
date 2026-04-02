@@ -34,6 +34,8 @@
 
 const express  = require("express");
 const crypto   = require("crypto");
+const xss      = require("xss");
+const { body, validationResult } = require("express-validator");
 const path     = require("path");
 const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
@@ -1952,8 +1954,11 @@ app.post("/api/auth/verify-otp", verifyOtpLimiter, express.json(), async (req, r
   try {
     const { phone, code } = req.body || {};
     const cleaned = String(phone || "").replace(/[\s\-()]/g, "");
-    if (!/^\+48\d{9}$/.test(cleaned) || !code) {
-      return res.status(400).json({ error: "Nieprawidłowe dane" });
+    if (!/^\+48\d{9}$/.test(cleaned)) {
+      return res.status(400).json({ error: "Nieprawidłowy numer telefonu." });
+    }
+    if (!/^\d{6}$/.test(String(code || ""))) {
+      return res.status(400).json({ error: "Kod musi składać się z dokładnie 6 cyfr." });
     }
 
     // Check if phone is blocked (5+ failed attempts → 30 min block)
@@ -2083,12 +2088,14 @@ app.post("/api/auth/onboard", express.json(), async (req, res) => {
     const { username, city, district } = req.body || {};
     if (!username || !city) return res.status(400).json({ error: "Podaj nick i miasto" });
 
-    const clean = String(username).trim().replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20);
+    const clean    = String(username).trim().replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20);
+    const cleanCity = xss(String(city).trim()).slice(0, 100);
+    const cleanDistrict = district ? xss(String(district).trim()).slice(0, 100) : null;
     if (clean.length < 2) return res.status(400).json({ error: "Nick musi mieć min. 2 znaki (a-z, 0-9, _)" });
 
     await pool.query(
       `UPDATE fp1_foxes SET username=$1, city=$2, district=$3, consent_at=NOW(), consent_version='phone_v1' WHERE id=$4`,
-      [clean, city, district || null, decoded.fox_id]
+      [clean, cleanCity, cleanDistrict, decoded.fox_id]
     );
 
     // Auto-redeem invite code if provided

@@ -22,12 +22,14 @@
     "cors": "^2.8.6",
     "express": "^4.19.2",
     "express-rate-limit": "^8.3.2",
+    "express-validator": "^7.3.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.9.14",
     "pg": "^8.12.0",
     "resend": "^6.9.4",
     "telegraf": "^4.16.3",
-    "twilio": "^5.13.1"
+    "twilio": "^5.13.1",
+    "xss": "^1.0.15"
   }
 }
