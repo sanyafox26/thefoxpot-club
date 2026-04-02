@@ -6806,6 +6806,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       ${flash(req)}
       <div class="muted" style="margin-top:8px">👑 Pionier Fox: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
       <a href="/admin/backup" style="display:inline-block;margin-top:8px;padding:8px 16px;background:rgba(124,92,252,.15);border:1px solid rgba(124,92,252,.3);border-radius:8px;color:#7c5cfc;font-size:12px;font-weight:700;text-decoration:none">💾 Pobierz backup bazy</a>
+      <a href="/admin/security-log" style="display:inline-block;margin-top:8px;margin-left:8px;padding:8px 16px;background:rgba(249,126,0,.15);border:1px solid rgba(249,126,0,.3);border-radius:8px;color:#F97E00;font-size:12px;font-weight:700;text-decoration:none">🔒 Security Log</a>
     </div>
     <div class="card" style="${pendingAdminCount > 0 ? 'border:1px solid rgba(255,138,0,.4);background:rgba(255,138,0,.04)' : ''}">
       <h2 style="margin-bottom:16px">📋 Wnioski do zatwierdzenia${pendingAdminCount > 0 ? ` <span style="background:#ff8a00;color:#000;font-size:12px;font-weight:700;border-radius:12px;padding:2px 9px;margin-left:6px">${pendingAdminCount}</span>` : ""}</h2>
