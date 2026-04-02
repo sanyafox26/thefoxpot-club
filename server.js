@@ -65,6 +65,10 @@ const twilioClient = (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_
 const helmet = require("helmet");
 const cors   = require("cors");
 const app = express();
+
+// /health must be before helmet/cors so Railway healthcheck is never blocked
+app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
+
 app.use(helmet());
 app.use(cors({
   origin: ["https://thefoxpot.club", "https://www.thefoxpot.club"],
