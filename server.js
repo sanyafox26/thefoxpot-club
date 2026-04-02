@@ -6546,9 +6546,9 @@ app.post("/admin/login", async (req, res) => {
   if (secret !== ADMIN_SECRET) { loginBad(getIp(req)); return res.redirect(`/admin/login?msg=${encodeURIComponent("Błędne hasło.")}`); }
   loginOk(getIp(req));
   // 2FA: send Twilio Verify OTP
-  if (twilioClient && process.env.TWILIO_SERVICE_SID) {
+  if (twilioClient && process.env.TWILIO_VERIFY_SERVICE_SID) {
     try {
-      await twilioClient.verify.v2.services(process.env.TWILIO_SERVICE_SID)
+      await twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID)
         .verifications.create({ to: ADMIN_2FA_PHONE, channel: "sms" });
       const token = require("crypto").randomBytes(24).toString("hex");
       admin2faPending.set(token, { validUntil: Date.now() + 10 * 60 * 1000 });
@@ -6590,7 +6590,7 @@ app.post("/admin/login/otp", async (req, res) => {
     return res.redirect(`/admin/login?msg=${encodeURIComponent("Sesja wygasła. Zaloguj się ponownie.")}`);
   }
   try {
-    const check = await twilioClient.verify.v2.services(process.env.TWILIO_SERVICE_SID)
+    const check = await twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID)
       .verificationChecks.create({ to: ADMIN_2FA_PHONE, code: otp });
     if (check.status !== "approved") {
       return res.redirect(`/admin/login/otp?t=${t}&msg=${encodeURIComponent("Nieprawidłowy kod. Spróbuj ponownie.")}`);
