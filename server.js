@@ -50,7 +50,10 @@ const sendOtpLimiter = expressRateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json({ error: "Забагато спроб. Спробуй через 15 хвилин." }),
+  handler: (req, res) => {
+    logSecurityEvent("rate_limit_exceeded", getIp(req), { endpoint: "/api/auth/send-otp" });
+    res.status(429).json({ error: "Забагато спроб. Спробуй через 15 хвилин." });
+  },
 });
 
 const verifyOtpLimiter = expressRateLimit({
@@ -58,7 +61,10 @@ const verifyOtpLimiter = expressRateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json({ error: "Забагато невдалих спроб. Спробуй через 15 хвилин." }),
+  handler: (req, res) => {
+    logSecurityEvent("rate_limit_exceeded", getIp(req), { endpoint: "/api/auth/verify-otp" });
+    res.status(429).json({ error: "Забагато невдалих спроб. Спробуй через 15 хвилин." });
+  },
 });
 const twilioClient = (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
@@ -959,6 +965,17 @@ async function migrate() {
   await ensureColumn("fp1_venues", "password_reset_expires","TIMESTAMPTZ");
   await ensureColumn("fp1_venues", "email_confirmed_at",   "TIMESTAMPTZ");
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp1_security_log (
+      id         SERIAL PRIMARY KEY,
+      event_type VARCHAR(50) NOT NULL,
+      ip         VARCHAR(45),
+      details    JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fp1_security_log_created ON fp1_security_log(created_at DESC)`).catch(()=>{});
+
   console.log("✅ Migrations OK (V28 + Support)");
 }
 
@@ -1356,6 +1373,17 @@ function requireAdminAuth(req, res, next) {
 ═══════════════════════════════════════════════════════════════ */
 const loginFail = new Map();
 function getIp(req) { return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.ip || "unknown"; }
+
+async function logSecurityEvent(event_type, ip, details) {
+  try {
+    await pool.query(
+      `INSERT INTO fp1_security_log (event_type, ip, details) VALUES ($1, $2, $3)`,
+      [event_type, ip || null, details ? JSON.stringify(details) : null]
+    );
+  } catch (e) {
+    console.error("[security_log] failed:", e.message);
+  }
+}
 function loginRate(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; return x.until && Date.now() < x.until ? { blocked:true } : { blocked:false }; }
 function loginBad(ip) { const x = loginFail.get(ip) || { fails:0, until:0 }; x.fails += 1; if (x.fails >= 5) { x.until = Date.now() + 15*60*1000; x.fails = 0; } loginFail.set(ip, x); }
 function loginOk(ip) { loginFail.delete(ip); }
@@ -1958,6 +1986,7 @@ app.post("/api/auth/verify-otp", verifyOtpLimiter, express.json(), async (req, r
       return res.status(400).json({ error: "Nieprawidłowy numer telefonu." });
     }
     if (!/^\d{6}$/.test(String(code || ""))) {
+      logSecurityEvent("invalid_input", getIp(req), { endpoint: "/api/auth/verify-otp", field: "code" });
       return res.status(400).json({ error: "Kod musi składać się z dokładnie 6 cyfr." });
     }
 
@@ -1979,6 +2008,7 @@ app.post("/api/auth/verify-otp", verifyOtpLimiter, express.json(), async (req, r
         .services(process.env.TWILIO_VERIFY_SERVICE_SID)
         .verificationChecks.create({ to: cleaned, code: String(code).trim() });
       if (verification.status !== "approved") {
+        logSecurityEvent("otp_verify_failed", getIp(req), { phone: cleaned });
         return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
       }
     } else {
@@ -1987,7 +2017,10 @@ app.post("/api/auth/verify-otp", verifyOtpLimiter, express.json(), async (req, r
         `SELECT id FROM fp1_otp_codes WHERE phone=$1 AND code=$2 AND used=FALSE AND created_at > NOW() - INTERVAL '30 minutes' ORDER BY created_at DESC LIMIT 1`,
         [cleaned, String(code).trim()]
       );
-      if (!otpQ.rows.length) return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
+      if (!otpQ.rows.length) {
+        logSecurityEvent("otp_verify_failed", getIp(req), { phone: cleaned, mode: "test" });
+        return res.status(400).json({ error: "Nieprawidłowy lub wygasły kod." });
+      }
       await pool.query(`UPDATE fp1_otp_codes SET used=TRUE WHERE id=$1`, [otpQ.rows[0].id]);
     }
 
@@ -6600,9 +6633,11 @@ app.post("/admin/login/otp", async (req, res) => {
     const check = await twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID)
       .verificationChecks.create({ to: ADMIN_2FA_PHONE, code: otp });
     if (check.status !== "approved") {
+      logSecurityEvent("admin_2fa_failed", getIp(req), { endpoint: "/admin/login/otp" });
       return res.redirect(`/admin/login/otp?t=${t}&msg=${encodeURIComponent("Nieprawidłowy kod. Spróbuj ponownie.")}`);
     }
     admin2faPending.delete(t);
+    logSecurityEvent("admin_login_success", getIp(req), { endpoint: "/admin/login/otp" });
     setCookie(res, signSession({ role:"admin", venue_id:"0", exp: Date.now() + ADMIN_SESSION_TTL_MS }));
     res.redirect("/admin");
   } catch (e) {
@@ -7328,6 +7363,69 @@ app.post("/api/admin/reset-venue-password/:venue_id", requireAdminAuth, async (r
   } catch(e) {
     console.error("[admin-reset-password]", e);
     res.redirect(`/admin?err=${encodeURIComponent("Błąd serwera.")}`);
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN: SECURITY LOG
+═══════════════════════════════════════════════════════════════ */
+app.get("/admin/security-log", requireAdminAuth, async (req, res) => {
+  try {
+    const logs = await pool.query(
+      `SELECT id, event_type, ip, details, created_at FROM fp1_security_log ORDER BY created_at DESC LIMIT 100`
+    );
+    const rows = logs.rows.map(r => {
+      const det = r.details ? JSON.stringify(r.details) : "—";
+      const ts  = new Date(r.created_at).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+      const badge = {
+        rate_limit_exceeded: "badge-warn",
+        otp_verify_failed:   "badge-warn",
+        admin_2fa_failed:    "badge-err",
+        admin_login_success: "badge-ok",
+        invalid_input:       "badge-info",
+      }[r.event_type] || "badge-info";
+      return `<tr>
+        <td>${r.id}</td>
+        <td><span class="badge ${badge}">${escapeHtml(r.event_type)}</span></td>
+        <td>${escapeHtml(r.ip || "—")}</td>
+        <td style="font-size:11px;max-width:320px;word-break:break-all">${escapeHtml(det)}</td>
+        <td style="white-space:nowrap">${ts}</td>
+      </tr>`;
+    }).join("");
+
+    res.send(pageShell("Security Log", `
+      <div style="padding:24px">
+        <a href="/admin" style="color:#c9a84c;text-decoration:none;font-size:13px">← Admin</a>
+        <h1 style="margin:16px 0 8px">🔐 Security Log</h1>
+        <p style="color:#aaa;font-size:13px;margin-bottom:20px">Ostatnie 100 zdarzeń (strefa: Warsaw)</p>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="border-bottom:1px solid rgba(255,255,255,.1);color:#aaa">
+                <th style="padding:8px 12px;text-align:left">ID</th>
+                <th style="padding:8px 12px;text-align:left">Typ</th>
+                <th style="padding:8px 12px;text-align:left">IP</th>
+                <th style="padding:8px 12px;text-align:left">Szczegóły</th>
+                <th style="padding:8px 12px;text-align:left">Czas</th>
+              </tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#aaa">Brak zdarzeń</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+      <style>
+        .badge-warn { background:rgba(249,126,0,.15); color:#F97E00; border:1px solid rgba(249,126,0,.3); }
+        .badge-err  { background:rgba(220,38,38,.15);  color:#f87171; border:1px solid rgba(220,38,38,.3); }
+        .badge-ok   { background:rgba(34,197,94,.15);  color:#4ade80; border:1px solid rgba(34,197,94,.3); }
+        .badge-info { background:rgba(99,102,241,.15); color:#a5b4fc; border:1px solid rgba(99,102,241,.3); }
+        .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; }
+        tr:hover { background:rgba(255,255,255,.03); }
+        td { padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.05); vertical-align:top; }
+      </style>
+    `));
+  } catch (e) {
+    console.error("[admin/security-log]", e);
+    res.status(500).send("Server error");
   }
 });
 
