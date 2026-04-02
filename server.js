@@ -41,9 +41,9 @@ const { setupSupport, migrateSupport } = require("./fox_support");
 const jwt      = require("jsonwebtoken");
 const { Resend } = require("resend");
 const twilio   = require("twilio");
-const rateLimit = require("express-rate-limit");
+const expressRateLimit = require("express-rate-limit");
 
-const sendOtpLimiter = rateLimit({
+const sendOtpLimiter = expressRateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,
@@ -51,7 +51,7 @@ const sendOtpLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: "Забагато спроб. Спробуй через 15 хвилин." }),
 });
 
-const verifyOtpLimiter = rateLimit({
+const verifyOtpLimiter = expressRateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,
