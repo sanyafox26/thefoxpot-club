@@ -41,6 +41,23 @@ const { setupSupport, migrateSupport } = require("./fox_support");
 const jwt      = require("jsonwebtoken");
 const { Resend } = require("resend");
 const twilio   = require("twilio");
+const rateLimit = require("express-rate-limit");
+
+const sendOtpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: "Забагато спроб. Спробуй через 15 хвилин." }),
+});
+
+const verifyOtpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: "Забагато невдалих спроб. Спробуй через 15 хвилин." }),
+});
 const twilioClient = (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
@@ -1862,7 +1879,7 @@ async function requireWebAppAuth(req, res, next) {
 /* ═══════════════════════════════════════════════════════════════
    AUTH — Phone OTP (SMS)
 ═══════════════════════════════════════════════════════════════ */
-app.post("/api/auth/send-otp", express.json(), async (req, res) => {
+app.post("/api/auth/send-otp", sendOtpLimiter, express.json(), async (req, res) => {
   try {
     const { phone } = req.body || {};
     // Validate Polish phone: +48 followed by 9 digits
@@ -1916,7 +1933,7 @@ app.post("/api/auth/send-otp", express.json(), async (req, res) => {
   }
 });
 
-app.post("/api/auth/verify-otp", express.json(), async (req, res) => {
+app.post("/api/auth/verify-otp", verifyOtpLimiter, express.json(), async (req, res) => {
   try {
     const { phone, code } = req.body || {};
     const cleaned = String(phone || "").replace(/[\s\-()]/g, "");
