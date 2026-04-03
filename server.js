@@ -7605,7 +7605,7 @@ app.post("/admin/venues/:id/activate", requireAdminAuth, async (req, res) => {
   const venueId = Number(req.params.id);
   try {
     const vr = await pool.query(
-      `SELECT id, name, email, owner_name FROM fp1_venues WHERE id=$1 AND status='pending_admin' LIMIT 1`,
+      `SELECT id, name, email, owner_name FROM fp1_venues WHERE id=$1 AND status IN ('pending_admin','pending_activation','Współpraca testowa') LIMIT 1`,
       [venueId]
     );
     if (vr.rowCount === 0)
