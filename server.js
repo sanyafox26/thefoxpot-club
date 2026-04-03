@@ -7060,7 +7060,34 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
         </div>`;
       }).join("");
 
-  const venuesHtml = venues.rows.map(v => `<tr><td>${v.id}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.city)}</td><td>${v.visits}</td><td><span class="badge badge-ok">Aktywny</span></td><td><form method="POST" action="/api/admin/reset-venue-password/${v.id}" style="margin:0" onsubmit="return confirm('Resetować hasło dla ${escapeHtml(v.name.replace(/'/g,""))}?')"><button type="submit" style="font-size:11px;padding:3px 10px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.4);color:#c9a84c;border-radius:6px;cursor:pointer">🔑 Resetuj hasło</button></form></td></tr>`).join("");
+  const statusBadge = s => {
+    if (s === 'active')             return `<span class="badge badge-ok">Aktywny</span>`;
+    if (s === 'Współpraca testowa') return `<span class="badge badge-warn">Testowa</span>`;
+    if (s === 'pending_activation') return `<span style="font-size:11px;background:rgba(46,204,113,.15);color:#2ecc71;border:1px solid rgba(46,204,113,.3);border-radius:10px;padding:2px 8px">⏳ Aktywacja</span>`;
+    if (s === 'rejected')           return `<span class="badge badge-err">Odrzucony</span>`;
+    return `<span class="badge">${escapeHtml(s||'—')}</span>`;
+  };
+  const venuesHtml = venues.rows.map(v => `<tr>
+    <td>${v.id}</td>
+    <td>${escapeHtml(v.name)}</td>
+    <td>${escapeHtml(v.city)}</td>
+    <td>${v.visits}</td>
+    <td>${statusBadge(v.status)}</td>
+    <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <form method="POST" action="/api/admin/reset-venue-password/${v.id}" style="margin:0" onsubmit="return confirm('Resetować hasło dla ${escapeHtml(v.name.replace(/'/g,""))}?')">
+        <button type="submit" style="font-size:11px;padding:3px 10px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.4);color:#c9a84c;border-radius:6px;cursor:pointer">🔑 Resetuj hasło</button>
+      </form>
+      <form method="POST" action="/admin/venues/${v.id}/set-status" style="margin:0;display:flex;gap:4px;align-items:center">
+        <select name="status" style="font-size:11px;padding:3px 6px;background:#1a1f35;border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:6px;cursor:pointer">
+          <option value="active"${v.status==='active'?' selected':''}>Aktywny</option>
+          <option value="Współpraca testowa"${v.status==='Współpraca testowa'?' selected':''}>Współpraca testowa</option>
+          <option value="pending_activation"${v.status==='pending_activation'?' selected':''}>pending_activation</option>
+          <option value="rejected"${v.status==='rejected'?' selected':''}>Odrzucony</option>
+        </select>
+        <button type="submit" style="font-size:11px;padding:3px 8px;background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:6px;cursor:pointer">Zmień</button>
+      </form>
+    </td>
+  </tr>`).join("");
   const foxesHtml  = foxes.rows.map(f => `<tr><td><b>${f.fox_id}</b></td><td>${escapeHtml(f.username||"—")}</td><td>${escapeHtml(f.phone||"brak")}</td><td>${escapeHtml(f.city)}</td><td>${escapeHtml(f.district||"—")}</td><td><b>${f.rating}</b></td><td>${f.invites}</td><td>${f.founder_number?`<span style="color:#ffd700">👑 #${f.founder_number}</span>`:`<span class="muted">—</span>`}</td><td>${f.visits_total||0}</td><td>${new Date(f.created_at).toLocaleDateString("pl-PL",{timeZone:"Europe/Warsaw"})}</td></tr>`).join("");
   const growthHtml = growth.map((g,i) => `<tr><td>${i+1}</td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.city)}</td><td><b>${g.new_fox}</b></td></tr>`).join("");
   const districtHtml = districtStats.rows.map(d => `<tr><td>${escapeHtml(d.district)}</td><td><b>${d.cnt}</b></td></tr>`).join("");
@@ -7707,6 +7734,19 @@ app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
     await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
     res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
   }
+});
+
+// ── Dev/test: manually set venue status ──
+app.post("/admin/venues/:id/set-status", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.params.id);
+  const allowed = ["active", "Współpraca testowa", "pending_activation", "rejected"];
+  const newStatus = String(req.body.status || "");
+  if (!allowed.includes(newStatus)) {
+    return res.redirect(`/admin?err=${encodeURIComponent("Nieprawidłowy status: "+newStatus)}`);
+  }
+  await pool.query(`UPDATE fp1_venues SET status=$1 WHERE id=$2`, [newStatus, venueId]);
+  const v = await getVenue(venueId);
+  res.redirect(`/admin?ok=${encodeURIComponent(`Status lokalu "${v?.name||venueId}" → ${newStatus}`)}`);
 });
 
 app.post("/admin/venues/:id/reject-activation", requireAdminAuth, async (req, res) => {
