@@ -7270,21 +7270,67 @@ app.post("/admin/venues/:id/activate", requireAdminAuth, async (req, res) => {
     try {
       await sendEmail(
         venue.email,
-        "Twój lokal został aktywowany w The FoxPot Club! 🦊",
-        `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
-          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot" style="height:40px;margin-bottom:24px" onerror="this.style.display='none'"/>
-          <h2 style="color:#c9a84c;margin-bottom:8px">Witaj ${escapeHtml(venue.owner_name)}!</h2>
-          <p>Twój lokal <strong>${escapeHtml(venue.name)}</strong> został aktywowany.</p>
-          <p><strong>Dane do logowania:</strong></p>
-          <p>📧 Login: <code>${escapeHtml(venue.email)}</code><br>
-          🔑 Hasło tymczasowe: <code>${escapeHtml(plainPassword)}</code></p>
-          <p style="margin:24px 0">
-            <a href="https://thefoxpot.club/panel" style="background:#c9a84c;color:#080b12;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">🔗 Panel lokalu</a>
+        "🦊 Witaj w FoxPot Club!",
+        `<!DOCTYPE html>
+<html lang="pl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 0">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:560px;width:100%">
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot Club" height="48" style="margin-bottom:16px" onerror="this.style.display='none'"/>
+          <h1 style="margin:0;color:#c9a84c;font-size:26px;font-weight:800;letter-spacing:-0.5px">Witaj w FoxPot Club!</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.6);font-size:14px">Twój lokal jest już aktywny 🎉</p>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:36px 40px;color:#1a1a2e">
+          <p style="margin:0 0 16px;font-size:16px;color:#333">Cześć <strong>${escapeHtml(venue.owner_name)}</strong>!</p>
+          <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6">
+            Lokal <strong>${escapeHtml(venue.name)}</strong> został pomyślnie aktywowany w systemie The FoxPot Club.
+            Od teraz możesz zarządzać swoim lokalem przez panel partnera.
           </p>
-          <p style="color:#888;font-size:13px">Zalecamy zmianę hasła po pierwszym logowaniu.</p>
-          <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-          <p style="color:#aaa;font-size:12px">The FoxPot Club 🦊 · kontakt@thefoxpot.club</p>
-        </body></html>`
+          <!-- Credentials box -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6ff;border:1px solid #e0d9ff;border-radius:12px;margin-bottom:28px">
+            <tr><td style="padding:24px 28px">
+              <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#7c5cfc;text-transform:uppercase;letter-spacing:1px">Dane do logowania</p>
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:6px 0;font-size:14px;color:#888;width:80px">📧 Login:</td>
+                  <td style="padding:6px 0;font-size:14px;color:#1a1a2e;font-weight:700">${escapeHtml(venue.email)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:14px;color:#888">🔑 Hasło:</td>
+                  <td style="padding:6px 0;font-size:15px;color:#1a1a2e;font-weight:800;letter-spacing:1px">${escapeHtml(plainPassword)}</td>
+                </tr>
+              </table>
+              <p style="margin:12px 0 0;font-size:12px;color:#aaa">Zalecamy zmianę hasła po pierwszym logowaniu.</p>
+            </td></tr>
+          </table>
+          <!-- CTA Button -->
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding-bottom:28px">
+              <a href="https://thefoxpot.club/panel/login"
+                 style="display:inline-block;background:#c9a84c;color:#080b12;padding:16px 40px;border-radius:10px;text-decoration:none;font-weight:800;font-size:16px">
+                🔗 Przejdź do panelu
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:14px;color:#555;line-height:1.6">
+            Masz pytania? Napisz do nas:<br>
+            <a href="mailto:kontakt@thefoxpot.club" style="color:#c9a84c;font-weight:600">kontakt@thefoxpot.club</a>
+          </p>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="background:#f9f9f9;border-top:1px solid #eee;padding:20px 40px;text-align:center">
+          <p style="margin:0;font-size:13px;color:#999">Pozdrawiamy,<br><strong style="color:#555">Zespół FoxPot Club</strong></p>
+          <p style="margin:8px 0 0;font-size:11px;color:#bbb">The FoxPot Club · kontakt@thefoxpot.club</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`
       );
     } catch(e) { console.error("[admin-activate] email failed:", e.message); }
 
