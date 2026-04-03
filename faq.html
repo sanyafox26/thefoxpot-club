@@ -1634,7 +1634,9 @@ function switchTab(tab, btn){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
   btn.classList.add('active');
-  clearSearch(tab);
+  // Reset search state without focusing input (focus triggers mobile keyboard)
+  var input=document.getElementById('search-'+tab);
+  if(input && input.value){ input.value=''; searchFAQ(tab); }
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
