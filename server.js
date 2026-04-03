@@ -5729,6 +5729,43 @@ app.post("/panel/login", async (req, res) => {
 
 app.get("/panel/logout", (req, res) => { clearCookie(res); res.redirect("/panel"); });
 
+app.post("/panel/request-activation", requirePanelAuth, async (req, res) => {
+  const venueId = Number(req.panel.venue_id);
+  try {
+    const vr = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
+    if (vr.rowCount === 0) return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Lokal nie znaleziony.")}`);
+    const venue = vr.rows[0];
+    if (venue.status !== 'Współpraca testowa') {
+      return res.redirect(`/panel/dashboard?err=${encodeURIComponent("Wniosek można złożyć tylko podczas współpracy testowej.")}`);
+    }
+    await pool.query(`UPDATE fp1_venues SET status='pending_activation' WHERE id=$1`, [venueId]);
+    const dateStr = new Date().toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+    await sendEmail(
+      "kontakt@thefoxpot.club",
+      `🦊 Wniosek o aktywację — ${venue.name}`,
+      `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1a1a2e">
+        <h2 style="color:#c9a84c">🚀 Nowy wniosek o pełną aktywację</h2>
+        <table style="width:100%;border-collapse:collapse;margin-top:16px">
+          <tr><td style="padding:8px;color:#666;width:140px">Nazwa lokalu:</td><td style="padding:8px;font-weight:700">${escapeHtml(venue.name)}</td></tr>
+          <tr style="background:#f9f9f9"><td style="padding:8px;color:#666">Adres:</td><td style="padding:8px">${escapeHtml(venue.address||"—")}</td></tr>
+          <tr><td style="padding:8px;color:#666">E-mail:</td><td style="padding:8px"><a href="mailto:${escapeHtml(venue.email||"")}">${escapeHtml(venue.email||"—")}</a></td></tr>
+          <tr style="background:#f9f9f9"><td style="padding:8px;color:#666">Data wniosku:</td><td style="padding:8px">${dateStr}</td></tr>
+          <tr><td style="padding:8px;color:#666">ID lokalu:</td><td style="padding:8px">#${venueId}</td></tr>
+        </table>
+        <div style="margin-top:24px">
+          <a href="${PUBLIC_URL}/admin" style="display:inline-block;padding:12px 24px;background:#c9a84c;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">Przejdź do panelu admina →</a>
+        </div>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#aaa;font-size:12px">The FoxPot Club 🦊 · kontakt@thefoxpot.club</p>
+      </body></html>`
+    );
+    res.redirect(`/panel/dashboard?ok=${encodeURIComponent("Wniosek o pełną aktywację wysłany ✅ Skontaktujemy się wkrótce.")}`);
+  } catch (e) {
+    console.error("[request-activation]", e);
+    res.redirect(`/panel/dashboard?err=${encodeURIComponent("Błąd: "+String(e?.message||e).slice(0,100))}`);
+  }
+});
+
 app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
   try {
   const venueId = Number(req.panel.venue_id);
@@ -5799,6 +5836,17 @@ app.get("/panel/dashboard", requirePanelAuth, async (req, res) => {
       ${flash(req)}
       <div style="margin-top:10px;opacity:.7;font-size:13px">Kod lokalu: <b>${escapeHtml(venue.ref_code||'brak')}</b> | Łącznie wizyt: <b>${xy.rows[0].c}</b></div>
       ${venue.slug ? `<div style="margin-top:8px;display:flex;align-items:center;gap:6px"><a href="https://thefoxpot.club/lokal/${escapeHtml(venue.slug)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.25);border-radius:8px;color:#f5a623;font-size:12px;font-weight:700;text-decoration:none">🌐 Zobacz stronę</a><button onclick="navigator.clipboard.writeText('https://thefoxpot.club/lokal/${escapeHtml(venue.slug)}');this.textContent='✅';setTimeout(()=>this.textContent='📋',1500)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:rgba(255,255,255,.5);padding:4px 8px;cursor:pointer;font-size:12px">📋</button></div>` : ''}
+      ${venue.status === 'Współpraca testowa' ? `
+      <div style="margin-top:16px;padding:14px;border-radius:12px;border:1px solid rgba(46,204,113,.3);background:rgba(46,204,113,.06)">
+        <div style="font-size:13px;color:rgba(255,255,255,.6);margin-bottom:10px">Trwa współpraca testowa. Gdy jesteś gotowy na pełną aktywację — złóż wniosek.</div>
+        <button onclick="if(confirm('Czy na pewno chcesz złożyć wniosek o pełną aktywację? Skontaktujemy się z Tobą wkrótce.')){document.getElementById('activation-form').submit()}" style="background:rgba(46,204,113,.2);border:1px solid rgba(46,204,113,.5);color:#2ecc71;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;width:100%">🚀 Proszę o pełną aktywację</button>
+        <form id="activation-form" method="POST" action="/panel/request-activation" style="display:none"></form>
+      </div>` : ''}
+      ${venue.status === 'pending_activation' ? `
+      <div style="margin-top:16px;padding:14px;border-radius:12px;border:1px solid rgba(245,166,35,.3);background:rgba(245,166,35,.06)">
+        <div style="font-size:14px;font-weight:700;color:#f5a623">⏳ Wniosek o pełną aktywację wysłany</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.5);margin-top:4px">Skontaktujemy się z Tobą wkrótce.</div>
+      </div>` : ''}
     </div>
     <div class="card">
       <h2>📊 Nowi Fox przez twój kod</h2>
@@ -6935,7 +6983,8 @@ app.get("/admin/logout", (req, res) => { clearCookie(res); res.redirect("/admin/
 
 app.get("/admin", requireAdminAuth, async (req, res) => {
   const pending = await pool.query(`SELECT * FROM fp1_venues WHERE approved=FALSE ORDER BY created_at ASC`);
-  const pendingAdmin = await pool.query(`SELECT * FROM fp1_venues WHERE status='pending_admin' ORDER BY email_confirmed_at ASC`);
+  const pendingAdmin      = await pool.query(`SELECT * FROM fp1_venues WHERE status='pending_admin' ORDER BY email_confirmed_at ASC`);
+  const pendingActivation = await pool.query(`SELECT * FROM fp1_venues WHERE status='pending_activation' ORDER BY created_at ASC`);
   const venues  = await pool.query(`SELECT v.*,COUNT(cv.id)::int AS visits FROM fp1_venues v LEFT JOIN fp1_counted_visits cv ON cv.venue_id=v.id AND cv.is_credited=TRUE WHERE v.approved=TRUE GROUP BY v.id ORDER BY visits DESC LIMIT 50`);
   const foxes   = await pool.query(`SELECT f.id AS fox_id,f.user_id,f.username,f.rating,f.invites,f.city,f.district,f.founder_number,f.streak_current,f.streak_best,f.created_at,f.phone,
     (SELECT COUNT(*)::int FROM fp1_counted_visits cv WHERE cv.user_id=f.user_id AND cv.is_credited=TRUE) AS visits_total
@@ -7080,7 +7129,30 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
   }).join("");
   const spinHtml = spinStats.rows.map(s => `<tr><td>${escapeHtml(s.prize_label||s.prize_type)}</td><td><b>${s.cnt}</b></td></tr>`).join("");
 
-  const pendingAdminCount = pendingAdmin.rows.length;
+  const pendingActivationHtml = pendingActivation.rows.length === 0
+    ? `<p class="muted">Brak wniosków o aktywację</p>`
+    : pendingActivation.rows.map(v => {
+        const createdAt = new Date(v.created_at).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw" });
+        return `
+        <div style="padding:14px;margin-bottom:12px;border-radius:10px;border:1px solid rgba(46,204,113,.3);background:rgba(46,204,113,.05)">
+          <div style="font-size:15px;font-weight:700;margin-bottom:6px">${escapeHtml(v.name)}</div>
+          <div style="font-size:13px;color:#ccc;display:grid;gap:3px">
+            <div>📍 Adres: ${escapeHtml(v.address||"—")}</div>
+            <div>📧 Email: ${escapeHtml(v.email||"—")}</div>
+            <div style="color:#888;font-size:11px">📅 Data wniosku: ${createdAt}</div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <form method="POST" action="/admin/venues/${v.id}/activate" style="margin:0">
+              <button type="submit" style="background:rgba(46,204,113,.2);border:1px solid rgba(46,204,113,.4);color:#2ecc71;padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">✅ Aktywuj</button>
+            </form>
+            <form method="POST" action="/admin/venues/${v.id}/reject-activation" style="margin:0" onsubmit="return confirm('Odrzucić wniosek od ${escapeHtml(v.name.replace(/'/g,""))}?')">
+              <button type="submit" style="background:rgba(231,76,60,.2);border:1px solid rgba(231,76,60,.4);color:#e74c3c;padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">❌ Odrzuć</button>
+            </form>
+          </div>
+        </div>`;
+      }).join("");
+
+  const pendingAdminCount = pendingAdmin.rows.length + pendingActivation.rows.length;
   const pendingBadge = pendingAdminCount > 0
     ? `<span style="display:inline-flex;align-items:center;justify-content:center;background:#ff8a00;color:#000;font-size:12px;font-weight:700;border-radius:50%;width:22px;height:22px;margin-left:8px;animation:pulse 1.5s infinite">🔔${pendingAdminCount}</span>
        <style>@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,138,0,.6)}50%{box-shadow:0 0 0 8px rgba(255,138,0,0)}}</style>`
@@ -7097,6 +7169,10 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
     <div class="card" style="${pendingAdminCount > 0 ? 'border:1px solid rgba(255,138,0,.4);background:rgba(255,138,0,.04)' : ''}">
       <h2 style="margin-bottom:16px">📋 Wnioski do zatwierdzenia${pendingAdminCount > 0 ? ` <span style="background:#ff8a00;color:#000;font-size:12px;font-weight:700;border-radius:12px;padding:2px 9px;margin-left:6px">${pendingAdminCount}</span>` : ""}</h2>
       ${pendingAdminHtml}
+    </div>
+    <div class="card" style="${pendingActivation.rows.length > 0 ? 'border:1px solid rgba(46,204,113,.35);background:rgba(46,204,113,.03)' : ''}">
+      <h2 style="margin-bottom:16px">🚀 Wnioski o pełną aktywację${pendingActivation.rows.length > 0 ? ` <span style="background:#2ecc71;color:#000;font-size:12px;font-weight:700;border-radius:12px;padding:2px 9px;margin-left:6px">${pendingActivation.rows.length}</span>` : ""}</h2>
+      ${pendingActivationHtml}
     </div>
     <div class="card"><h2>Wnioski do zatwierdzenia — legacy (${pending.rows.length})</h2>${pendingHtml}</div>
     <div class="card"><h2>🗳️ Głosowanie na lokale (${noms.rows.length})</h2>${nomsHtml}</div>
@@ -7631,6 +7707,16 @@ app.post("/admin/venues/:id/reject", requireAdminAuth, async (req, res) => {
     await pool.query(`DELETE FROM fp1_venues WHERE id=$1 AND approved=FALSE`, [venueId]);
     res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono: "+(v?.name||venueId))}`);
   }
+});
+
+app.post("/admin/venues/:id/reject-activation", requireAdminAuth, async (req, res) => {
+  const venueId = Number(req.params.id);
+  const v = await getVenue(venueId);
+  if (!v || v.status !== "pending_activation") {
+    return res.redirect(`/admin?err=${encodeURIComponent("Lokal nie ma statusu pending_activation.")}`);
+  }
+  await pool.query(`UPDATE fp1_venues SET status='Współpraca testowa' WHERE id=$1`, [venueId]);
+  res.redirect(`/admin?warn=${encodeURIComponent("Odrzucono wniosek: "+(v.name||venueId))}`);
 });
 
 // ── STEP 5: Admin reset venue password ──
