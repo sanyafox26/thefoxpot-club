@@ -4399,7 +4399,7 @@ async function sendBackupEmail() {
     fs.writeFileSync(tmpPath, sql, "utf-8");
     const fileContent = fs.readFileSync(tmpPath);
     await resendClient.emails.send({
-      from: "backup@send.thefoxpot.club",
+      from: "backup@thefoxpot.club",
       to:   "kontakt@thefoxpot.club",
       subject: `🦊 FoxPot DB Backup — ${dateStr}`,
       html: `<p>Automatyczny backup bazy danych FoxPot Club.</p><p>Data: <b>${dateStr}</b><br>Rozmiar: <b>${(fileContent.length / 1024).toFixed(0)} KB</b></p>`,
