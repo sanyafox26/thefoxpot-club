@@ -5692,10 +5692,10 @@ app.get("/panel", (req, res) => {
     <div class="card" style="max-width:400px;margin:60px auto">
       <h1>🦊 Panel lokalu</h1>${msg}
       <form method="POST" action="/panel/login">
-        <label>ID lokalu</label>
-        <input name="venue_id" type="number" min="1" required placeholder="np. 1" autocomplete="off"/>
-        <label>PIN (6 cyfr)</label>
-        <input name="pin" type="password" maxlength="6" required placeholder="••••••"/>
+        <label>E-mail</label>
+        <input name="login" type="text" required placeholder="kontakt@twojlokal.pl" autocomplete="email"/>
+        <label>Hasło</label>
+        <input name="pin" type="password" required placeholder="••••••••"/>
         <button type="submit" style="width:100%;margin-top:12px">Zaloguj →</button>
       </form>
       <p style="text-align:center;margin-top:16px;font-size:13px">
@@ -5705,15 +5705,23 @@ app.get("/panel", (req, res) => {
 });
 
 app.post("/panel/login", async (req, res) => {
-  const ip = getIp(req);
+  const ip    = getIp(req);
   if (loginRate(ip).blocked) return res.redirect(`/panel?msg=${encodeURIComponent("Za dużo prób. Spróbuj za 15 minut.")}`);
-  const venueId = String(req.body.venue_id || "").trim();
-  const pin     = String(req.body.pin || "").trim();
-  if (!venueId || !pin) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Brak danych.")}`); }
-  const v = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [venueId]);
-  if (v.rowCount === 0 || !v.rows[0].pin_salt) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Nie znaleziono lokalu.")}`); }
+  const login = String(req.body.login || req.body.venue_id || "").trim();
+  const pin   = String(req.body.pin   || "").trim();
+  if (!login || !pin) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Brak danych.")}`); }
+
+  // Lookup by email or by numeric ID (backward compat)
+  let v;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login)) {
+    v = await pool.query(`SELECT * FROM fp1_venues WHERE LOWER(email)=$1 LIMIT 1`, [login.toLowerCase()]);
+  } else {
+    v = await pool.query(`SELECT * FROM fp1_venues WHERE id=$1 LIMIT 1`, [login]);
+  }
+
+  if (v.rowCount === 0 || !v.rows[0].pin_salt) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Nie znaleziono lokalu lub hasło nie zostało ustawione.")}`); }
   const venue = v.rows[0];
-  if (pinHash(pin, venue.pin_salt) !== venue.pin_hash) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Błędny PIN.")}`); }
+  if (pinHash(pin, venue.pin_salt) !== venue.pin_hash) { loginBad(ip); return res.redirect(`/panel?msg=${encodeURIComponent("Błędne hasło.")}`); }
   loginOk(ip);
   setCookie(res, signSession({ venue_id:String(venue.id), exp:Date.now()+SESSION_TTL_MS }));
   res.redirect("/panel/dashboard");
