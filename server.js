@@ -102,7 +102,7 @@ app.use(cors({
 }));
 
 // Block direct Railway access — only allow requests via Cloudflare
-const CF_BYPASS_PATHS = ["/health", "/webhook"];
+const CF_BYPASS_PATHS = ["/health", "/webhook", "/partners/verify", "/partners/verified"];
 app.use((req, res, next) => {
   if (CF_BYPASS_PATHS.some(p => req.path === p || req.path.startsWith(p + "/"))) return next();
   if (!req.headers["cf-ray"]) return res.status(403).json({ error: "Direct access not allowed" });
@@ -5497,8 +5497,7 @@ app.post("/partners/register", express.json(), async (req, res) => {
         return res.status(409).json({ error: "Zgłoszenie czeka już na weryfikację." });
     }
 
-    const token   = crypto.randomUUID();
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const token = crypto.randomUUID();
 
     if (existing.rows.length > 0 && existing.rows[0].status === "pending_email") {
       await pool.query(
