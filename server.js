@@ -34,9 +34,11 @@
 
 const express  = require("express");
 const crypto   = require("crypto");
+const fs       = require("fs");
 const xss      = require("xss");
 const { body, validationResult } = require("express-validator");
 const path     = require("path");
+const cron     = require("node-cron");
 const { Telegraf, Markup } = require("telegraf");
 const { Pool }             = require("pg");
 const { setupSupport, migrateSupport } = require("./fox_support");
@@ -4387,6 +4389,35 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000);
 
+// ── Daily email backup (03:00 Warsaw) ──
+async function sendBackupEmail() {
+  const dateStr = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Warsaw" }).slice(0, 10);
+  const tmpPath = `/tmp/foxpot_backup_${dateStr}.sql`;
+  try {
+    if (!resendClient) throw new Error("RESEND_API_KEY not configured");
+    const sql = await createBackupSQL();
+    fs.writeFileSync(tmpPath, sql, "utf-8");
+    const fileContent = fs.readFileSync(tmpPath);
+    await resendClient.emails.send({
+      from: "backup@send.thefoxpot.club",
+      to:   "kontakt@thefoxpot.club",
+      subject: `🦊 FoxPot DB Backup — ${dateStr}`,
+      html: `<p>Automatyczny backup bazy danych FoxPot Club.</p><p>Data: <b>${dateStr}</b><br>Rozmiar: <b>${(fileContent.length / 1024).toFixed(0)} KB</b></p>`,
+      attachments: [{
+        filename: `foxpot_backup_${dateStr}.sql`,
+        content:  fileContent.toString("base64"),
+      }],
+    });
+    console.log(`✅ Backup sent (${(fileContent.length / 1024).toFixed(0)} KB)`);
+  } catch (e) {
+    console.error(`❌ Backup failed: ${e?.message || e}`);
+  } finally {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+  }
+}
+
+cron.schedule("0 3 * * *", sendBackupEmail, { timezone: "Europe/Warsaw" });
+
 // Demo no-show cron removed — no penalties for venue join. Demo Fox stays until first check-in.
 
 /* ═══════════════════════════════════════════════════════════════
@@ -6806,6 +6837,7 @@ app.get("/admin", requireAdminAuth, async (req, res) => {
       ${flash(req)}
       <div class="muted" style="margin-top:8px">👑 Pionier Fox: pozostało <b>${spotsLeft}</b> / ${FOUNDER_LIMIT} miejsc</div>
       <a href="/admin/backup" style="display:inline-block;margin-top:8px;padding:8px 16px;background:rgba(124,92,252,.15);border:1px solid rgba(124,92,252,.3);border-radius:8px;color:#7c5cfc;font-size:12px;font-weight:700;text-decoration:none">💾 Pobierz backup bazy</a>
+      <a href="/admin/backup-now" style="display:inline-block;margin-top:8px;margin-left:8px;padding:8px 16px;background:rgba(124,92,252,.15);border:1px solid rgba(124,92,252,.3);border-radius:8px;color:#7c5cfc;font-size:12px;font-weight:700;text-decoration:none" onclick="return confirm('Wysłać backup na email teraz?')">📧 Wyślij backup email</a>
       <a href="/admin/security-log" style="display:inline-block;margin-top:8px;margin-left:8px;padding:8px 16px;background:rgba(249,126,0,.15);border:1px solid rgba(249,126,0,.3);border-radius:8px;color:#F97E00;font-size:12px;font-weight:700;text-decoration:none">🔒 Security Log</a>
     </div>
     <div class="card" style="${pendingAdminCount > 0 ? 'border:1px solid rgba(255,138,0,.4);background:rgba(255,138,0,.04)' : ''}">
@@ -7133,6 +7165,15 @@ app.get("/admin/backup", requireAdminAuth, async (req, res) => {
   } catch (e) {
     console.error("BACKUP_ERR", e);
     res.status(500).send("Błąd backupu: " + String(e?.message || e).slice(0, 200));
+  }
+});
+
+app.get("/admin/backup-now", requireAdminAuth, async (req, res) => {
+  try {
+    await sendBackupEmail();
+    res.redirect(`/admin?ok=${encodeURIComponent("Backup wysłany na kontakt@thefoxpot.club")}`);
+  } catch (e) {
+    res.redirect(`/admin?err=${encodeURIComponent("Backup failed: " + String(e?.message || e).slice(0, 100))}`);
   }
 });
 
