@@ -79,7 +79,23 @@ const app = express();
 // /health must be before helmet/cors so Railway healthcheck is never blocked
 app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:     ["'self'"],
+      scriptSrc:      ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr:  ["'unsafe-inline'"],
+      styleSrc:       ["'self'", "https:", "'unsafe-inline'"],
+      imgSrc:         ["'self'", "data:", "https:"],
+      fontSrc:        ["'self'", "https:", "data:"],
+      connectSrc:     ["'self'", "https:"],
+      frameSrc:       ["'none'"],
+      objectSrc:      ["'none'"],
+      baseUri:        ["'self'"],
+      formAction:     ["'self'"],
+    },
+  },
+}));
 app.use(cors({
   origin: ["https://thefoxpot.club", "https://www.thefoxpot.club"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
