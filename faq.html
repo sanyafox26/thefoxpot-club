@@ -121,8 +121,8 @@
 <!-- TABS -->
 <a href="/" class="back-link">← Strona główna</a>
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('fox')">🦊 Dla Fox'ów</button>
-  <button class="tab-btn" onclick="switchTab('lokal')">🏪 Dla Lokali</button>
+  <button class="tab-btn active" onclick="switchTab('fox', this)">🦊 Dla Fox'ów</button>
+  <button class="tab-btn" onclick="switchTab('lokal', this)">🏪 Dla Lokali</button>
 </div>
 
 <!-- FOX TAB -->
@@ -1629,11 +1629,11 @@ function openQ(id){
   setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),50);
 }
 
-function switchTab(tab){
+function switchTab(tab, btn){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
-  event.target.classList.add('active');
+  btn.classList.add('active');
   clearSearch(tab);
   window.scrollTo({top:0,behavior:'smooth'});
 }
