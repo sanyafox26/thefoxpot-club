@@ -100,6 +100,14 @@ app.use(cors({
   origin: ["https://thefoxpot.club", "https://www.thefoxpot.club"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 }));
+
+// Block direct Railway access — only allow requests via Cloudflare
+const CF_BYPASS_PATHS = ["/health", "/webhook"];
+app.use((req, res, next) => {
+  if (CF_BYPASS_PATHS.some(p => req.path === p || req.path.startsWith(p + "/"))) return next();
+  if (!req.headers["cf-ray"]) return res.status(403).json({ error: "Direct access not allowed" });
+  next();
+});
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: "12mb" }));
 // CORS for Capacitor + COOP for popups (Google Maps)
