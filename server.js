@@ -989,7 +989,9 @@ async function migrate() {
   await ensureColumn("fp1_venues", "email_token_expires",  "TIMESTAMPTZ");
   await ensureColumn("fp1_venues", "password_reset_token", "TEXT");
   await ensureColumn("fp1_venues", "password_reset_expires","TIMESTAMPTZ");
-  await ensureColumn("fp1_venues", "email_confirmed_at",   "TIMESTAMPTZ");
+  await ensureColumn("fp1_venues", "email_confirmed_at",        "TIMESTAMPTZ");
+  await ensureColumn("fp1_venues", "email_verification_token",   "TEXT");
+  await ensureColumn("fp1_venues", "email_verified_at",          "TIMESTAMPTZ");
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fp1_security_log (
@@ -5458,6 +5460,227 @@ app.get("/confirm-venue", async (req, res) => {
     console.error("[confirm-venue]", e);
     res.status(500).send(pageShell("Błąd serwera", `<div class="card" style="max-width:480px;margin:80px auto;text-align:center"><p>Błąd serwera. Spróbuj ponownie.</p></div>`));
   }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   PARTNERS ONBOARDING — /partners/register + /partners/verify
+═══════════════════════════════════════════════════════════════ */
+
+function generateTempPassword() {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let p = "";
+  for (let i = 0; i < 8; i++) p += chars[Math.floor(Math.random() * chars.length)];
+  return p;
+}
+
+// КРОК 2: Rejestracja partnera
+app.post("/partners/register", express.json(), async (req, res) => {
+  try {
+    const name    = xss(String(req.body.name    || "").trim()).slice(0, 200);
+    const address = xss(String(req.body.address || "").trim()).slice(0, 300);
+    const email   = String(req.body.email || "").trim().toLowerCase();
+
+    if (!name || !address || !email)
+      return res.status(400).json({ error: "Wypełnij wszystkie pola." });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      return res.status(400).json({ error: "Podaj prawidłowy adres email." });
+
+    // Check duplicate
+    const existing = await pool.query(
+      `SELECT id, status FROM fp1_venues WHERE email=$1 LIMIT 1`, [email]
+    );
+    if (existing.rows.length > 0) {
+      const s = existing.rows[0].status;
+      if (s === "active" || s === "Współpraca testowa")
+        return res.status(409).json({ error: "Ten email jest już zarejestrowany." });
+      if (s === "pending_admin")
+        return res.status(409).json({ error: "Zgłoszenie czeka już na weryfikację." });
+    }
+
+    const token   = crypto.randomUUID();
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    if (existing.rows.length > 0 && existing.rows[0].status === "pending_email") {
+      await pool.query(
+        `UPDATE fp1_venues SET name=$1, address=$2, email_verification_token=$3, created_at=NOW() WHERE id=$4`,
+        [name, address, token, existing.rows[0].id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO fp1_venues(name, address, email, status, approved, is_trial, email_verification_token, created_at)
+         VALUES($1,$2,$3,'pending_email',FALSE,TRUE,$4,NOW())`,
+        [name, address, email, token]
+      );
+    }
+
+    const verifyUrl = `${PUBLIC_URL}/partners/verify?token=${token}`;
+    sendEmail(
+      email,
+      "🦊 Potwierdź rejestrację w FoxPot Club",
+      `<!DOCTYPE html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 0">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:560px;width:100%">
+        <tr><td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot Club" height="48" style="margin-bottom:16px" onerror="this.style.display='none'"/>
+          <h1 style="margin:0;color:#c9a84c;font-size:24px;font-weight:800">Potwierdź rejestrację</h1>
+        </td></tr>
+        <tr><td style="padding:36px 40px;color:#1a1a2e">
+          <p style="margin:0 0 16px;font-size:16px">Cześć!</p>
+          <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6">
+            Otrzymaliśmy zgłoszenie lokalu <strong>${escapeHtml(name)}</strong> do The FoxPot Club.<br>
+            Kliknij poniższy przycisk, aby potwierdzić swój adres e-mail.
+          </p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding-bottom:28px">
+              <a href="${verifyUrl}" style="display:inline-block;background:#c9a84c;color:#080b12;padding:16px 40px;border-radius:10px;text-decoration:none;font-weight:800;font-size:16px">
+                ✅ Potwierdź e-mail
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:13px;color:#888">Link ważny 24 godziny. Jeśli to nie Ty — zignoruj tę wiadomość.</p>
+        </td></tr>
+        <tr><td style="background:#f9f9f9;border-top:1px solid #eee;padding:20px 40px;text-align:center">
+          <p style="margin:0;font-size:13px;color:#999">Pozdrawiamy,<br><strong style="color:#555">Zespół FoxPot Club</strong></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`
+    );
+
+    res.json({ success: true, message: "Sprawdź skrzynkę e-mail" });
+  } catch(e) {
+    console.error("[partners/register]", e);
+    res.status(500).json({ error: "Błąd serwera. Spróbuj ponownie." });
+  }
+});
+
+// КРОК 3: Weryfikacja e-mail i aktywacja
+app.get("/partners/verify", async (req, res) => {
+  const { token } = req.query;
+
+  const errPage = (msg) => res.status(400).send(pageShell("Błąd weryfikacji", `
+    <div class="card" style="max-width:480px;margin:80px auto;text-align:center">
+      <div style="font-size:48px;margin-bottom:16px">❌</div>
+      <h2 style="color:#c9a84c;margin-bottom:12px">Błąd weryfikacji</h2>
+      <p style="color:#ccc">${escapeHtml(msg)}</p>
+      <a href="/partners" style="display:inline-block;margin-top:24px;color:#c9a84c">← Wróć do rejestracji</a>
+    </div>`));
+
+  if (!token) return errPage("Brakuje tokenu weryfikacyjnego.");
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, created_at FROM fp1_venues
+       WHERE email_verification_token=$1 AND status='pending_email' LIMIT 1`,
+      [token]
+    );
+    if (result.rows.length === 0)
+      return errPage("Link jest nieprawidłowy lub konto zostało już aktywowane.");
+
+    const venue = result.rows[0];
+    if (Date.now() > new Date(venue.created_at).getTime() + 24 * 60 * 60 * 1000)
+      return errPage("Link wygasł (ważny 24 godziny). Wypełnij formularz ponownie.");
+
+    // Generate credentials
+    const plainPassword = generateTempPassword();
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = pinHash(plainPassword, salt);
+
+    await pool.query(
+      `UPDATE fp1_venues
+       SET status='Współpraca testowa', approved=TRUE,
+           pin_hash=$1, pin_salt=$2,
+           email_verification_token=NULL, email_verified_at=NOW()
+       WHERE id=$3`,
+      [hash, salt, venue.id]
+    );
+
+    // Send credentials email
+    try {
+      await sendEmail(
+        venue.email,
+        "🦊 Witaj w FoxPot Club! Dane do panelu",
+        `<!DOCTYPE html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 0">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:560px;width:100%">
+        <tr><td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center">
+          <img src="${PUBLIC_URL}/logo.png" alt="FoxPot Club" height="48" style="margin-bottom:16px" onerror="this.style.display='none'"/>
+          <h1 style="margin:0;color:#c9a84c;font-size:24px;font-weight:800">Rejestracja potwierdzona!</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,.6);font-size:14px">Twój lokal jest gotowy do działania 🎉</p>
+        </td></tr>
+        <tr><td style="padding:36px 40px;color:#1a1a2e">
+          <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6">
+            Lokal <strong>${escapeHtml(venue.name)}</strong> został aktywowany w trybie <strong>Współpraca testowa</strong>.
+          </p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6ff;border:1px solid #e0d9ff;border-radius:12px;margin-bottom:28px">
+            <tr><td style="padding:24px 28px">
+              <p style="margin:0 0 12px;font-size:12px;font-weight:700;color:#7c5cfc;text-transform:uppercase;letter-spacing:1px">Dane do logowania</p>
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:6px 0;font-size:14px;color:#888;width:80px">📋 Lokal:</td>
+                  <td style="padding:6px 0;font-size:14px;color:#1a1a2e;font-weight:700">${escapeHtml(venue.name)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:14px;color:#888">📧 Login:</td>
+                  <td style="padding:6px 0;font-size:14px;color:#1a1a2e;font-weight:700">${escapeHtml(venue.email)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:14px;color:#888">🔑 Hasło:</td>
+                  <td style="padding:6px 0;font-size:15px;color:#1a1a2e;font-weight:800;letter-spacing:1px">${escapeHtml(plainPassword)}</td>
+                </tr>
+              </table>
+              <p style="margin:12px 0 0;font-size:12px;color:#aaa">Zalecamy zmianę hasła po pierwszym logowaniu.</p>
+            </td></tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding-bottom:28px">
+              <a href="https://thefoxpot.club/panel/login" style="display:inline-block;background:#c9a84c;color:#080b12;padding:16px 40px;border-radius:10px;text-decoration:none;font-weight:800;font-size:16px">
+                🔗 Przejdź do panelu
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:14px;color:#555">Pytania? <a href="mailto:kontakt@thefoxpot.club" style="color:#c9a84c;font-weight:600">kontakt@thefoxpot.club</a></p>
+        </td></tr>
+        <tr><td style="background:#f9f9f9;border-top:1px solid #eee;padding:20px 40px;text-align:center">
+          <p style="margin:0;font-size:13px;color:#999">Pozdrawiamy,<br><strong style="color:#555">Zespół FoxPot Club</strong></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`
+      );
+    } catch(e) { console.error("[partners/verify] email failed:", e.message); }
+
+    res.redirect("/partners/verified");
+  } catch(e) {
+    console.error("[partners/verify]", e);
+    res.status(500).send(pageShell("Błąd serwera", `<div class="card" style="max-width:480px;margin:80px auto;text-align:center"><p>Błąd serwera. Spróbuj ponownie.</p></div>`));
+  }
+});
+
+// КРОК 3b: Strona sukcesu
+app.get("/partners/verified", (_req, res) => {
+  res.send(pageShell("Rejestracja potwierdzona!", `
+    <div class="card" style="max-width:520px;margin:80px auto;text-align:center;padding:48px 36px">
+      <div style="font-size:56px;margin-bottom:20px">🎉</div>
+      <h1 style="color:#c9a84c;font-size:24px;margin-bottom:12px">Rejestracja potwierdzona!</h1>
+      <p style="color:#ccc;font-size:15px;line-height:1.7;margin-bottom:28px">
+        E-mail potwierdzony! Wysłaliśmy dane logowania na Twój adres e-mail.<br>
+        Możesz teraz zalogować się do panelu partnera.
+      </p>
+      <a href="https://thefoxpot.club/panel/login"
+         style="display:inline-block;background:#c9a84c;color:#080b12;padding:14px 36px;border-radius:10px;font-weight:800;font-size:15px;text-decoration:none;margin-bottom:16px">
+        🔗 Przejdź do panelu
+      </a><br>
+      <a href="/" style="font-size:13px;color:rgba(255,255,255,.4);text-decoration:none">← Strona główna</a>
+    </div>`));
 });
 
 /* ═══════════════════════════════════════════════════════════════
