@@ -1760,7 +1760,7 @@ async function redeemInviteCode(userId, codeRaw) {
     [invite.created_by_user_id ? String(invite.created_by_user_id) : null, code, String(userId)]
   );
   if (invite.created_by_user_id)
-    await pool.query(`UPDATE fp1_foxes SET rating=rating+1 WHERE user_id=$1`, [String(invite.created_by_user_id)]);
+    await pool.query(`UPDATE fp1_foxes SET rating=rating+3, invites=invites+1 WHERE user_id=$1`, [String(invite.created_by_user_id)]);
   return { ok:true };
 }
 
@@ -2166,7 +2166,7 @@ app.post("/api/auth/onboard", express.json(), async (req, res) => {
       if (foxQ.rows.length) {
         const result = await redeemInviteCode(foxQ.rows[0].user_id, inviteCode);
         if (result.ok) {
-          // Invited fox gets +1 rating and +3 invites
+          // Invited fox gets +1 rating (starts at 0 → total 1) and +3 invites
           await pool.query(`UPDATE fp1_foxes SET rating = rating + 1, invites = invites + 3 WHERE id=$1`, [decoded.fox_id]);
         }
       }
@@ -3707,8 +3707,8 @@ app.post("/api/receipt", requireWebAppAuth, async (req, res) => {
           await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [userId]);
           const inv = await pool.query(`SELECT invited_by_user_id FROM fp1_foxes WHERE user_id=$1 LIMIT 1`, [userId]);
           if (inv.rows[0]?.invited_by_user_id) {
-            await pool.query(`UPDATE fp1_foxes SET rating=rating+5 WHERE user_id=$1`, [String(inv.rows[0].invited_by_user_id)]);
-            if (bot) { try { await bot.telegram.sendMessage(Number(inv.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+5 pkt dla Ciebie! 🦊`); } catch {} }
+            await pool.query(`UPDATE fp1_foxes SET rating=rating+10 WHERE user_id=$1`, [String(inv.rows[0].invited_by_user_id)]);
+            if (bot) { try { await bot.telegram.sendMessage(Number(inv.rows[0].invited_by_user_id), `🎉 Twój znajomy zrobił pierwszą wizytę!\n+10 pkt dla Ciebie! 🦊`); } catch {} }
           }
         }
         inviteAutoAdded = await awardInvitesFrom5Visits(userId);
@@ -8179,7 +8179,7 @@ if (BOT_TOKEN) {
       const result = await redeemInviteCode(userId, codeOrInv);
       if (!result.ok) return ctx.reply("❌ Nieprawidłowy kod. Potrzebujesz zaproszenia od Fox lub kodu lokalu.");
 
-      await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,3,3,'Warszawa') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
+      await pool.query(`INSERT INTO fp1_foxes(user_id,username,rating,invites,city) VALUES($1,$2,1,3,'Warszawa') ON CONFLICT(user_id) DO NOTHING`, [userId, username]);
       const founderNum = await assignFounderNumber(userId);
      let msg = `🦊 Zostałeś zaproszony do The FoxPot Club.\n\nTwój status Fox jest już aktywny.\nZrób pierwszy check-in w lokalu, aby zdobyć pierwszą wizytę i zwiększyć swój rating.`;
       if (founderNum) msg += `\n\n👑 Pionier Fox #${founderNum}`;
