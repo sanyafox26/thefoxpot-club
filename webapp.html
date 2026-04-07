@@ -428,7 +428,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </div>
       </div>
 
-      <button id="profileInviteBtn" onclick="quickInvite()" style="width:100%;padding:14px;background:linear-gradient(135deg,#7c5cfc,#6341e0);border:none;border-radius:var(--radius-sm);color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px"><span>🎟️</span>Zaproś znajomego</button>
+      <button id="profileInviteBtn" onclick="quickInvite()" style="width:100%;padding:16px 14px;background:linear-gradient(135deg,#F97E00,#e06b00);border:none;border-radius:var(--radius-sm);color:white;font-size:16px;font-weight:800;cursor:pointer;font-family:var(--font);margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 16px rgba(249,126,0,.35);letter-spacing:.2px"><span>🦊</span>Zaproś znajomego i odbierz bonus!</button>
+      <div style="text-align:center;font-size:12px;color:rgba(255,255,255,.45);margin-bottom:12px">Za każde zaproszenie: +3 pkt i +1 zaproszenie dla Ciebie</div>
       <div id="profileInviteMsg" style="display:none;text-align:center;margin-bottom:12px;padding:12px;background:var(--card-bg);border:1px solid rgba(124,92,252,.3);border-radius:var(--radius-sm)">
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Link do zaproszenia:</div>
         <div id="profileInviteLink" style="font-size:13px;color:var(--accent2);font-weight:700;word-break:break-all;margin-bottom:10px"></div>
@@ -2053,7 +2054,7 @@ async function quickInvite() {
     const noInv = e.message.includes('Brak') || e.message.includes('no_invites');
     btn.innerHTML = noInv ? '<span>❌</span>Brak zaproszeń' : '<span>❌</span>Błąd';
     btn.disabled = false;
-    setTimeout(() => { btn.innerHTML = '<span>🎟️</span>Zaproś znajomego'; }, 3000);
+    setTimeout(() => { btn.innerHTML = '<span>🦊</span>Zaproś znajomego i odbierz bonus!'; }, 3000);
   }
 }
 function shareInviteLink() {
