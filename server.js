@@ -2298,7 +2298,12 @@ app.get("/faq",      (_req, res) => { res.setHeader("Cache-Control","no-store");
 app.get("/faq.html", (_req, res) => { res.setHeader("Cache-Control","no-store"); res.sendFile(path.join(__dirname, "faq.html")); });
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
-app.get("/fox/:nickname", (_req, res) => res.sendFile(path.join(__dirname, "fox-profile.html")));
+app.get("/fox/:nickname", async (req, res) => {
+  console.log('Looking for fox:', req.params.nickname);
+  const result = await pool.query('SELECT username FROM fp1_foxes LIMIT 5');
+  console.log('First 5 usernames in DB:', result.rows);
+  res.sendFile(path.join(__dirname, "fox-profile.html"));
+});
 app.get("/delete-account", (_req, res) => res.send(`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usuwanie konta — The FoxPot Club</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#f0f0f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{max-width:480px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:32px 24px;text-align:center}h1{font-size:20px;margin-bottom:16px;color:#f5a623}p{font-size:15px;line-height:1.7;color:rgba(255,255,255,.7)}a{color:#f5a623;text-decoration:none;font-weight:600}.back{display:inline-block;margin-top:24px;font-size:14px;color:rgba(255,255,255,.4)}.back:hover{color:#f5a623}</style></head><body><div class="card"><h1>🦊 Usuwanie konta</h1><p>Aby usunąć konto w The FoxPot Club, skorzystaj z opcji <strong>Opuść klub</strong> w zakładce <strong>Pomoc</strong> w aplikacji.</p><a href="/" class="back">← Wróć na stronę główną</a></div></body></html>`));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V29_BIGINT_FIX"));
 
