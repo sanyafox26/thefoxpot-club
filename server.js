@@ -819,6 +819,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "sections_visibility", "JSONB NOT NULL DEFAULT '{}'");
   await ensureColumn("fp1_foxes", "featured_project_id", "INTEGER");
   await ensureColumn("fp1_foxes", "invoicing",           "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes", "display_name",        "VARCHAR(100)");
   // Drop NOT NULL constraints that may exist from old schema
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
@@ -8724,7 +8725,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
   try {
     const { nickname } = req.params;
     const r = await pool.query(
-      `SELECT f.id, f.user_id, f.username, f.rating, f.city, f.district,
+      `SELECT f.id, f.user_id, f.username, f.display_name, f.rating, f.city, f.district,
               f.bio, f.specialization, f.social_links, f.portfolio_items,
               f.experience_items, f.skills, f.services, f.profile_public,
               f.sections_visibility, f.featured_project_id, f.invoicing,

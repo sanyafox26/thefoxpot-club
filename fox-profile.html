@@ -30,7 +30,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .avatar-wrap{position:relative;display:inline-block;margin-bottom:16px}
 .avatar{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--accent);background:var(--surface)}
 .pioneer-badge{position:absolute;bottom:-2px;right:-2px;background:linear-gradient(135deg,#ffd700,#ff8c00);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid var(--bg)}
-.fox-nick{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;line-height:1}
+.fox-nick{font-family:'DM Sans',sans-serif;font-size:30px;font-weight:700;letter-spacing:0;line-height:1.1}
 .fox-spec{font-size:14px;color:var(--accent);font-weight:500;margin-top:4px}
 .fox-city{font-size:13px;color:var(--muted);margin-top:4px}
 .fox-bio{font-size:14px;color:rgba(255,255,255,.7);max-width:480px;margin:14px auto 0;line-height:1.65}
@@ -467,7 +467,7 @@ function render() {
   // Pioneer badge
   if (d.founder_number) document.getElementById('pioneerBadge').style.display = '';
   // Nick, spec, city, rating, bio
-  document.getElementById('foxNick').textContent = d.username || NICKNAME;
+  document.getElementById('foxNick').textContent = d.display_name || d.username || NICKNAME;
   if (d.specialization) { document.getElementById('foxSpec').textContent = d.specialization; document.getElementById('foxSpec').style.display = ''; }
   let city = [d.district, d.city].filter(Boolean).join(', ');
   document.getElementById('foxCity').textContent = city || '';
