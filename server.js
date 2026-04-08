@@ -8728,7 +8728,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
               f.bio, f.specialization, f.social_links, f.portfolio_items,
               f.experience_items, f.skills, f.services, f.profile_public,
               f.sections_visibility, f.featured_project_id, f.invoicing,
-              f.pioneer, f.created_at,
+              f.founder_number, f.created_at,
               COALESCE(COUNT(c.id) FILTER (WHERE c.status='completed'), 0) AS checkins_completed,
               COALESCE(COUNT(c.id) FILTER (WHERE c.status='failed'),    0) AS checkins_failed,
               COALESCE(COUNT(c.id) FILTER (WHERE c.status='pending'),   0) AS checkins_pending

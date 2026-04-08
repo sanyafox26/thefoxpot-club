@@ -465,7 +465,7 @@ function render() {
     av.onerror = () => { av.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(d.username)}&background=F97E00&color=fff&size=96`; };
   }
   // Pioneer badge
-  if (d.pioneer) document.getElementById('pioneerBadge').style.display = '';
+  if (d.founder_number) document.getElementById('pioneerBadge').style.display = '';
   // Nick, spec, city, rating, bio
   document.getElementById('foxNick').textContent = d.username || NICKNAME;
   if (d.specialization) { document.getElementById('foxSpec').textContent = d.specialization; document.getElementById('foxSpec').style.display = ''; }
