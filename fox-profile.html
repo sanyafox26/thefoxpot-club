@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Profil Foksa — The FoxPot Club</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#1a1d29;--surface:rgba(255,255,255,.05);--border:rgba(255,255,255,.09);
+  --accent:#F97E00;--accent2:#e06b00;--text:#f0f0f5;--muted:rgba(255,255,255,.45);
+  --card:rgba(255,255,255,.04);--radius:16px;
+}
+html{background:var(--bg)}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:60px}
+
+/* ── top bar ── */
+.topbar{position:sticky;top:0;z-index:100;background:rgba(26,29,41,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:12px 20px}
+.topbar-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--accent);letter-spacing:1px;text-decoration:none}
+.topbar-actions{display:flex;gap:10px;align-items:center}
+.btn-icon{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--muted);font-size:13px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.btn-icon:hover{color:var(--text);border-color:var(--accent)}
+.btn-edit-toggle{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;display:none}
+
+/* ── hero / header ── */
+.hero{padding:32px 20px 24px;text-align:center;position:relative}
+.avatar-wrap{position:relative;display:inline-block;margin-bottom:16px}
+.avatar{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--accent);background:var(--surface)}
+.pioneer-badge{position:absolute;bottom:-2px;right:-2px;background:linear-gradient(135deg,#ffd700,#ff8c00);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid var(--bg)}
+.fox-nick{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;line-height:1}
+.fox-spec{font-size:14px;color:var(--accent);font-weight:500;margin-top:4px}
+.fox-city{font-size:13px;color:var(--muted);margin-top:4px}
+.fox-bio{font-size:14px;color:rgba(255,255,255,.7);max-width:480px;margin:14px auto 0;line-height:1.65}
+.rating-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(249,126,0,.12);border:1px solid rgba(249,126,0,.3);border-radius:20px;padding:6px 14px;font-size:14px;font-weight:600;margin-top:14px}
+.rating-pill span{color:var(--accent)}
+
+/* social links */
+.social-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+.social-btn{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:7px 13px;font-size:13px;color:var(--muted);text-decoration:none;transition:all .2s}
+.social-btn:hover{color:var(--text);border-color:var(--accent)}
+.social-btn svg{width:15px;height:15px;fill:currentColor}
+
+/* ── section wrapper ── */
+.section{margin:0 16px 20px;animation:fadeUp .4s ease both}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--text)}
+.section-vis-btn{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;transition:color .2s;display:none}
+.section-vis-btn:hover{color:var(--text)}
+.edit-mode .section-vis-btn{display:block}
+
+/* ── stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 10px;text-align:center}
+.stat-num{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent)}
+.stat-label{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.3}
+
+/* ── experience ── */
+.exp-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;position:relative}
+.exp-card+.exp-card{margin-top:0}
+.exp-title{font-size:15px;font-weight:600}
+.exp-company{font-size:13px;color:var(--accent);font-weight:500;margin-top:2px}
+.exp-period{font-size:12px;color:var(--muted);margin-top:2px}
+.exp-desc{font-size:13px;color:rgba(255,255,255,.6);margin-top:8px;line-height:1.55}
+
+/* ── skills ── */
+.skills-wrap{display:flex;flex-wrap:wrap;gap:8px}
+.skill-chip{background:rgba(249,126,0,.1);border:1px solid rgba(249,126,0,.25);border-radius:20px;padding:5px 13px;font-size:13px;color:var(--accent)}
+
+/* ── services ── */
+.service-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.service-info{}
+.service-name{font-size:15px;font-weight:600}
+.service-desc{font-size:13px;color:rgba(255,255,255,.6);margin-top:4px;line-height:1.5}
+.service-price{font-size:14px;font-weight:600;color:var(--accent);white-space:nowrap;flex-shrink:0}
+.invoicing-note{font-size:12px;color:var(--muted);margin-top:4px;text-align:right}
+
+/* ── portfolio ── */
+.featured-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:14px;position:relative}
+.featured-label{font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.portfolio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.portfolio-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;transition:border-color .2s}
+.portfolio-card:hover{border-color:rgba(249,126,0,.4)}
+.portfolio-name{font-size:14px;font-weight:600}
+.portfolio-role{font-size:12px;color:var(--muted);margin-top:2px}
+.portfolio-result{font-size:13px;color:rgba(255,255,255,.65);margin-top:6px;line-height:1.45}
+.portfolio-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.portfolio-tag{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--muted)}
+.portfolio-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px}
+.portfolio-link:hover{text-decoration:underline}
+
+/* ── reviews ── */
+.review-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.review-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.review-venue{font-size:14px;font-weight:600}
+.review-stars{font-size:14px;color:var(--accent)}
+.review-text{font-size:13px;color:rgba(255,255,255,.65);line-height:1.5}
+.review-date{font-size:11px;color:var(--muted);margin-top:6px}
+
+/* ── CTA ── */
+.cta-box{background:linear-gradient(135deg,rgba(249,126,0,.12),rgba(224,107,0,.06));border:1px solid rgba(249,126,0,.25);border-radius:var(--radius);padding:28px 20px;text-align:center;margin:0 16px}
+.cta-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;margin-bottom:8px}
+.cta-sub{font-size:14px;color:var(--muted);margin-bottom:18px;line-height:1.6}
+.cta-btn{display:inline-block;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:12px;padding:14px 28px;font-size:15px;font-weight:600;text-decoration:none;cursor:pointer}
+
+/* ── edit helpers ── */
+.add-btn{display:none;width:100%;background:none;border:2px dashed var(--border);border-radius:var(--radius);padding:12px;color:var(--muted);font-size:14px;cursor:pointer;margin-top:8px;transition:all .2s}
+.add-btn:hover{border-color:var(--accent);color:var(--text)}
+.edit-mode .add-btn{display:block}
+.edit-card-btn{display:none;position:absolute;top:10px;right:10px;background:rgba(249,126,0,.15);border:1px solid rgba(249,126,0,.3);border-radius:8px;padding:4px 9px;font-size:11px;color:var(--accent);cursor:pointer}
+.edit-mode .edit-card-btn{display:block}
+.edit-inline{background:none;border:none;border-bottom:1px dashed var(--border);color:var(--text);font-family:inherit;font-size:inherit;width:100%;padding:2px 0;outline:none;cursor:default}
+.edit-mode .edit-inline{border-bottom-color:var(--accent);cursor:text;background:rgba(249,126,0,.04)}
+.profile-toggle-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin:0 16px 16px;display:none}
+.edit-mode~.profile-toggle-row,.edit-mode .profile-toggle-row{display:flex}
+.toggle-label{font-size:14px;font-weight:500}
+.toggle-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.toggle-switch{position:relative;width:44px;height:24px;flex-shrink:0}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-track{position:absolute;inset:0;background:rgba(255,255,255,.12);border-radius:12px;transition:.3s;cursor:pointer}
+.toggle-track::before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.3s}
+.toggle-switch input:checked+.toggle-track{background:var(--accent)}
+.toggle-switch input:checked+.toggle-track::before{transform:translateX(20px)}
+
+/* ── modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-sheet{background:#23263a;border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:560px;max-height:80vh;overflow-y:auto}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;margin-bottom:18px}
+.field-group{margin-bottom:14px}
+.field-group label{font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.field-group input,.field-group textarea,.field-group select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;outline:none;resize:vertical}
+.field-group input:focus,.field-group textarea:focus{border-color:var(--accent)}
+.modal-actions{display:flex;gap:10px;margin-top:20px}
+.modal-actions button{flex:1;padding:12px;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;border:none}
+.btn-save{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-delete{background:rgba(255,60,60,.15);border:1px solid rgba(255,60,60,.3)!important;color:#ff6b6b}
+.btn-cancel{background:var(--surface);border:1px solid var(--border)!important;color:var(--muted)}
+
+/* ── save bar ── */
+.save-bar{display:none;position:fixed;bottom:0;left:0;right:0;background:#23263a;border-top:1px solid var(--border);padding:12px 20px;z-index:150;flex-direction:column;gap:8px}
+.save-bar.visible{display:flex}
+.save-bar-actions{display:flex;gap:10px}
+.btn-save-all{flex:1;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:600;cursor:pointer}
+.btn-discard{flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 18px;font-size:14px;color:var(--muted);cursor:pointer}
+.save-note{font-size:12px;color:var(--muted);text-align:center}
+
+/* ── not-found ── */
+.not-found{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;text-align:center;padding:20px}
+.not-found-emoji{font-size:60px;margin-bottom:16px}
+.not-found h2{font-family:'Bebas Neue',sans-serif;font-size:28px;margin-bottom:8px}
+.not-found p{font-size:14px;color:var(--muted)}
+
+/* ── animations ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.section:nth-child(1){animation-delay:.05s}
+.section:nth-child(2){animation-delay:.1s}
+.section:nth-child(3){animation-delay:.15s}
+.section:nth-child(4){animation-delay:.2s}
+.section:nth-child(5){animation-delay:.25s}
+.section:nth-child(6){animation-delay:.3s}
+
+/* ── print ── */
+@media print{
+  body{background:#fff;color:#111;padding-bottom:0}
+  .topbar,.topbar-actions,.btn-edit-toggle,.save-bar,.cta-box,.section-vis-btn,.add-btn,.edit-card-btn,.btn-icon,.modal-overlay{display:none!important}
+  .topbar-logo{display:block!important;color:#F97E00}
+  .hero{padding:16px 0 12px}
+  .section{margin:0 0 14px;animation:none}
+  .card,.exp-card,.service-card,.portfolio-card,.review-card,.stat-card,.featured-card{background:#f8f8f8;border:1px solid #e0e0e0;box-shadow:none}
+  .fox-nick{color:#111}
+  .fox-bio,.exp-desc,.service-desc,.portfolio-result,.review-text{color:#333}
+  .exp-company,.service-price,.review-stars,.rating-pill span,.fox-spec{color:#F97E00}
+  .stat-num{color:#F97E00}
+  .skill-chip{background:#fff3e6;border-color:#F97E00;color:#e06b00}
+  .social-btn{border-color:#ccc;color:#555}
+  .muted,.portfolio-tag,.review-date,.exp-period,.fox-city,.stat-label{color:#666}
+  .print-logo{display:block!important;text-align:center;font-family:'Bebas Neue',sans-serif;font-size:13px;color:#F97E00;margin-bottom:6px}
+}
+.print-logo{display:none}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<nav class="topbar">
+  <a class="topbar-logo" href="/">🦊 FoxPot</a>
+  <div class="topbar-actions">
+    <button class="btn-icon" id="btnPrint" onclick="window.print()">🖨️ PDF</button>
+    <button class="btn-edit-toggle" id="btnEditToggle" onclick="toggleEditMode()">✏️ Edytuj profil</button>
+  </div>
+</nav>
+
+<div id="app">
+  <div class="not-found" style="display:none" id="notFound">
+    <div class="not-found-emoji">🦊</div>
+    <h2>Nie znaleziono profilu</h2>
+    <p>Sprawdź czy nick jest poprawny.</p>
+  </div>
+  <div id="profileWrap" style="display:none">
+
+    <!-- Profile visibility toggle (owner only) -->
+    <div class="profile-toggle-row" id="visibilityRow" style="display:none">
+      <div>
+        <div class="toggle-label">Profil publiczny</div>
+        <div class="toggle-sub">Wyłącz, aby ukryć profil przed innymi</div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="togglePublic" onchange="onVisibilityChange()"/>
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+
+    <!-- Hero -->
+    <div class="hero" id="heroSection">
+      <div class="print-logo">The FoxPot Club — foxpot.club</div>
+      <div class="avatar-wrap">
+        <img class="avatar" id="foxAvatar" src="" alt=""/>
+        <div class="pioneer-badge" id="pioneerBadge" style="display:none" title="Pionier — jeden z pierwszych Foxów!">🦊</div>
+      </div>
+      <div class="fox-nick" id="foxNick"></div>
+      <div class="fox-spec" id="foxSpec" style="display:none"></div>
+      <div class="fox-city" id="foxCity"></div>
+      <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
+      <div class="fox-bio" id="foxBio" style="display:none"></div>
+      <div class="social-row" id="socialRow"></div>
+    </div>
+
+    <!-- Sections container -->
+    <div id="sectionsWrap">
+
+      <!-- Quest Stats -->
+      <div class="section" id="secStats" data-sec="stats">
+        <div class="section-head">
+          <div class="section-title">Quest Stats</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('stats')" id="visStats">👁</button>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-num" id="statCompleted">—</div><div class="stat-label">Zaliczone<br>questy</div></div>
+          <div class="stat-card"><div class="stat-num" id="statFailed">—</div><div class="stat-label">Nieudane<br>questy</div></div>
+          <div class="stat-card"><div class="stat-num" id="statPending">—</div><div class="stat-label">W trakcie</div></div>
+          <div class="stat-card"><div class="stat-num" id="statRate">—</div><div class="stat-label">Response<br>rate</div></div>
+        </div>
+      </div>
+
+      <!-- Experience -->
+      <div class="section" id="secExperience" data-sec="experience">
+        <div class="section-head">
+          <div class="section-title">Doświadczenie</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('experience')" id="visExperience">👁</button>
+        </div>
+        <div id="expList"></div>
+        <button class="add-btn" onclick="openExpModal(null)">+ Dodaj doświadczenie</button>
+      </div>
+
+      <!-- Skills -->
+      <div class="section" id="secSkills" data-sec="skills">
+        <div class="section-head">
+          <div class="section-title">Umiejętności</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('skills')" id="visSkills">👁</button>
+        </div>
+        <div class="skills-wrap" id="skillsWrap"></div>
+        <button class="add-btn" onclick="addSkillPrompt()">+ Dodaj umiejętność</button>
+      </div>
+
+      <!-- Services -->
+      <div class="section" id="secServices" data-sec="services">
+        <div class="section-head">
+          <div class="section-title">Usługi</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('services')" id="visServices">👁</button>
+        </div>
+        <div id="servicesList"></div>
+        <button class="add-btn" onclick="openServiceModal(null)">+ Dodaj usługę</button>
+      </div>
+
+      <!-- Portfolio -->
+      <div class="section" id="secPortfolio" data-sec="portfolio">
+        <div class="section-head">
+          <div class="section-title">Portfolio</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('portfolio')" id="visPortfolio">👁</button>
+        </div>
+        <div id="featuredWrap"></div>
+        <div class="portfolio-grid" id="portfolioGrid"></div>
+        <button class="add-btn" onclick="openPortfolioModal(null)">+ Dodaj projekt</button>
+      </div>
+
+      <!-- Reviews -->
+      <div class="section" id="secReviews" data-sec="reviews">
+        <div class="section-head">
+          <div class="section-title">Recenzje wizyt</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('reviews')" id="visReviews">👁</button>
+        </div>
+        <div id="reviewsList"></div>
+      </div>
+
+    </div><!-- /sectionsWrap -->
+
+    <!-- CTA (guests only) -->
+    <div class="cta-box" id="ctaBox" style="display:none">
+      <div class="cta-title">Chcesz taki profil?</div>
+      <div class="cta-sub">Dołącz do The FoxPot Club — zdobywaj punkty,<br>buduj sieć i pokazuj swoje doświadczenie.</div>
+      <a class="cta-btn" href="https://t.me/thefoxpot_club_bot">🦊 Dołącz do FoxPot</a>
+    </div>
+
+  </div><!-- /profileWrap -->
+</div><!-- /app -->
+
+<!-- Save bar -->
+<div class="save-bar" id="saveBar">
+  <div class="save-bar-actions">
+    <button class="btn-discard" onclick="discardChanges()">Anuluj</button>
+    <button class="btn-save-all" onclick="saveAll()">💾 Zapisz zmiany</button>
+  </div>
+  <div class="save-note">Zmiany są widoczne tylko po zapisaniu</div>
+</div>
+
+<!-- Modal: Experience -->
+<div class="modal-overlay" id="modalExp">
+  <div class="modal-sheet">
+    <div class="modal-title">Doświadczenie</div>
+    <div class="field-group"><label>Stanowisko *</label><input id="expTitle" placeholder="np. Senior Developer"/></div>
+    <div class="field-group"><label>Firma / projekt</label><input id="expCompany" placeholder="np. Acme Sp. z o.o."/></div>
+    <div class="field-group"><label>Okres</label><input id="expPeriod" placeholder="np. 2021–2024"/></div>
+    <div class="field-group"><label>Opis</label><textarea id="expDesc" rows="3" placeholder="Czym się zajmowałeś?"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalExp')">Anuluj</button>
+      <button class="btn-delete" id="expDeleteBtn" onclick="deleteExpItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveExpItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Service -->
+<div class="modal-overlay" id="modalService">
+  <div class="modal-sheet">
+    <div class="modal-title">Usługa</div>
+    <div class="field-group"><label>Nazwa usługi *</label><input id="svcName" placeholder="np. Konsultacje UX"/></div>
+    <div class="field-group"><label>Opis</label><textarea id="svcDesc" rows="2" placeholder="Krótki opis usługi"></textarea></div>
+    <div class="field-group"><label>Cena</label><input id="svcPrice" placeholder="np. od 500 zł / h"/></div>
+    <div class="field-group">
+      <label>Fakturowanie</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--muted)">
+        <input type="checkbox" id="svcInvoicing"/> Wystawiam faktury VAT
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalService')">Anuluj</button>
+      <button class="btn-delete" id="svcDeleteBtn" onclick="deleteSvcItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveSvcItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Portfolio -->
+<div class="modal-overlay" id="modalPortfolio">
+  <div class="modal-sheet">
+    <div class="modal-title">Projekt</div>
+    <div class="field-group"><label>Nazwa projektu *</label><input id="portName" placeholder="np. Redesign e-commerce"/></div>
+    <div class="field-group"><label>Twoja rola</label><input id="portRole" placeholder="np. Lead Designer"/></div>
+    <div class="field-group"><label>Wynik / efekt</label><textarea id="portResult" rows="2" placeholder="np. +40% konwersji"></textarea></div>
+    <div class="field-group"><label>Link (opcjonalnie)</label><input id="portLink" type="url" placeholder="https://..."/></div>
+    <div class="field-group"><label>Tagi (przecinek)</label><input id="portTags" placeholder="np. React, Figma, UX"/></div>
+    <div class="field-group">
+      <label>Wyróżniony projekt?</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--muted)">
+        <input type="checkbox" id="portFeatured"/> Ustaw jako wyróżniony
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalPortfolio')">Anuluj</button>
+      <button class="btn-delete" id="portDeleteBtn" onclick="deletePortItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="savePortItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let profileData = null;
+let isOwner = false;
+let isEditMode = false;
+let dirty = false;
+
+// Local mutable copies
+let localBio = '';
+let localSpec = '';
+let localSocial = {};
+let localExperience = [];
+let localSkills = [];
+let localServices = [];
+let localPortfolio = [];
+let localFeaturedId = null;
+let localInvoicing = false;
+let localSectionsVis = {};
+let localProfilePublic = true;
+
+let editingExpIdx = null;
+let editingSvcIdx = null;
+let editingPortIdx = null;
+
+const NICKNAME = location.pathname.split('/fox/')[1]?.split('/')[0] || '';
+const TG = window.Telegram?.WebApp;
+
+// ── Boot ──
+async function init() {
+  if (!NICKNAME) { showNotFound(); return; }
+  try {
+    const r = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}`);
+    if (!r.ok) { showNotFound(); return; }
+    profileData = await r.json();
+    initLocals();
+    render();
+    document.getElementById('profileWrap').style.display = '';
+    await checkOwner();
+  } catch (e) {
+    showNotFound();
+  }
+}
+
+function initLocals() {
+  const d = profileData;
+  localBio = d.bio || '';
+  localSpec = d.specialization || '';
+  localSocial = d.social_links || {};
+  localExperience = JSON.parse(JSON.stringify(d.experience_items || []));
+  localSkills = JSON.parse(JSON.stringify(d.skills || []));
+  localServices = JSON.parse(JSON.stringify(d.services || []));
+  localPortfolio = JSON.parse(JSON.stringify(d.portfolio_items || []));
+  localFeaturedId = d.featured_project_id || null;
+  localInvoicing = !!d.invoicing;
+  localSectionsVis = JSON.parse(JSON.stringify(d.sections_visibility || {}));
+  localProfilePublic = d.profile_public !== false;
+}
+
+async function checkOwner() {
+  if (!TG?.initData) return;
+  try {
+    const r = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}/check-owner`, {
+      method: 'POST',
+      headers: { 'x-telegram-init-data': TG.initData }
+    });
+    const j = await r.json();
+    isOwner = !!j.isOwner;
+    if (isOwner) {
+      document.getElementById('btnEditToggle').style.display = '';
+      document.getElementById('visibilityRow').style.display = 'flex';
+      document.getElementById('togglePublic').checked = localProfilePublic;
+    }
+  } catch (e) {}
+}
+
+function showNotFound() {
+  document.getElementById('notFound').style.display = '';
+}
+
+// ── Render ──
+function render() {
+  const d = profileData;
+  // Avatar
+  const av = document.getElementById('foxAvatar');
+  if (d.user_id) {
+    av.src = `https://t.me/i/userpic/320/${d.username}.jpg`;
+    av.onerror = () => { av.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(d.username)}&background=F97E00&color=fff&size=96`; };
+  }
+  // Pioneer badge
+  if (d.pioneer) document.getElementById('pioneerBadge').style.display = '';
+  // Nick, spec, city, rating, bio
+  document.getElementById('foxNick').textContent = d.username || NICKNAME;
+  if (d.specialization) { document.getElementById('foxSpec').textContent = d.specialization; document.getElementById('foxSpec').style.display = ''; }
+  let city = [d.district, d.city].filter(Boolean).join(', ');
+  document.getElementById('foxCity').textContent = city || '';
+  document.getElementById('foxRating').textContent = d.rating || 0;
+  if (d.bio) { document.getElementById('foxBio').textContent = d.bio; document.getElementById('foxBio').style.display = ''; }
+  // Social
+  renderSocial(d.social_links || {});
+  // Stats
+  renderStats(d);
+  // Sections
+  renderExperience();
+  renderSkills();
+  renderServices();
+  renderPortfolio();
+  renderReviews(d.reviews || []);
+  // Section visibility
+  applySectionsVisibility();
+}
+
+function renderSocial(links) {
+  const row = document.getElementById('socialRow');
+  const icons = {
+    linkedin: ['in', 'M16 8A8 8 0 1 0 0 8a8 8 0 0 0 16 0zM6.5 12H4.5V6.5h2V12zm-1-6.25A1.25 1.25 0 1 1 5.5 4.5 1.25 1.25 0 0 1 5.5 5.75zM12 12h-2V9.25c0-.75-.25-1.25-.9-1.25-.5 0-.8.35-.93.68A1.3 1.3 0 0 0 8.1 9v3H6.1V6.5h1.9v.75a2 2 0 0 1 1.85-1c1.35 0 2.15.9 2.15 2.8V12z'],
+    github: ['M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z'],
+    twitter: ['M16 3.04a6.56 6.56 0 0 1-1.88.52 3.28 3.28 0 0 0 1.44-1.82c-.64.38-1.34.65-2.09.8A3.27 3.27 0 0 0 11.06 1c-1.81 0-3.28 1.47-3.28 3.28 0 .26.03.51.08.75C5.17 4.9 2.74 3.59 1.12 1.56a3.27 3.27 0 0 0-.44 1.65c0 1.14.58 2.14 1.46 2.73a3.27 3.27 0 0 1-1.48-.41v.04c0 1.59 1.13 2.91 2.63 3.21a3.3 3.3 0 0 1-1.48.06 3.28 3.28 0 0 0 3.06 2.27A6.57 6.57 0 0 1 0 12.37a9.27 9.27 0 0 0 5.02 1.47c6.02 0 9.31-4.99 9.31-9.31 0-.14 0-.28-.01-.42A6.64 6.64 0 0 0 16 3.04z'],
+    instagram: ['M8 0C5.83 0 5.56.01 4.7.05 3.85.09 3.27.22 2.76.42A3.9 3.9 0 0 0 1.35 1.35 3.9 3.9 0 0 0 .42 2.76C.22 3.27.09 3.85.05 4.7.01 5.56 0 5.83 0 8s.01 2.44.05 3.3c.04.85.17 1.43.37 1.94a3.9 3.9 0 0 0 .93 1.41 3.9 3.9 0 0 0 1.41.93c.51.2 1.09.33 1.94.37C5.56 15.99 5.83 16 8 16s2.44-.01 3.3-.05c.85-.04 1.43-.17 1.94-.37a3.9 3.9 0 0 0 1.41-.93 3.9 3.9 0 0 0 .93-1.41c.2-.51.33-1.09.37-1.94.04-.86.05-1.13.05-3.3s-.01-2.44-.05-3.3c-.04-.85-.17-1.43-.37-1.94a3.9 3.9 0 0 0-.93-1.41A3.9 3.9 0 0 0 13.24.42C12.73.22 12.15.09 11.3.05 10.44.01 10.17 0 8 0zm0 1.44c2.14 0 2.39.01 3.23.05.78.04 1.2.16 1.48.27.37.15.64.32.92.6.28.28.45.55.6.92.11.28.23.7.27 1.48.04.84.05 1.09.05 3.23s-.01 2.39-.05 3.23c-.04.78-.16 1.2-.27 1.48-.15.37-.32.64-.6.92a2.5 2.5 0 0 1-.92.6c-.28.11-.7.23-1.48.27-.84.04-1.09.05-3.23.05s-2.39-.01-3.23-.05c-.78-.04-1.2-.16-1.48-.27a2.5 2.5 0 0 1-.92-.6 2.5 2.5 0 0 1-.6-.92c-.11-.28-.23-.7-.27-1.48C1.45 10.39 1.44 10.14 1.44 8s.01-2.39.05-3.23c.04-.78.16-1.2.27-1.48.15-.37.32-.64.6-.92.28-.28.55-.45.92-.6.28-.11.7-.23 1.48-.27C5.61 1.45 5.86 1.44 8 1.44zM8 3.89A4.11 4.11 0 1 0 8 12.11 4.11 4.11 0 0 0 8 3.89zm0 6.78a2.67 2.67 0 1 1 0-5.34 2.67 2.67 0 0 1 0 5.34zm5.23-6.94a.96.96 0 1 1-1.92 0 .96.96 0 0 1 1.92 0z'],
+    website: ['M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm-.5 1.06v2.38C6.16 3.6 4.96 4.1 4.1 4.7L2.42 3.03A6.96 6.96 0 0 1 7.5 1.06zM8.5 1.06a6.96 6.96 0 0 1 5.08 1.97L11.9 4.7c-.86-.6-2.06-1.1-3.4-1.26V1.06zM1.06 7.5h2.38C3.6 6.16 4.1 4.96 4.7 4.1L3.03 2.42A6.96 6.96 0 0 0 1.06 7.5zM3.44 8.5H1.06a6.96 6.96 0 0 0 1.97 5.08L4.7 11.9c-.6-.86-1.1-2.06-1.26-3.4zM7.5 14.94v-2.38c-1.34-.16-2.54-.66-3.4-1.26l-1.68 1.67A6.96 6.96 0 0 0 7.5 14.94zm1 0a6.96 6.96 0 0 0 5.08-1.97L11.9 11.3c-.86.6-2.06 1.1-3.4 1.26v2.38zm5.5-7.44h-2.38c-.16-1.34-.66-2.54-1.26-3.4l1.67-1.68A6.96 6.96 0 0 1 14 7.5zm-2.38 1h2.38a6.96 6.96 0 0 1-1.97 5.08L11.3 11.9c.6-.86 1.1-2.06 1.26-3.4zm-2.06-5.04A6.1 6.1 0 0 1 11.94 7.5H9.56A4.1 4.1 0 0 0 9.56 7.5zm0 0'],
+  };
+  const labels = { linkedin:'LinkedIn', github:'GitHub', twitter:'Twitter/X', instagram:'Instagram', website:'Strona WWW' };
+  const socialsHtml = Object.entries(links).filter(([,v])=>v).map(([k,v])=>{
+    const svgPath = icons[k] || icons.website;
+    return `<a class="social-btn" href="${escHtml(v)}" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16"><path d="${svgPath}"/></svg>${labels[k]||k}
+    </a>`;
+  }).join('');
+  row.innerHTML = socialsHtml;
+}
+
+function renderStats(d) {
+  document.getElementById('statCompleted').textContent = d.checkins_completed ?? '—';
+  document.getElementById('statFailed').textContent = d.checkins_failed ?? '—';
+  document.getElementById('statPending').textContent = d.checkins_pending ?? '—';
+  document.getElementById('statRate').textContent = d.response_rate != null ? d.response_rate + '%' : '—';
+}
+
+function renderExperience() {
+  const list = document.getElementById('expList');
+  if (!localExperience.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak doświadczenia.</div>'; return; }
+  list.innerHTML = localExperience.map((e,i)=>`
+    <div class="exp-card" style="margin-bottom:10px">
+      <button class="edit-card-btn" onclick="openExpModal(${i})">✏️</button>
+      <div class="exp-title">${escHtml(e.title||'')}</div>
+      ${e.company?`<div class="exp-company">${escHtml(e.company)}</div>`:''}
+      ${e.period?`<div class="exp-period">${escHtml(e.period)}</div>`:''}
+      ${e.desc?`<div class="exp-desc">${escHtml(e.desc)}</div>`:''}
+    </div>`).join('');
+}
+
+function renderSkills() {
+  const wrap = document.getElementById('skillsWrap');
+  if (!localSkills.length) { wrap.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak umiejętności.</div>'; return; }
+  wrap.innerHTML = localSkills.map((s,i)=>`
+    <span class="skill-chip" ${isEditMode?`onclick="removeSkill(${i})" style="cursor:pointer" title="Kliknij aby usunąć"`:''}>
+      ${escHtml(s)}${isEditMode?' ✕':''}
+    </span>`).join('');
+}
+
+function renderServices() {
+  const list = document.getElementById('servicesList');
+  if (!localServices.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak usług.</div>'; return; }
+  list.innerHTML = localServices.map((s,i)=>`
+    <div class="service-card" style="margin-bottom:10px;position:relative">
+      <button class="edit-card-btn" style="position:absolute;top:10px;right:10px" onclick="openServiceModal(${i})">✏️</button>
+      <div class="service-info">
+        <div class="service-name">${escHtml(s.name||'')}</div>
+        ${s.desc?`<div class="service-desc">${escHtml(s.desc)}</div>`:''}
+        ${s.invoicing?`<div class="invoicing-note" style="text-align:left;margin-top:4px;font-size:12px;color:var(--muted)">✔ Faktury VAT</div>`:''}
+      </div>
+      ${s.price?`<div class="service-price">${escHtml(s.price)}</div>`:''}
+    </div>`).join('');
+}
+
+function renderPortfolio() {
+  const featured = document.getElementById('featuredWrap');
+  const grid = document.getElementById('portfolioGrid');
+  if (!localPortfolio.length) {
+    featured.innerHTML = '';
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak projektów.</div>';
+    return;
+  }
+  const featIdx = localPortfolio.findIndex(p=>p.id===localFeaturedId || p._featured);
+  const feat = featIdx >= 0 ? localPortfolio[featIdx] : null;
+  if (feat) {
+    featured.innerHTML = `<div class="featured-card" style="margin-bottom:14px;position:relative">
+      <button class="edit-card-btn" onclick="openPortfolioModal(${featIdx})">✏️</button>
+      <div class="featured-label">⭐ Wyróżniony projekt</div>
+      <div class="portfolio-name" style="font-size:17px">${escHtml(feat.name||'')}</div>
+      ${feat.role?`<div class="portfolio-role">${escHtml(feat.role)}</div>`:''}
+      ${feat.result?`<div class="portfolio-result" style="margin-top:8px">${escHtml(feat.result)}</div>`:''}
+      ${feat.tags?.length?`<div class="portfolio-tags">${feat.tags.map(t=>`<span class="portfolio-tag">${escHtml(t)}</span>`).join('')}</div>`:''}
+      ${feat.link?`<a class="portfolio-link" href="${escHtml(feat.link)}" target="_blank" rel="noopener">🔗 Otwórz projekt</a>`:''}
+    </div>`;
+  } else { featured.innerHTML = ''; }
+  const rest = localPortfolio.filter((_,i)=>i!==featIdx);
+  if (!rest.length) { grid.innerHTML = ''; return; }
+  grid.innerHTML = rest.map((p,i)=>{
+    const realIdx = localPortfolio.indexOf(p);
+    return `<div class="portfolio-card" onclick="isEditMode&&openPortfolioModal(${realIdx})">
+      <div class="portfolio-name">${escHtml(p.name||'')}</div>
+      ${p.role?`<div class="portfolio-role">${escHtml(p.role)}</div>`:''}
+      ${p.result?`<div class="portfolio-result">${escHtml(p.result)}</div>`:''}
+      ${p.tags?.length?`<div class="portfolio-tags">${p.tags.map(t=>`<span class="portfolio-tag">${escHtml(t)}</span>`).join('')}</div>`:''}
+      ${p.link?`<a class="portfolio-link" href="${escHtml(p.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 Link</a>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderReviews(reviews) {
+  const list = document.getElementById('reviewsList');
+  if (!reviews.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak recenzji.</div>'; return; }
+  list.innerHTML = reviews.map(r=>`
+    <div class="review-card">
+      <div class="review-top">
+        <div class="review-venue">${escHtml(r.venue_name||'')}</div>
+        <div class="review-stars">${'★'.repeat(r.stars||0)}${'☆'.repeat(5-(r.stars||0))}</div>
+      </div>
+      ${r.text?`<div class="review-text">${escHtml(r.text)}</div>`:''}
+      <div class="review-date">${r.date ? new Date(r.date).toLocaleDateString('pl-PL') : ''}</div>
+    </div>`).join('');
+}
+
+function applySectionsVisibility() {
+  const secs = ['stats','experience','skills','services','portfolio','reviews'];
+  secs.forEach(s=>{
+    const el = document.getElementById(`sec${s.charAt(0).toUpperCase()+s.slice(1)}`);
+    const btn = document.getElementById(`vis${s.charAt(0).toUpperCase()+s.slice(1)}`);
+    const hidden = localSectionsVis[s] === false;
+    if (el) el.style.display = (hidden && !isEditMode) ? 'none' : '';
+    if (btn) btn.textContent = hidden ? '🙈' : '👁';
+  });
+}
+
+// ── Edit mode ──
+function toggleEditMode() {
+  if (!isOwner) return;
+  isEditMode = !isEditMode;
+  document.body.classList.toggle('edit-mode', isEditMode);
+  const btn = document.getElementById('btnEditToggle');
+  btn.textContent = isEditMode ? '✓ Zakończ edycję' : '✏️ Edytuj profil';
+  if (!isEditMode) { dirty = false; hideSaveBar(); }
+  applySectionsVisibility();
+  renderExperience();
+  renderSkills();
+  renderServices();
+  renderPortfolio();
+  document.getElementById('visibilityRow').style.display = isOwner ? 'flex' : 'none';
+}
+
+function markDirty() { dirty = true; showSaveBar(); }
+function showSaveBar() { document.getElementById('saveBar').classList.add('visible'); }
+function hideSaveBar() { document.getElementById('saveBar').classList.remove('visible'); }
+
+function toggleSectionVis(sec) {
+  if (!isOwner) return;
+  localSectionsVis[sec] = localSectionsVis[sec] !== false ? false : true;
+  applySectionsVisibility();
+  markDirty();
+}
+
+function onVisibilityChange() {
+  localProfilePublic = document.getElementById('togglePublic').checked;
+  markDirty();
+}
+
+async function saveAll() {
+  if (!isOwner) return;
+  const initData = TG?.initData || '';
+  try {
+    await fetch('/api/fox-profile/save', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-telegram-init-data':initData},
+      body: JSON.stringify({
+        bio: localBio, specialization: localSpec,
+        social_links: localSocial, portfolio_items: localPortfolio,
+        experience_items: localExperience, skills: localSkills,
+        services: localServices, featured_project_id: localFeaturedId,
+        invoicing: localInvoicing
+      })
+    });
+    await fetch('/api/fox-profile/visibility', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-telegram-init-data':initData},
+      body: JSON.stringify({ profile_public: localProfilePublic, sections_visibility: localSectionsVis })
+    });
+    dirty = false;
+    hideSaveBar();
+    showToast('✅ Zapisano!');
+  } catch (e) { showToast('❌ Błąd zapisu'); }
+}
+
+function discardChanges() {
+  initLocals();
+  dirty = false;
+  hideSaveBar();
+  renderExperience();
+  renderSkills();
+  renderServices();
+  renderPortfolio();
+  applySectionsVisibility();
+  document.getElementById('togglePublic').checked = localProfilePublic;
+  showToast('Zmiany anulowane');
+}
+
+function showToast(msg) {
+  let t = document.getElementById('toastEl');
+  if (!t) { t = document.createElement('div'); t.id='toastEl'; t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#23263a;border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:13px;z-index:300;transition:opacity .3s'; document.body.appendChild(t); }
+  t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>{ t.style.opacity='0'; }, 2000);
+}
+
+// ── Skills ──
+function addSkillPrompt() {
+  const v = prompt('Wpisz umiejętność:');
+  if (v?.trim()) { localSkills.push(v.trim()); renderSkills(); markDirty(); }
+}
+function removeSkill(i) { if (!isEditMode) return; localSkills.splice(i,1); renderSkills(); markDirty(); }
+
+// ── Experience modal ──
+function openExpModal(idx) {
+  editingExpIdx = idx;
+  const e = idx !== null ? localExperience[idx] : {};
+  document.getElementById('expTitle').value = e.title||'';
+  document.getElementById('expCompany').value = e.company||'';
+  document.getElementById('expPeriod').value = e.period||'';
+  document.getElementById('expDesc').value = e.desc||'';
+  document.getElementById('expDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalExp');
+}
+function saveExpItem() {
+  const title = document.getElementById('expTitle').value.trim();
+  if (!title) return;
+  const item = {
+    title, company: document.getElementById('expCompany').value.trim(),
+    period: document.getElementById('expPeriod').value.trim(),
+    desc: document.getElementById('expDesc').value.trim()
+  };
+  if (editingExpIdx !== null) localExperience[editingExpIdx] = item;
+  else localExperience.push(item);
+  renderExperience(); markDirty(); closeModal('modalExp');
+}
+function deleteExpItem() {
+  if (editingExpIdx !== null) { localExperience.splice(editingExpIdx,1); renderExperience(); markDirty(); closeModal('modalExp'); }
+}
+
+// ── Service modal ──
+function openServiceModal(idx) {
+  editingSvcIdx = idx;
+  const s = idx !== null ? localServices[idx] : {};
+  document.getElementById('svcName').value = s.name||'';
+  document.getElementById('svcDesc').value = s.desc||'';
+  document.getElementById('svcPrice').value = s.price||'';
+  document.getElementById('svcInvoicing').checked = !!s.invoicing;
+  document.getElementById('svcDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalService');
+}
+function saveSvcItem() {
+  const name = document.getElementById('svcName').value.trim();
+  if (!name) return;
+  const item = {
+    name, desc: document.getElementById('svcDesc').value.trim(),
+    price: document.getElementById('svcPrice').value.trim(),
+    invoicing: document.getElementById('svcInvoicing').checked
+  };
+  if (editingSvcIdx !== null) localServices[editingSvcIdx] = item;
+  else localServices.push(item);
+  renderServices(); markDirty(); closeModal('modalService');
+}
+function deleteSvcItem() {
+  if (editingSvcIdx !== null) { localServices.splice(editingSvcIdx,1); renderServices(); markDirty(); closeModal('modalService'); }
+}
+
+// ── Portfolio modal ──
+function openPortfolioModal(idx) {
+  editingPortIdx = idx;
+  const p = idx !== null ? localPortfolio[idx] : {};
+  document.getElementById('portName').value = p.name||'';
+  document.getElementById('portRole').value = p.role||'';
+  document.getElementById('portResult').value = p.result||'';
+  document.getElementById('portLink').value = p.link||'';
+  document.getElementById('portTags').value = (p.tags||[]).join(', ');
+  document.getElementById('portFeatured').checked = !!(p._featured || p.id===localFeaturedId);
+  document.getElementById('portDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalPortfolio');
+}
+function savePortItem() {
+  const name = document.getElementById('portName').value.trim();
+  if (!name) return;
+  const isFeat = document.getElementById('portFeatured').checked;
+  const tags = document.getElementById('portTags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  const item = {
+    id: editingPortIdx !== null ? (localPortfolio[editingPortIdx].id || Date.now()) : Date.now(),
+    name, role: document.getElementById('portRole').value.trim(),
+    result: document.getElementById('portResult').value.trim(),
+    link: document.getElementById('portLink').value.trim(),
+    tags, _featured: isFeat
+  };
+  if (isFeat) localFeaturedId = item.id;
+  else if (localFeaturedId === item.id) localFeaturedId = null;
+  if (editingPortIdx !== null) localPortfolio[editingPortIdx] = item;
+  else localPortfolio.push(item);
+  renderPortfolio(); markDirty(); closeModal('modalPortfolio');
+}
+function deletePortItem() {
+  if (editingPortIdx !== null) {
+    const id = localPortfolio[editingPortIdx].id;
+    if (localFeaturedId === id) localFeaturedId = null;
+    localPortfolio.splice(editingPortIdx,1);
+    renderPortfolio(); markDirty(); closeModal('modalPortfolio');
+  }
+}
+
+// ── Modal helpers ──
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
+});
+
+// ── Utility ──
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──
+init();
+</script>
+</body>
+</html>

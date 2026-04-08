@@ -807,6 +807,18 @@ async function migrate() {
   await ensureColumn("fp1_foxes",          "consent_image_at",      "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "terms_accepted_at",     "TIMESTAMPTZ");
   await ensureColumn("fp1_foxes",          "terms_version",         "TEXT");
+  // V29: Fox public profile columns
+  await ensureColumn("fp1_foxes", "bio",                 "TEXT");
+  await ensureColumn("fp1_foxes", "specialization",      "TEXT");
+  await ensureColumn("fp1_foxes", "social_links",        "JSONB NOT NULL DEFAULT '{}'");
+  await ensureColumn("fp1_foxes", "portfolio_items",     "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "experience_items",    "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "skills",              "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "services",            "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "profile_public",      "BOOLEAN NOT NULL DEFAULT TRUE");
+  await ensureColumn("fp1_foxes", "sections_visibility", "JSONB NOT NULL DEFAULT '{}'");
+  await ensureColumn("fp1_foxes", "featured_project_id", "INTEGER");
+  await ensureColumn("fp1_foxes", "invoicing",           "BOOLEAN NOT NULL DEFAULT FALSE");
   // Drop NOT NULL constraints that may exist from old schema
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
@@ -2286,6 +2298,7 @@ app.get("/faq",      (_req, res) => { res.setHeader("Cache-Control","no-store");
 app.get("/faq.html", (_req, res) => { res.setHeader("Cache-Control","no-store"); res.sendFile(path.join(__dirname, "faq.html")); });
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
+app.get("/fox/:nickname", (_req, res) => res.sendFile(path.join(__dirname, "fox-profile.html")));
 app.get("/delete-account", (_req, res) => res.send(`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usuwanie konta — The FoxPot Club</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#f0f0f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{max-width:480px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:32px 24px;text-align:center}h1{font-size:20px;margin-bottom:16px;color:#f5a623}p{font-size:15px;line-height:1.7;color:rgba(255,255,255,.7)}a{color:#f5a623;text-decoration:none;font-weight:600}.back{display:inline-block;margin-top:24px;font-size:14px;color:rgba(255,255,255,.4)}.back:hover{color:#f5a623}</style></head><body><div class="card"><h1>🦊 Usuwanie konta</h1><p>Aby usunąć konto w The FoxPot Club, skorzystaj z opcji <strong>Opuść klub</strong> w zakładce <strong>Pomoc</strong> w aplikacji.</p><a href="/" class="back">← Wróć na stronę główną</a></div></body></html>`));
 app.get("/version", (_req, res) => res.type("text/plain").send("FP_SERVER_V29_BIGINT_FIX"));
 
@@ -8696,6 +8709,122 @@ if (BOT_TOKEN) {
   app.use(bot.webhookCallback(`/${WEBHOOK_SECRET}`));
   app.get(`/${WEBHOOK_SECRET}`, (_req, res) => res.type("text/plain").send("WEBHOOK_OK"));
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   FOX PUBLIC PROFILE API
+═══════════════════════════════════════════════════════════════ */
+
+// GET /api/fox-public/:nickname — public profile data
+app.get("/api/fox-public/:nickname", async (req, res) => {
+  try {
+    const { nickname } = req.params;
+    const r = await pool.query(
+      `SELECT f.id, f.user_id, f.username, f.rating, f.city, f.district,
+              f.bio, f.specialization, f.social_links, f.portfolio_items,
+              f.experience_items, f.skills, f.services, f.profile_public,
+              f.sections_visibility, f.featured_project_id, f.invoicing,
+              f.pioneer, f.created_at,
+              COALESCE(COUNT(c.id) FILTER (WHERE c.status='completed'), 0) AS checkins_completed,
+              COALESCE(COUNT(c.id) FILTER (WHERE c.status='failed'),    0) AS checkins_failed,
+              COALESCE(COUNT(c.id) FILTER (WHERE c.status='pending'),   0) AS checkins_pending
+       FROM fp1_foxes f
+       LEFT JOIN fp1_checkins c ON c.user_id = f.user_id
+       WHERE LOWER(f.username) = LOWER($1)
+       GROUP BY f.id`,
+      [nickname]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "not_found" });
+    const fox = r.rows[0];
+    if (!fox.profile_public) return res.status(403).json({ error: "private" });
+    // Compute review stats from checkins that have venue reviews
+    const rev = await pool.query(
+      `SELECT v.name AS venue_name, c.review_rating AS stars, c.review_text AS text, c.checked_in_at AS date
+       FROM fp1_checkins c
+       JOIN fp1_venues v ON v.id = c.venue_id
+       WHERE c.user_id = $1 AND c.review_rating IS NOT NULL
+       ORDER BY c.checked_in_at DESC LIMIT 20`,
+      [fox.user_id]
+    );
+    fox.reviews = rev.rows;
+    // compute response_rate: completed / (completed + failed) * 100
+    const total = Number(fox.checkins_completed) + Number(fox.checkins_failed);
+    fox.response_rate = total > 0 ? Math.round((Number(fox.checkins_completed) / total) * 100) : null;
+    res.json(fox);
+  } catch (e) {
+    console.error("FOX_PROFILE_GET_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/fox-public/:nickname/check-owner — returns {isOwner: bool}
+app.post("/api/fox-public/:nickname/check-owner", requireWebAppAuth, async (req, res) => {
+  try {
+    const { nickname } = req.params;
+    const tgUserId = req.telegramUser.id;
+    const r = await pool.query(
+      `SELECT id FROM fp1_foxes WHERE LOWER(username)=LOWER($1) AND user_id=$2 LIMIT 1`,
+      [nickname, tgUserId]
+    );
+    res.json({ isOwner: r.rowCount > 0 });
+  } catch (e) {
+    res.json({ isOwner: false });
+  }
+});
+
+// POST /api/fox-profile/save — save profile fields
+app.post("/api/fox-profile/save", requireWebAppAuth, async (req, res) => {
+  try {
+    const tgUserId = req.telegramUser.id;
+    const {
+      bio, specialization, social_links, portfolio_items,
+      experience_items, skills, services, featured_project_id, invoicing
+    } = req.body;
+    await pool.query(
+      `UPDATE fp1_foxes SET
+        bio=$1, specialization=$2,
+        social_links=$3::jsonb, portfolio_items=$4::jsonb,
+        experience_items=$5::jsonb, skills=$6::jsonb, services=$7::jsonb,
+        featured_project_id=$8, invoicing=$9
+       WHERE user_id=$10`,
+      [
+        bio || null,
+        specialization || null,
+        JSON.stringify(social_links || {}),
+        JSON.stringify(portfolio_items || []),
+        JSON.stringify(experience_items || []),
+        JSON.stringify(skills || []),
+        JSON.stringify(services || []),
+        featured_project_id || null,
+        invoicing === true,
+        tgUserId
+      ]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("FOX_PROFILE_SAVE_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/fox-profile/visibility — toggle profile_public and sections_visibility
+app.post("/api/fox-profile/visibility", requireWebAppAuth, async (req, res) => {
+  try {
+    const tgUserId = req.telegramUser.id;
+    const { profile_public, sections_visibility } = req.body;
+    await pool.query(
+      `UPDATE fp1_foxes SET profile_public=$1, sections_visibility=$2::jsonb WHERE user_id=$3`,
+      [
+        profile_public !== false,
+        JSON.stringify(sections_visibility || {}),
+        tgUserId
+      ]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("FOX_PROFILE_VIS_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
 
 /* ═══════════════════════════════════════════════════════════════
    BOOT
