@@ -45,10 +45,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .private-screen p{font-size:14px;color:var(--muted)}
 
 
-.spec-dropdown-wrap{position:relative}
+.spec-dropdown-wrap{position:relative;z-index:9999}
 .spec-add-btn{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px dashed var(--border);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--muted);cursor:pointer;width:100%;transition:all .2s;margin-bottom:8px}
 .spec-add-btn:hover{border-color:var(--accent);color:var(--text)}
-.spec-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:#23263a;border:1px solid var(--border);border-radius:12px;z-index:50;max-height:260px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.spec-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:#23263a;border:1px solid var(--border);border-radius:12px;z-index:9999;max-height:260px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4);pointer-events:auto}
 .spec-dropdown.open{display:block}
 .spec-dd-group{font-size:10px;color:#F97E00;font-weight:700;text-transform:uppercase;letter-spacing:.7px;padding:10px 14px 4px}
 .spec-dd-item{padding:8px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .15s}
@@ -1149,7 +1149,7 @@ function renderSpecDropdown() {
     out += `<div class="spec-dd-group">${escHtml(g.label)}</div>`;
     g.items.forEach(item => {
       const already = localSpecializations.includes(item);
-      out += `<div class="spec-dd-item${already?' already':''}" onclick="addSpec(${JSON.stringify(item)})">${escHtml(item)}${already?' ✓':''}</div>`;
+      out += `<div class="spec-dd-item${already?' already':''}" onmousedown="event.preventDefault();addSpec(${JSON.stringify(item)})">${escHtml(item)}${already?' ✓':''}</div>`;
     });
   });
   dd.innerHTML = out;
@@ -1163,6 +1163,7 @@ function toggleSpecDropdown() {
 }
 
 function addSpec(item) {
+  console.log('clicked:', item);
   if (!localSpecializations.includes(item)) {
     localSpecializations.push(item);
     renderSpecTags();
