@@ -45,15 +45,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .private-screen p{font-size:14px;color:var(--muted)}
 
 
-.spec-dropdown-wrap{position:relative;z-index:9999}
-.spec-add-btn{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px dashed var(--border);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--muted);cursor:pointer;width:100%;transition:all .2s;margin-bottom:8px}
+.spec-add-btn{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px dashed var(--border);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--muted);cursor:pointer;width:100%;transition:all .2s}
 .spec-add-btn:hover{border-color:var(--accent);color:var(--text)}
-.spec-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:#23263a;border:1px solid var(--border);border-radius:12px;z-index:9999;max-height:260px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4);pointer-events:auto}
-.spec-dropdown.open{display:block}
-.spec-dd-group{font-size:10px;color:#F97E00;font-weight:700;text-transform:uppercase;letter-spacing:.7px;padding:10px 14px 4px}
-.spec-dd-item{padding:8px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .15s}
-.spec-dd-item:hover{background:rgba(249,126,0,.12);color:#F97E00}
-.spec-dd-item.already{opacity:.35;cursor:default;pointer-events:none}
 .spec-tags-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;min-height:0}
 .spec-tag{display:inline-flex;align-items:center;gap:5px;background:#F97E00;border-radius:16px;padding:4px 10px 4px 12px;font-size:12px;font-weight:700;color:#000}
 .spec-tag-x{background:rgba(0,0,0,.2);border:none;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:#000;line-height:1;padding:0;flex-shrink:0}
@@ -291,14 +284,46 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         <div class="char-count"><span id="bioCount">0</span>/150</div>
       </div>
 
-      <!-- Specialization dropdown-tag -->
+      <!-- Specialization select-tag -->
       <div class="ep-field">
         <label>Specjalizacja</label>
         <div class="spec-tags-wrap" id="specTagsWrap"></div>
-        <div class="spec-dropdown-wrap" id="specDropdownWrap">
-          <button type="button" class="spec-add-btn" onclick="event.stopPropagation();toggleSpecDropdown()">+ Dodaj specjalizację</button>
-          <div class="spec-dropdown" id="specDropdown" onclick="event.stopPropagation()"></div>
-        </div>
+        <button type="button" class="spec-add-btn" onclick="toggleSpecList()">+ Dodaj specjalizację</button>
+        <select id="specSelect" size="8" style="display:none;background:#1a1d29;color:#fff;border:1px solid #F97E00;width:100%;border-radius:8px;margin-top:6px;padding:4px 0" onchange="addSpec(this.value);this.selectedIndex=-1;">
+          <optgroup label="🍽️ Gastronomia & Hospitality">
+            <option>Kelner</option><option>Barman</option><option>Kucharz</option><option>Szef kuchni</option>
+            <option>Barista</option><option>Sommelier</option><option>Organizacja eventów</option>
+            <option>Catering</option><option>Host / Hostessa</option>
+          </optgroup>
+          <optgroup label="💻 Technologia">
+            <option>Programista</option><option>Web Developer</option><option>Mobile Developer</option>
+            <option>UI Designer</option><option>UX Designer</option><option>Data Analyst</option>
+            <option>DevOps</option><option>Cyberbezpieczeństwo</option><option>IT Support</option>
+          </optgroup>
+          <optgroup label="🎨 Kreatywne">
+            <option>Fotograf</option><option>Videograf</option><option>Montażysta</option>
+            <option>Grafik</option><option>Branding Designer</option><option>Muzyk</option>
+            <option>Wokalista</option><option>Aktor</option><option>Copywriter</option><option>Content Creator</option>
+          </optgroup>
+          <optgroup label="📊 Biznes">
+            <option>Marketing Manager</option><option>Social Media Manager</option><option>Sprzedawca</option>
+            <option>Business Developer</option><option>Księgowy</option><option>Doradca prawny</option>
+            <option>HR Specialist</option><option>Rekruter</option><option>Project Manager</option><option>Przedsiębiorca</option>
+          </optgroup>
+          <optgroup label="💪 Zdrowie & Sport">
+            <option>Personal Trainer</option><option>Dietetyk</option><option>Fizjoterapeuta</option>
+            <option>Pielęgniarka / Pielęgniarz</option><option>Lekarz</option><option>Coach wellness</option>
+          </optgroup>
+          <optgroup label="📚 Edukacja">
+            <option>Nauczyciel</option><option>Korepetytor</option><option>Tłumacz</option>
+            <option>Lektor języków</option><option>Coach</option><option>Mentor</option>
+          </optgroup>
+          <optgroup label="🔧 Rzemiosło & Usługi">
+            <option>Budowlaniec</option><option>Elektryk</option><option>Hydraulik</option>
+            <option>Mechanik</option><option>Fryzjer</option><option>Kosmetyczka</option>
+            <option>Tatuażysta</option><option>Krawiec / Krawcowa</option><option>Kierowca</option><option>Inne</option>
+          </optgroup>
+        </select>
       </div>
 
       <!-- District -->
@@ -1123,16 +1148,6 @@ async function toggleAvailToday() {
 }
 
 
-const SPEC_GROUPS = [
-  { label: '🍽️ Gastronomia & Hospitality', items: ['Kelner','Barman','Kucharz','Szef kuchni','Barista','Sommelier','Organizacja eventów','Catering','Host / Hostessa'] },
-  { label: '💻 Technologia', items: ['Programista','Web Developer','Mobile Developer','UI Designer','UX Designer','Data Analyst','DevOps','Cyberbezpieczeństwo','IT Support'] },
-  { label: '🎨 Kreatywne', items: ['Fotograf','Videograf','Montażysta','Grafik','Branding Designer','Muzyk','Wokalista','Aktor','Copywriter','Content Creator'] },
-  { label: '📊 Biznes', items: ['Marketing Manager','Social Media Manager','Sprzedawca','Business Developer','Księgowy','Doradca prawny','HR Specialist','Rekruter','Project Manager','Przedsiębiorca'] },
-  { label: '💪 Zdrowie & Sport', items: ['Personal Trainer','Dietetyk','Fizjoterapeuta','Pielęgniarka / Pielęgniarz','Lekarz','Coach wellness'] },
-  { label: '📚 Edukacja', items: ['Nauczyciel','Korepetytor','Tłumacz','Lektor języków','Coach','Mentor'] },
-  { label: '🔧 Rzemiosło & Usługi', items: ['Budowlaniec','Elektryk','Hydraulik','Mechanik','Fryzjer','Kosmetyczka','Tatuażysta','Krawiec / Krawcowa','Kierowca','Inne'] },
-];
-
 function renderSpecTags() {
   const wrap = document.getElementById('specTagsWrap');
   if (!wrap) return;
@@ -1141,54 +1156,26 @@ function renderSpecTags() {
   ).join('');
 }
 
-function renderSpecDropdown() {
-  const dd = document.getElementById('specDropdown');
-  if (!dd) return;
-  let out = '';
-  SPEC_GROUPS.forEach(g => {
-    out += `<div class="spec-dd-group">${escHtml(g.label)}</div>`;
-    g.items.forEach(item => {
-      const already = localSpecializations.includes(item);
-      out += `<div class="spec-dd-item${already?' already':''}" onclick="addSpec(${JSON.stringify(item)})">${escHtml(item)}${already?' ✓':''}</div>`;
-    });
-  });
-  dd.innerHTML = out;
-}
-
-function toggleSpecDropdown() {
-  const dd = document.getElementById('specDropdown');
-  if (!dd) return;
-  renderSpecDropdown();
-  dd.classList.toggle('open');
+function toggleSpecList() {
+  const sel = document.getElementById('specSelect');
+  if (!sel) return;
+  sel.style.display = sel.style.display === 'none' ? 'block' : 'none';
 }
 
 function addSpec(item) {
-  console.log('clicked:', item);
-  if (!localSpecializations.includes(item)) {
+  if (item && !localSpecializations.includes(item)) {
     localSpecializations.push(item);
     renderSpecTags();
     markDirty();
   }
-  renderSpecDropdown();
 }
 
 function removeSpec(idx) {
   localSpecializations.splice(idx, 1);
   renderSpecTags();
-  renderSpecDropdown();
   markDirty();
 }
 
-// Close dropdown on outside click
-document.addEventListener('click', function(e) {
-  const wrap = document.getElementById('specDropdownWrap');
-  if (wrap && !wrap.contains(e.target)) {
-    const dd = document.getElementById('specDropdown');
-    if (dd) dd.classList.remove('open');
-  }
-});
-
-// Keep old name as alias for populateEditForm call
 function renderSpecChips() { renderSpecTags(); }
 
 // ── Init ──
