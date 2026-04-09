@@ -652,6 +652,7 @@ async function init() {
     render();
     document.getElementById('profileWrap').style.display = '';
     await checkOwner();
+    console.log('btnAvail display after checkOwner:', document.getElementById('btnAvail')?.style.display);
     await checkWebAuth();
   } catch (e) {
     showNotFound();
@@ -692,7 +693,9 @@ async function checkOwner() {
     if (isOwner) {
       document.getElementById('btnEditToggle').style.display = 'block';
       const ab = document.getElementById('btnAvail');
-      if (ab) { ab.style.display = ''; renderAvailBtn(); }
+      if (ab) { ab.style.display = 'inline-flex'; renderAvailBtn(); }
+      const badge = document.getElementById('availBadge');
+      if (badge) { badge.style.cursor = 'pointer'; badge.onclick = toggleAvailToday; }
     }
   } catch (e) {}
 }
@@ -733,7 +736,9 @@ async function checkWebAuth() {
       console.log('Owner confirmed via username match');
       document.getElementById('btnEditToggle').style.display = 'block';
       const ab = document.getElementById('btnAvail');
-      if (ab) { ab.style.display = ''; renderAvailBtn(); }
+      if (ab) { ab.style.display = 'inline-flex'; renderAvailBtn(); }
+      const badge = document.getElementById('availBadge');
+      if (badge) { badge.style.cursor = 'pointer'; badge.onclick = toggleAvailToday; }
     }
   } catch(e) {
     console.error('checkWebAuth error:', e);
