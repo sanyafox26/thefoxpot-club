@@ -8807,7 +8807,18 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
     );
     if (!r.rowCount) return res.status(404).json({ error: "not_found" });
     const fox = r.rows[0];
-    if (!fox.profile_public) return res.status(403).json({ error: "private" });
+    if (!fox.profile_public) {
+      // Allow owner to see their own private profile via JWT
+      let isOwner = false;
+      const authHeader = req.headers.authorization || "";
+      if (authHeader.startsWith("Bearer ")) {
+        try {
+          const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+          if (decoded.fox_id && String(decoded.fox_id) === String(fox.id)) isOwner = true;
+        } catch(e) {}
+      }
+      if (!isOwner) return res.status(403).json({ error: "private" });
+    }
     // Reviews from fp1_reviews (user_id stored as TEXT)
     const rev = await pool.query(
       `SELECT v.name AS venue_name, r.rating AS stars, r.text, r.created_at AS date
