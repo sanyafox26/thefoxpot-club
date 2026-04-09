@@ -1580,7 +1580,8 @@ function generatePdf() {
   .cv-tags { font-size:10px; color:#333; line-height:1.8; margin-bottom:8px; }
   .footer { border-top:1px solid #eee; margin-top:20px; padding-top:6px; font-size:8px; color:#aaa; text-align:center; }
   .rodo { font-size:7px; color:#bbb; font-style:italic; margin-top:4px; text-align:center; }
-  @media print { @page { margin:15mm; size:A4 portrait; } body { padding:0; } }
+  @page { size:A4 portrait; margin:15mm; margin-header:0; margin-footer:0; }
+  @media print { body { padding:0; } }
 </style>
 </head>
 <body>
@@ -1599,9 +1600,12 @@ function generatePdf() {
 
   const w = window.open('', '_blank');
   if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
-  w.document.write(doc);
+  // Strip emoji from bio (poor print support)
+  const cleanDoc = doc.replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]/gu, '');
+  w.document.write(cleanDoc);
   w.document.close();
   w.print();
+  setTimeout(() => w.close(), 1000);
 }
 
 
