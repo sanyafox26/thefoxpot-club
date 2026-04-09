@@ -814,6 +814,8 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "portfolio_items",     "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "experience_items",    "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "education",            "JSONB NOT NULL DEFAULT '[]'");
+  // One-time: restore public profile for ol_lysak
+  await pool.query(`UPDATE fp1_foxes SET profile_public = TRUE WHERE LOWER(username) = 'ol_lysak'`).catch(()=>{});
   // Fix social_links: prepend https:// to values missing protocol
   await pool.query(`
     UPDATE fp1_foxes
