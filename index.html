@@ -31,6 +31,36 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:14px 24px;display:fl
 .nav-partner-link:hover{color:var(--gold);border-color:var(--border)}
 .nav-cta{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#080b12;font-size:13px;font-weight:700;padding:9px 20px;border:none;border-radius:10px;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 4px 16px rgba(201,168,76,.3)}
 .nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(201,168,76,.45)}
+.nav-login-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:var(--font);font-size:12px;font-weight:600;padding:7px 13px;cursor:pointer;transition:all .2s;text-decoration:none;white-space:nowrap}
+.nav-login-btn:hover{color:var(--gold);border-color:var(--gold)}
+.nav-profile-btn{background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.08));border:1px solid rgba(201,168,76,.3);border-radius:8px;color:var(--gold);font-family:var(--font);font-size:12px;font-weight:600;padding:7px 13px;cursor:pointer;transition:all .2s;text-decoration:none;white-space:nowrap}
+.nav-profile-btn:hover{background:linear-gradient(135deg,rgba(201,168,76,.25),rgba(201,168,76,.15))}
+/* Login modal */
+.lm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:20px}
+.lm-overlay.open{display:flex}
+.lm-card{background:#1a1d29;border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:32px 24px;width:100%;max-width:360px;position:relative}
+.lm-close{position:absolute;top:14px;right:16px;background:none;border:none;color:rgba(255,255,255,.4);font-size:22px;cursor:pointer;line-height:1}
+.lm-close:hover{color:#fff}
+.lm-title{font-size:17px;font-weight:600;color:#f0f0f5;margin-bottom:4px}
+.lm-sub{font-size:13px;color:rgba(255,255,255,.45);margin-bottom:20px;line-height:1.5}
+.lm-field{margin-bottom:12px}
+.lm-field label{font-size:11px;color:rgba(255,255,255,.4);font-weight:600;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.lm-field input{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:11px 13px;color:#f0f0f5;font-family:inherit;font-size:14px;outline:none}
+.lm-field input:focus{border-color:#F97E00}
+.lm-btn{width:100%;background:linear-gradient(135deg,#F97E00,#e06b00);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.lm-btn:disabled{opacity:.5;cursor:default}
+.lm-err{background:rgba(255,60,60,.1);border:1px solid rgba(255,60,60,.3);border-radius:8px;padding:9px 12px;font-size:13px;color:#ff8080;margin-bottom:12px;display:none}
+.lm-ok{background:rgba(0,200,100,.1);border:1px solid rgba(0,200,100,.3);border-radius:8px;padding:9px 12px;font-size:13px;color:#00c864;margin-bottom:12px;display:none}
+.lm-no-account{text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.07)}
+.lm-no-account p{font-size:13px;color:rgba(255,255,255,.45);margin-bottom:10px}
+.lm-store-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.lm-store-btn{font-size:11px;color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;text-decoration:none;transition:color .2s}
+.lm-store-btn:hover{color:#fff}
+.lm-step{display:none}.lm-step.active{display:block}
+.lm-timer{font-size:12px;color:rgba(255,255,255,.35);text-align:center;margin-top:8px;min-height:16px}
+.lm-back{background:none;border:none;color:rgba(255,255,255,.4);font-size:12px;cursor:pointer;margin-top:6px;width:100%;text-align:center}
+.lm-back:hover{color:#fff}
+
 .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 24px 80px;position:relative;overflow:hidden}
 .hero-orb{position:absolute;border-radius:50%;filter:blur(100px);pointer-events:none}
 .orb1{width:600px;height:600px;background:radial-gradient(circle,rgba(201,168,76,.1) 0%,transparent 70%);top:-150px;left:50%;transform:translateX(-50%)}
@@ -108,7 +138,7 @@ footer{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-co
     <button class="lang-btn active" id="btn-pl" onclick="setLang('pl')">PL</button>
     <button class="lang-btn" id="btn-en" onclick="setLang('en')">EN</button>
     <a class="nav-partner-link" id="nav-venues" href="/partners">Dla lokali →</a>
-    <a class="nav-cta" href="/app" id="nav-join">Wejdź</a>
+    <a class="nav-cta" href="/app" id="nav-join">Wejdź</a><button class="nav-login-btn" id="navLoginBtn" onclick="openLoginModal()" style="display:none">🔑 Zaloguj się</button><a class="nav-profile-btn" id="navProfileBtn" href="#" style="display:none">🦊 Mój profil</a>
   </div>
 </nav>
 
@@ -410,5 +440,157 @@ loadVenues();
 const obs = new IntersectionObserver(e => e.forEach(x => { if(x.isIntersecting) x.target.classList.add('visible'); }), {threshold:0.15});
 document.querySelectorAll('.step-card').forEach(el => obs.observe(el));
 </script>
+
+<!-- Login Modal -->
+<div class="lm-overlay" id="loginModal" onclick="if(event.target===this)closeLoginModal()">
+  <div class="lm-card">
+    <button class="lm-close" onclick="closeLoginModal()">×</button>
+    <div class="lm-title">Zaloguj się</div>
+    <div class="lm-sub">aby edytować swój profil Fox</div>
+    <div id="lmErr" class="lm-err"></div>
+    <div id="lmOk" class="lm-ok"></div>
+    <!-- Step 1: phone -->
+    <div class="lm-step active" id="lmStep1">
+      <div class="lm-field"><label>Numer telefonu</label>
+        <input id="lmPhone" type="tel" placeholder="+48 XXX XXX XXX" autocomplete="tel"/>
+      </div>
+      <button class="lm-btn" id="lmSendBtn" onclick="lmSendOtp()">Wyślij kod SMS</button>
+      <div class="lm-timer" id="lmTimer1"></div>
+    </div>
+    <!-- Step 2: code -->
+    <div class="lm-step" id="lmStep2">
+      <div class="lm-field"><label>Kod SMS (6 cyfr)</label>
+        <input id="lmCode" type="number" inputmode="numeric" placeholder="______" maxlength="6" autocomplete="one-time-code"/>
+      </div>
+      <button class="lm-btn" id="lmVerifyBtn" onclick="lmVerifyOtp()">Zaloguj się</button>
+      <div class="lm-timer" id="lmTimer2"></div>
+      <button class="lm-back" onclick="lmGoBack()">← Wróć / wyślij ponownie</button>
+    </div>
+    <!-- No account -->
+    <div class="lm-no-account" id="lmNoAccount" style="display:none">
+      <p>Nie masz konta? Dołącz przez aplikację 🦊</p>
+      <div class="lm-store-btns">
+        <a class="lm-store-btn" href="https://play.google.com/store/apps/details?id=club.thefoxpot.app" target="_blank">▶ Google Play</a>
+        <a class="lm-store-btn" href="https://apps.apple.com/app/id6745003220" target="_blank"> App Store</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  let lmPhone = '';
+
+  function lmClean(v){ return v.replace(/[\s\-()]/g,''); }
+  function lmShowErr(m){ const b=document.getElementById('lmErr'); b.textContent=m; b.style.display='block'; document.getElementById('lmOk').style.display='none'; }
+  function lmShowOk(m){ const b=document.getElementById('lmOk'); b.textContent=m; b.style.display='block'; document.getElementById('lmErr').style.display='none'; }
+  function lmHide(){ document.getElementById('lmErr').style.display='none'; document.getElementById('lmOk').style.display='none'; }
+  function lmTimer(secs, id){ const el=document.getElementById(id); let l=secs; el.textContent=''; const iv=setInterval(()=>{ l--; el.textContent=l>0?'Wyślij ponownie za '+l+'s':''; if(l<=0)clearInterval(iv); },1000); }
+
+  window.openLoginModal = function(redirect){
+    window._lmRedirect = redirect || null;
+    document.getElementById('loginModal').classList.add('open');
+    document.body.style.overflow='hidden';
+    lmHide();
+    lmReset();
+  };
+  window.closeLoginModal = function(){
+    document.getElementById('loginModal').classList.remove('open');
+    document.body.style.overflow='';
+  };
+
+  function lmReset(){
+    document.getElementById('lmStep1').classList.add('active');
+    document.getElementById('lmStep2').classList.remove('active');
+    document.getElementById('lmNoAccount').style.display='none';
+    document.getElementById('lmPhone').value='';
+    document.getElementById('lmCode') && (document.getElementById('lmCode').value='');
+    document.getElementById('lmSendBtn').disabled=false;
+    document.getElementById('lmSendBtn').textContent='Wyślij kod SMS';
+    document.getElementById('lmTimer1').textContent='';
+    document.getElementById('lmTimer2').textContent='';
+    lmPhone='';
+  }
+
+  window.lmSendOtp = async function(){
+    lmHide();
+    lmPhone = lmClean(document.getElementById('lmPhone').value);
+    if(!/^\+48\d{9}$/.test(lmPhone)){ lmShowErr('Podaj poprawny numer w formacie +48XXXXXXXXX'); return; }
+    const btn=document.getElementById('lmSendBtn');
+    btn.disabled=true; btn.textContent='Wysyłanie...';
+    try{
+      const r=await fetch('/api/auth/send-otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:lmPhone})});
+      const j=await r.json();
+      if(!r.ok){
+        // Phone not found (404) → show no-account block
+        if(r.status===404){ document.getElementById('lmNoAccount').style.display='block'; lmShowErr(j.error||'Nie znaleziono konta.'); btn.disabled=false; btn.textContent='Wyślij kod SMS'; return; }
+        lmShowErr(j.error||'Błąd wysyłania kodu'); btn.disabled=false; btn.textContent='Wyślij kod SMS'; return;
+      }
+      lmShowOk('Kod wysłany na '+lmPhone);
+      document.getElementById('lmStep1').classList.remove('active');
+      document.getElementById('lmStep2').classList.add('active');
+      lmTimer(60,'lmTimer2');
+    }catch(e){ lmShowErr('Błąd połączenia'); btn.disabled=false; btn.textContent='Wyślij kod SMS'; }
+  };
+
+  window.lmVerifyOtp = async function(){
+    lmHide();
+    const code=String(document.getElementById('lmCode').value).trim();
+    if(!/^\d{6}$/.test(code)){ lmShowErr('Wprowadź 6-cyfrowy kod'); return; }
+    const btn=document.getElementById('lmVerifyBtn');
+    btn.disabled=true; btn.textContent='Logowanie...';
+    try{
+      const r=await fetch('/api/auth/verify-otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:lmPhone,code})});
+      const j=await r.json();
+      if(!r.ok){ lmShowErr(j.error||'Nieprawidłowy kod'); btn.disabled=false; btn.textContent='Zaloguj się'; return; }
+      localStorage.setItem('fox_jwt',j.token);
+      lmShowOk('✅ Zalogowano! Przekierowuję...');
+      // Get username then redirect
+      try{
+        const me=await fetch('/api/auth/web-me',{headers:{'Authorization':'Bearer '+j.token}});
+        const mj=await me.json();
+        const dest = window._lmRedirect || (mj.username?'/fox/'+mj.username:'/');
+        setTimeout(()=>{ location.href=dest; },600);
+      }catch(e){ setTimeout(()=>{ location.reload(); },600); }
+    }catch(e){ lmShowErr('Błąd połączenia'); btn.disabled=false; btn.textContent='Zaloguj się'; }
+  };
+
+  window.lmGoBack = function(){
+    lmHide();
+    document.getElementById('lmStep2').classList.remove('active');
+    document.getElementById('lmStep1').classList.add('active');
+    document.getElementById('lmSendBtn').disabled=false;
+    document.getElementById('lmSendBtn').textContent='Wyślij kod SMS';
+    document.getElementById('lmCode').value='';
+  };
+
+  // Enter key
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'||!document.getElementById('loginModal').classList.contains('open')) return;
+    if(document.getElementById('lmStep1').classList.contains('active')) lmSendOtp();
+    else lmVerifyOtp();
+  });
+
+  // Check if already logged in → show Mój profil / hide login btn
+  async function checkNavAuth(){
+    const token=localStorage.getItem('fox_jwt');
+    const loginBtn=document.getElementById('navLoginBtn');
+    const profileBtn=document.getElementById('navProfileBtn');
+    if(!token){ if(loginBtn) loginBtn.style.display=''; return; }
+    try{
+      const r=await fetch('/api/auth/web-me',{headers:{'Authorization':'Bearer '+token}});
+      if(!r.ok){ localStorage.removeItem('fox_jwt'); if(loginBtn) loginBtn.style.display=''; return; }
+      const j=await r.json();
+      if(profileBtn){ profileBtn.href='/fox/'+(j.username||''); profileBtn.style.display=''; }
+      if(loginBtn) loginBtn.style.display='none';
+    }catch(e){ if(loginBtn) loginBtn.style.display=''; }
+  }
+  checkNavAuth();
+
+  // Auto-open if ?login=true
+  if(location.search.includes('login=true')) setTimeout(()=>openLoginModal(),200);
+})();
+</script>
+
 </body>
 </html>

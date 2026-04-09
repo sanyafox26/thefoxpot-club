@@ -2004,6 +2004,12 @@ app.post("/api/auth/send-otp", sendOtpLimiter, express.json(), async (req, res) 
       return res.status(429).json({ error: "Za dużo prób. Spróbuj ponownie za godzinę." });
     }
 
+    // Check phone exists in fp1_foxes (web login requires existing account)
+    const phoneExists = await pool.query(`SELECT 1 FROM fp1_foxes WHERE phone=$1 AND is_deleted=FALSE LIMIT 1`, [cleaned]);
+    if (!phoneExists.rowCount) {
+      return res.status(404).json({ error: "Nie znaleziono konta z tym numerem. Dołącz przez aplikację 🦊" });
+    }
+
     // Send OTP via Twilio Verify (or test fallback)
     if (twilioClient) {
       await twilioClient.verify.v2
@@ -2318,7 +2324,6 @@ app.get("/faq",      (_req, res) => { res.setHeader("Cache-Control","no-store");
 app.get("/faq.html", (_req, res) => { res.setHeader("Cache-Control","no-store"); res.sendFile(path.join(__dirname, "faq.html")); });
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
-app.get("/login", (_req, res) => res.sendFile(path.join(__dirname, "login.html")));
 app.get("/fox/:nickname", async (req, res) => {
   console.log('FOX_PROFILE nick:', req.params.nickname);
   const result = await pool.query('SELECT id, username FROM fp1_foxes ORDER BY id LIMIT 10');

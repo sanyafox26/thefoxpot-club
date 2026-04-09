@@ -590,13 +590,13 @@ async function checkWebAuth() {
   const userBtn = document.getElementById('btnUser');
   const logoutBtn = document.getElementById('btnLogout');
   if (!token) {
-    loginBtn.href = '/login?redirect=' + encodeURIComponent(location.pathname);
+    loginBtn.href = '/?login=true'; loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; };
     loginBtn.style.display = '';
     return;
   }
   try {
     const r = await fetch('/api/auth/web-me', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { localStorage.removeItem('fox_jwt'); loginBtn.href = '/login?redirect=' + encodeURIComponent(location.pathname); loginBtn.style.display = ''; return; }
+    if (!r.ok) { localStorage.removeItem('fox_jwt'); loginBtn.href = '/?login=true'; loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; }; loginBtn.style.display = ''; return; }
     const j = await r.json();
     const displayName = j.display_name || j.username || '';
     userBtn.textContent = '🦊 ' + displayName;
@@ -617,7 +617,7 @@ async function checkWebAuth() {
       } catch(e) {}
     }
   } catch(e) {
-    loginBtn.href = '/login?redirect=' + encodeURIComponent(location.pathname);
+    loginBtn.href = '/?login=true'; loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; };
     loginBtn.style.display = '';
   }
 }
