@@ -66,9 +66,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .btn-icon{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--muted);font-size:13px;cursor:pointer;transition:all .2s;white-space:nowrap}
 .btn-icon:hover{color:var(--text);border-color:var(--accent)}
 .btn-edit-toggle{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;display:none}
-.btn-avail{border:none;border-radius:20px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;display:none;transition:all .2s;white-space:nowrap}
-.btn-avail.on{background:rgba(0,200,100,.15);border:1px solid rgba(0,200,100,.35);color:#00c864}
-.btn-avail.off{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.4)}
+.btn-avail{border:none;border-radius:20px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;display:none;transition:color .2s,background .2s;white-space:nowrap;align-items:center;gap:5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
 
 /* ── hero / header ── */
 .hero{padding:32px 20px 24px;text-align:center;position:relative}
@@ -693,7 +691,7 @@ async function checkOwner() {
     if (isOwner) {
       document.getElementById('btnEditToggle').style.display = 'block';
       const ab = document.getElementById('btnAvail');
-      if (ab) { ab.style.display = 'inline-flex'; renderAvailBtn(); }
+      if (ab) { renderAvailBtn(); }
       const badge = document.getElementById('availBadge');
       if (badge) { badge.style.cursor = 'pointer'; badge.onclick = toggleAvailToday; }
     }
@@ -736,7 +734,7 @@ async function checkWebAuth() {
       console.log('Owner confirmed via username match');
       document.getElementById('btnEditToggle').style.display = 'block';
       const ab = document.getElementById('btnAvail');
-      if (ab) { ab.style.display = 'inline-flex'; renderAvailBtn(); }
+      if (ab) { renderAvailBtn(); }
       const badge = document.getElementById('availBadge');
       if (badge) { badge.style.cursor = 'pointer'; badge.onclick = toggleAvailToday; }
     }
@@ -1253,12 +1251,13 @@ function renderAvailBtn() {
   if (!btn) return;
   localAvailTodayNav = !!(profileData && profileData.available_today);
   if (localAvailTodayNav) {
-    btn.textContent = '🟢 Dostępny dziś';
-    btn.className = 'btn-avail on';
+    btn.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0"></span> Dostępny dziś';
+    btn.style.color = '#22c55e';
   } else {
-    btn.textContent = '⚫ Dostępny dziś';
-    btn.className = 'btn-avail off';
+    btn.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:#444;display:inline-block;flex-shrink:0"></span> Dostępny dziś';
+    btn.style.color = '#888';
   }
+  btn.style.display = 'inline-flex';
 }
 
 async function toggleAvailToday() {
