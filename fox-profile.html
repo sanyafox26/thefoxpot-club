@@ -231,51 +231,29 @@ body.print-mode #cv-print{display:block}
 @media print{
   body *{display:none!important}
   body #cv-print,body #cv-print *{display:revert!important}
-  #cv-print{
-    font-family:Arial,Helvetica,sans-serif;
-    background:#fff;color:#111;font-size:12px;
-    padding:15mm;width:210mm;margin:0 auto;
-  }
-  .pcv-logo{height:30px;width:auto;display:block;margin-bottom:10px}
-  .pcv-name{font-size:24px;font-weight:700;color:#111;margin-bottom:5px}
-  .pcv-loc{font-size:11px;color:#555;margin-bottom:2px}
-  .pcv-contact{font-size:11px;color:#555;margin-bottom:4px}
-  .pcv-extra{font-size:11px;color:#555;margin-bottom:2px}
-  .pcv-bio{font-size:12px;color:#333;line-height:1.5;margin-top:8px;margin-bottom:8px}
-  .pcv-specs{font-size:11px;color:#F97E00;margin-bottom:10px}
-  .pcv-hr{border:none;border-top:1px solid #ddd;margin:12px 0}
-  .pcv-sec{margin-top:14px;page-break-inside:avoid}
-  .pcv-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#111;border-bottom:1px solid #F97E00;padding-bottom:3px;margin-bottom:8px}
-  .pcv-item{margin-bottom:9px;page-break-inside:avoid}
-  .pcv-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-  .pcv-item-title{font-size:13px;font-weight:600;color:#111}
-  .pcv-orange{color:#F97E00!important}
-  .pcv-company{font-size:11px;color:#F97E00;margin-top:1px}
-  .pcv-meta{font-size:10px;color:#888;white-space:nowrap}
-  .pcv-desc{font-size:11px;color:#555;margin-top:3px;line-height:1.5}
-  .pcv-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:6px}
-  .pcv-header-info{flex:1}
-  .pcv-avatar{width:80px;height:80px;border-radius:50%;object-fit:cover;flex-shrink:0}
-  .pcv-rodo{font-size:7px;font-style:italic;color:#aaa;margin-top:10px;line-height:1.4}
-  .pcv-footer{margin-top:6px;font-size:8px;color:#999;text-align:center}
   @page{margin:15mm;size:A4}
   html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-
-  body{background:#fff;color:#111;padding-bottom:0}
-  .topbar,.topbar-actions,.btn-edit-toggle,.save-bar,.cta-box,.section-vis-btn,.add-btn,.edit-card-btn,.btn-icon,.modal-overlay{display:none!important}
-  .topbar-logo{display:block!important;color:#F97E00}
-  .hero{padding:16px 0 12px}
-  .section{margin:0 0 14px;animation:none}
-  .card,.exp-card,.service-card,.portfolio-card,.review-card,.stat-card,.featured-card{background:#f8f8f8;border:1px solid #e0e0e0;box-shadow:none}
-  .fox-nick{color:#111}
-  .fox-bio,.exp-desc,.service-desc,.portfolio-result,.review-text{color:#333}
-  .exp-company,.service-price,.review-stars,.rating-pill span,.fox-spec{color:#F97E00}
-  .stat-num{color:#F97E00}
-  .skill-chip{background:transparent;border:1px solid #F97E00;color:#F97E00}
-  .social-btn{border-color:#ccc;color:#555}
-  .muted,.review-date,.exp-period,.fox-city,.stat-label{color:#666}
-  .portfolio-tag{background:transparent;border:1px solid #F97E00;color:#F97E00}
-  .print-logo{display:block!important;text-align:center;font-family:'Bebas Neue',sans-serif;font-size:13px;color:#F97E00;margin-bottom:6px}
+  #cv-print{font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#222;width:100%}
+  .pcv-name{font-size:28px;font-weight:700;color:#111;margin-bottom:4px}
+  .pcv-contact{font-size:10px;color:#555;margin-bottom:2px}
+  .pcv-extra{font-size:10px;color:#555;margin-bottom:2px}
+  .pcv-bio{font-size:11px;color:#333;font-style:italic;margin:8px 0;line-height:1.5}
+  .pcv-specs{font-size:10px;color:#F97E00;margin-bottom:0}
+  .pcv-hr{border:none;border-top:2px solid #F97E00;margin:10px 0}
+  .pcv-sec{page-break-inside:avoid}
+  .pcv-sec-title{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#333;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px 0}
+  .pcv-item{margin-bottom:10px;page-break-inside:avoid}
+  .pcv-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .pcv-item-title{font-size:11px;font-weight:700;color:#222}
+  .pcv-orange{color:#F97E00!important}
+  .pcv-period{font-size:10px;color:#777;white-space:nowrap}
+  .pcv-company{font-size:11px;color:#F97E00;margin-top:1px}
+  .pcv-desc{font-size:10px;color:#555;margin-top:2px;margin-left:10px;line-height:1.5}
+  .pcv-desc2{font-size:10px;color:#555;margin-top:2px;line-height:1.5}
+  .pcv-tags{font-size:9px;color:#999;margin-top:2px}
+  .pcv-skills{font-size:10px;color:#333;line-height:1.8}
+  .pcv-rodo{font-size:7px;font-style:italic;color:#bbb;margin-top:4px;line-height:1.4}
+  .pcv-footer{border-top:1px solid #eee;padding-top:6px;font-size:8px;color:#aaa;text-align:center;margin-top:6px}
 }
 .print-logo{display:none}
 </style>
@@ -1508,8 +1486,6 @@ function removeSpec(idx) {
 function renderSpecChips() { renderSpecTags(); }
 
 function generatePdf() {
-  console.log('PDF generation started (print mode)');
-  const logoSrc  = document.querySelector('.topbar-logo img')?.src || '';
   const name     = escHtml(localDisplayName || NICKNAME);
   const bio      = escHtml(profileData?.bio || '');
   const specs    = localSpecializations || [];
@@ -1523,12 +1499,13 @@ function generatePdf() {
   const vis = localSectionsVis;
   const show = s => vis[s] !== false;
 
+  // Contact line: district · address · city | email | url
   const locParts = [district, address, city].filter(Boolean);
-  const locLine  = locParts.join(' · ');
-  const cParts   = [];
-  if (email) cParts.push('📧 ' + email);
-  cParts.push('🌐 ' + profileUrl);
-  const contactLine = cParts.join('  ·  ');
+  const contactParts = [];
+  if (locParts.length) contactParts.push(locParts.join(' · '));
+  if (email) contactParts.push(email);
+  contactParts.push(profileUrl);
+  const contactLine = contactParts.join(' &nbsp;|&nbsp; ');
 
   let sectionsHtml = '';
 
@@ -1536,29 +1513,34 @@ function generatePdf() {
     sectionsHtml += '<div class="pcv-sec"><div class="pcv-sec-title">Doświadczenie zawodowe</div>'
       + localExperience.map(e =>
           '<div class="pcv-item">'
-          + '<div class="pcv-row"><span class="pcv-item-title">' + escHtml(e.title||'') + '</span>'
-          + (e.period ? '<span class="pcv-meta">' + escHtml(e.period) + '</span>' : '') + '</div>'
+          + '<div class="pcv-row">'
+          +   '<span class="pcv-item-title">' + escHtml(e.title||'') + '</span>'
+          +   (e.period ? '<span class="pcv-period">' + escHtml(e.period) + '</span>' : '')
+          + '</div>'
           + (e.company ? '<div class="pcv-company">' + escHtml(e.company) + '</div>' : '')
-          + (e.desc    ? '<div class="pcv-desc">'   + escHtml(e.desc)    + '</div>' : '')
+          + (e.desc    ? '<div class="pcv-desc">'    + escHtml(e.desc)    + '</div>' : '')
           + '</div>').join('')
       + '</div>';
   }
 
   if (show('education') && localEducation.length) {
     sectionsHtml += '<div class="pcv-sec"><div class="pcv-sec-title">Wykształcenie</div>'
-      + localEducation.map(e =>
-          '<div class="pcv-item">'
-          + '<div class="pcv-row"><span class="pcv-item-title pcv-orange">' + escHtml(e.school||'') + '</span>'
-          + (e.years ? '<span class="pcv-meta">' + escHtml(e.years) + '</span>' : '') + '</div>'
-          + (e.field  ? '<div class="pcv-company">' + escHtml(e.field)  + '</div>' : '')
-          + (e.degree ? '<div class="pcv-desc">'   + escHtml(e.degree) + '</div>' : '')
-          + '</div>').join('')
+      + localEducation.map(e => {
+          const sub = [e.field, e.degree].filter(Boolean).map(escHtml).join(' · ');
+          return '<div class="pcv-item">'
+            + '<div class="pcv-row">'
+            +   '<span class="pcv-item-title pcv-orange">' + escHtml(e.school||'') + '</span>'
+            +   (e.years ? '<span class="pcv-period">' + escHtml(e.years) + '</span>' : '')
+            + '</div>'
+            + (sub ? '<div class="pcv-desc2">' + sub + '</div>' : '')
+            + '</div>';
+        }).join('')
       + '</div>';
   }
 
   if (show('skills') && localSkills.length) {
     sectionsHtml += '<div class="pcv-sec"><div class="pcv-sec-title">Umiejętności</div>'
-      + '<div class="pcv-desc">' + localSkills.map(escHtml).join(' · ') + '</div>'
+      + '<div class="pcv-skills">' + localSkills.map(escHtml).join(' · ') + '</div>'
       + '</div>';
   }
 
@@ -1566,52 +1548,48 @@ function generatePdf() {
     sectionsHtml += '<div class="pcv-sec"><div class="pcv-sec-title">Usługi / Oferta</div>'
       + localServices.map(s =>
           '<div class="pcv-item">'
-          + '<div class="pcv-row"><span class="pcv-item-title pcv-orange">' + escHtml(s.name||'') + '</span>'
-          + (s.price ? '<span class="pcv-meta">' + escHtml(s.price) + '</span>' : '') + '</div>'
-          + (s.desc  ? '<div class="pcv-desc">' + escHtml(s.desc) + '</div>' : '')
+          + '<div class="pcv-row">'
+          +   '<span class="pcv-item-title">' + escHtml(s.name||'') + '</span>'
+          +   (s.price ? '<span class="pcv-orange" style="font-size:10px">' + escHtml(s.price) + '</span>' : '')
+          + '</div>'
+          + (s.desc ? '<div class="pcv-desc2">' + escHtml(s.desc) + '</div>' : '')
           + '</div>').join('')
       + '</div>';
   }
 
   if (show('portfolio') && localPortfolio.length) {
     sectionsHtml += '<div class="pcv-sec"><div class="pcv-sec-title">Portfolio</div>'
-      + localPortfolio.map(p =>
-          '<div class="pcv-item">'
-          + '<div class="pcv-item-title">' + escHtml(p.title||'') + '</div>'
-          + (p.result ? '<div class="pcv-desc">' + escHtml(p.result) + '</div>' : '')
-          + ((p.tags||[]).length ? '<div class="pcv-desc" style="color:#888">' + p.tags.map(escHtml).join(' · ') + '</div>' : '')
-          + (p.url    ? '<div class="pcv-desc"><a href="' + escHtml(p.url) + '">' + escHtml(p.url) + '</a></div>' : '')
-          + '</div>').join('')
+      + localPortfolio.map(p => {
+          const sub = [p.role, p.result].filter(Boolean).map(escHtml).join(' · ');
+          return '<div class="pcv-item">'
+            + '<div class="pcv-row">'
+            +   '<span class="pcv-item-title">' + escHtml(p.title||'') + '</span>'
+            +   (p.url ? '<a href="'+escHtml(p.url)+'" class="pcv-orange" style="font-size:10px">'+escHtml(p.url)+'</a>' : '')
+            + '</div>'
+            + (sub ? '<div class="pcv-desc2">' + sub + '</div>' : '')
+            + ((p.tags||[]).length ? '<div class="pcv-tags">' + p.tags.map(escHtml).join(' · ') + '</div>' : '')
+            + '</div>';
+        }).join('')
       + '</div>';
   }
 
-  const avatarSrc = (localSectionsVis['photo'] !== false)
-    ? (document.getElementById('foxAvatar')?.src || '') : '';
-
   const cvEl = document.getElementById('cv-print');
   cvEl.innerHTML =
-      '<div class="pcv-header">'
-    +   '<div class="pcv-header-info">'
-    +     '<div class="pcv-name">'    + name        + '</div>'
-    +     (locLine     ? '<div class="pcv-loc">'    + locLine     + '</div>' : '')
-    +     '<div class="pcv-contact">' + contactLine + '</div>'
-    +     (hourly      ? '<div class="pcv-extra">💰 ' + hourly + '</div>' : '')
-    +     (langs.length? '<div class="pcv-extra">🗣 ' + langs.join(' · ') + '</div>' : '')
-    +   '</div>'
-    +   (avatarSrc ? '<img class="pcv-avatar" src="' + avatarSrc + '" alt=""/>' : '')
-    + '</div>'
-    + (bio         ? '<div class="pcv-bio">'   + bio         + '</div>' : '')
-    + (specs.length? '<div class="pcv-specs">' + specs.map(escHtml).join(' · ') + '</div>' : '')
+      '<div class="pcv-name">' + name + '</div>'
+    + '<div class="pcv-contact">' + contactLine + '</div>'
+    + (hourly       ? '<div class="pcv-extra">Stawka: ' + hourly + '</div>' : '')
+    + (langs.length ? '<div class="pcv-extra">Języki: ' + langs.join(' · ') + '</div>' : '')
+    + (bio          ? '<div class="pcv-bio">' + bio + '</div>' : '')
+    + (specs.length ? '<div class="pcv-specs">' + specs.map(escHtml).join(' · ') + '</div>' : '')
     + '<hr class="pcv-hr"/>'
     + sectionsHtml
     + '<div class="pcv-rodo">Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (Rozporządzenie UE 2016/679).</div>'
-    + '<div class="pcv-footer">Profil na The FoxPot Club: thefoxpot.club/fox/' + NICKNAME + '</div>';
+    + '<div class="pcv-footer">Profil: thefoxpot.club/fox/' + NICKNAME + '</div>';
 
   document.body.classList.add('print-mode');
   window.print();
   document.body.classList.remove('print-mode');
 }
-
 
 
 // ── Init ──
