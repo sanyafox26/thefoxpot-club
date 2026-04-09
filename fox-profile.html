@@ -644,7 +644,9 @@ const TG = window.Telegram?.WebApp;
 async function init() {
   if (!NICKNAME) { showNotFound(); return; }
   try {
-    const r = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}`);
+    const token = localStorage.getItem('fox_jwt') || '';
+    const initHeaders = token ? { 'Authorization': 'Bearer ' + token } : {};
+    const r = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}`, { headers: initHeaders });
     if (r.status === 403) { showPrivate(); return; }
     if (!r.ok) { showNotFound(); return; }
     profileData = await r.json();
