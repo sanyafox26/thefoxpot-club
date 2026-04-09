@@ -813,6 +813,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "social_links",        "JSONB NOT NULL DEFAULT '{}'");
   await ensureColumn("fp1_foxes", "portfolio_items",     "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "experience_items",    "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "education",            "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "skills",              "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "services",            "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "profile_public",      "BOOLEAN NOT NULL DEFAULT TRUE");
@@ -8779,7 +8780,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
     const r = await pool.query(
       `SELECT f.id, f.user_id, f.username, f.display_name, f.rating, f.city, f.district,
               f.bio, f.specialization, f.specializations, f.social_links, f.portfolio_items,
-              f.experience_items, f.skills, f.services, f.profile_public,
+              f.experience_items, f.education, f.skills, f.services, f.profile_public,
               f.sections_visibility, f.featured_project_id, f.invoicing,
               f.founder_number, f.created_at,
               f.available_today, f.available_from, f.available_to,
@@ -8836,7 +8837,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
     const tgUserId = req.tgUser.id;
     const {
       display_name, bio, specialization, specializations, district,
-      social_links, portfolio_items, experience_items,
+      social_links, portfolio_items, experience_items, education,
       skills, services, featured_project_id, invoicing,
       profile_public, sections_visibility,
       available_today, available_from, available_to
@@ -8849,7 +8850,8 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         featured_project_id=$10, invoicing=$11,
         profile_public=$12, sections_visibility=$13::jsonb,
         available_today=$14, available_from=$15::time, available_to=$16::time,
-        specializations=$17::jsonb
+        specializations=$17::jsonb,
+        education=$19::jsonb
        WHERE user_id=$18`,
       [
         display_name || null,
@@ -8869,7 +8871,8 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         available_from || null,
         available_to || null,
         JSON.stringify(Array.isArray(specializations) ? specializations : []),
-        tgUserId
+        tgUserId,
+        JSON.stringify(Array.isArray(education) ? education : [])
       ]
     );
     res.json({ success: true });

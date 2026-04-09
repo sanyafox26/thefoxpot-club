@@ -110,6 +110,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .exp-period{font-size:12px;color:var(--muted);margin-top:2px}
 .exp-desc{font-size:13px;color:rgba(255,255,255,.6);margin-top:8px;line-height:1.55}
 
+/* ── education ── */
+.edu-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;position:relative}
+.edu-school{font-size:15px;font-weight:600}
+.edu-field{font-size:13px;color:var(--accent);font-weight:500;margin-top:2px}
+.edu-degree{font-size:12px;color:var(--muted);margin-top:2px}
+.edu-years{font-size:12px;color:var(--muted);margin-top:2px}
+
 /* ── skills ── */
 .skills-wrap{display:flex;flex-wrap:wrap;gap:8px}
 .skill-chip{background:rgba(249,126,0,.1);border:1px solid rgba(249,126,0,.25);border-radius:20px;padding:5px 13px;font-size:13px;color:var(--accent)}
@@ -431,6 +438,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         <button class="add-btn" onclick="openExpModal(null)">+ Dodaj doświadczenie</button>
       </div>
 
+      <!-- Education -->
+      <div class="section" id="secEducation" data-sec="education">
+        <div class="section-head">
+          <div class="section-title">Wykształcenie</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('education')" id="visEducation">👁</button>
+        </div>
+        <div id="eduList"></div>
+        <button class="add-btn" onclick="openEduModal(null)">+ Dodaj wykształcenie</button>
+      </div>
+
       <!-- Skills -->
       <div class="section" id="secSkills" data-sec="skills">
         <div class="section-head">
@@ -512,6 +529,31 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   </div>
 </div>
 
+<!-- Modal: Education -->
+<div class="modal-overlay" id="modalEdu">
+  <div class="modal-sheet">
+    <div class="modal-title">Wykształcenie</div>
+    <div class="field-group"><label>Uczelnia *</label><input id="eduSchool" placeholder="np. Uniwersytet Warszawski"/></div>
+    <div class="field-group"><label>Kierunek / Specjalizacja</label><input id="eduField" placeholder="np. Informatyka"/></div>
+    <div class="field-group"><label>Stopień</label>
+      <select id="eduDegree" style="background:#1a1d29;color:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;width:100%">
+        <option value="">— wybierz —</option>
+        <option value="lic">licencjat (lic.)</option>
+        <option value="inż">inżynier (inż.)</option>
+        <option value="mgr">magister (mgr)</option>
+        <option value="dr">doktor (dr)</option>
+        <option value="inne">inne</option>
+      </select>
+    </div>
+    <div class="field-group"><label>Lata (od–do)</label><input id="eduYears" placeholder="np. 2018–2022"/></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalEdu')">Anuluj</button>
+      <button class="btn-delete" id="eduDeleteBtn" onclick="deleteEduItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveEduItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Service -->
 <div class="modal-overlay" id="modalService">
   <div class="modal-sheet">
@@ -574,6 +616,7 @@ let localAvailToday = false;
 let localAvailFrom = '';
 let localAvailTo = '';
 let localExperience = [];
+let localEducation = [];
 let localSkills = [];
 let localServices = [];
 let localPortfolio = [];
@@ -583,6 +626,7 @@ let localSectionsVis = {};
 let localProfilePublic = true;
 
 let editingExpIdx = null;
+let editingEduIdx = null;
 let editingSvcIdx = null;
 let editingPortIdx = null;
 
@@ -619,6 +663,7 @@ function initLocals() {
   localAvailFrom = d.available_from || '';
   localAvailTo = d.available_to || '';
   localExperience = JSON.parse(JSON.stringify(d.experience_items || []));
+  localEducation = JSON.parse(JSON.stringify(d.education || []));
   localSkills = JSON.parse(JSON.stringify(d.skills || []));
   localServices = JSON.parse(JSON.stringify(d.services || []));
   localPortfolio = JSON.parse(JSON.stringify(d.portfolio_items || []));
@@ -744,6 +789,7 @@ function render() {
   renderStats(d);
   // Sections
   renderExperience();
+  renderEducation();
   renderSkills();
   renderServices();
   renderPortfolio();
@@ -788,6 +834,49 @@ function renderExperience() {
       ${e.period?`<div class="exp-period">${escHtml(e.period)}</div>`:''}
       ${e.desc?`<div class="exp-desc">${escHtml(e.desc)}</div>`:''}
     </div>`).join('');
+}
+
+function renderEducation() {
+  const list = document.getElementById('eduList');
+  if (!list) return;
+  if (!localEducation.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak wykształcenia.</div>'; return; }
+  list.innerHTML = localEducation.map((e,i)=>`
+    <div class="edu-card">
+      <button class="edit-card-btn" onclick="openEduModal(${i})">✏️</button>
+      <div class="edu-school">${escHtml(e.school||'')}</div>
+      ${e.field?`<div class="edu-field">${escHtml(e.field)}</div>`:''}
+      ${e.degree?`<div class="edu-degree">${escHtml(e.degree)}</div>`:''}
+      ${e.years?`<div class="edu-years">${escHtml(e.years)}</div>`:''}
+    </div>`).join('');
+}
+
+function openEduModal(idx) {
+  editingEduIdx = idx;
+  const e = idx !== null ? localEducation[idx] : {};
+  document.getElementById('eduSchool').value = e.school||'';
+  document.getElementById('eduField').value = e.field||'';
+  document.getElementById('eduDegree').value = e.degree||'';
+  document.getElementById('eduYears').value = e.years||'';
+  document.getElementById('eduDeleteBtn').style.display = idx !== null ? '' : 'none';
+  document.getElementById('modalEdu').classList.add('open');
+}
+
+function saveEduItem() {
+  const school = document.getElementById('eduSchool').value.trim();
+  if (!school) return;
+  const item = {
+    school,
+    field: document.getElementById('eduField').value.trim(),
+    degree: document.getElementById('eduDegree').value,
+    years: document.getElementById('eduYears').value.trim(),
+  };
+  if (editingEduIdx !== null) localEducation[editingEduIdx] = item;
+  else localEducation.push(item);
+  renderEducation(); markDirty(); closeModal('modalEdu');
+}
+
+function deleteEduItem() {
+  if (editingEduIdx !== null) { localEducation.splice(editingEduIdx,1); renderEducation(); markDirty(); closeModal('modalEdu'); }
 }
 
 function renderSkills() {
@@ -864,7 +953,7 @@ function renderReviews(reviews) {
 }
 
 function applySectionsVisibility() {
-  const secs = ['stats','experience','skills','services','portfolio','reviews'];
+  const secs = ['stats','experience','education','skills','services','portfolio','reviews'];
   secs.forEach(s=>{
     const el = document.getElementById(`sec${s.charAt(0).toUpperCase()+s.slice(1)}`);
     const btn = document.getElementById(`vis${s.charAt(0).toUpperCase()+s.slice(1)}`);
@@ -889,6 +978,7 @@ function toggleEditMode() {
   }
   applySectionsVisibility();
   renderExperience();
+  renderEducation();
   renderSkills();
   renderServices();
   renderPortfolio();
@@ -963,6 +1053,7 @@ async function saveAll() {
         social_links: localSocial,
         portfolio_items: localPortfolio,
         experience_items: localExperience,
+        education: localEducation,
         skills: localSkills,
         services: localServices,
         featured_project_id: localFeaturedId,
