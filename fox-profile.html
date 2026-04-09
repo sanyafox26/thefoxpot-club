@@ -589,36 +589,40 @@ async function checkWebAuth() {
   const loginBtn = document.getElementById('btnLogin');
   const userBtn = document.getElementById('btnUser');
   const logoutBtn = document.getElementById('btnLogout');
-  if (!token) {
-    loginBtn.href = '/?login=true'; loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; };
+
+  function showLoginBtn() {
+    loginBtn.href = '/?login=true';
+    loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; };
     loginBtn.style.display = '';
-    return;
   }
+
+  if (!token) { showLoginBtn(); return; }
+
   try {
     const r = await fetch('/api/auth/web-me', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { localStorage.removeItem('fox_jwt'); loginBtn.href = '/?login=true'; loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; }; loginBtn.style.display = ''; return; }
+    if (!r.ok) { localStorage.removeItem('fox_jwt'); showLoginBtn(); return; }
     const j = await r.json();
-    const displayName = j.display_name || j.username || '';
-    userBtn.textContent = '🦊 ' + displayName;
+
+    const webUsername = j.username || '';
+    const webDisplayName = j.display_name || webUsername;
+    userBtn.textContent = '🦊 ' + webDisplayName;
     userBtn.style.display = '';
     logoutBtn.style.display = '';
-    // Check ownership for web users (send JWT as Bearer)
-    if (!isOwner) {
-      try {
-        const or = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}/check-owner`, {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const oj = await or.json();
-        if (oj.isOwner) {
-          isOwner = true;
-          document.getElementById('btnEditToggle').style.display = '';
-        }
-      } catch(e) {}
+
+    // Debug logs
+    console.log('JWT username:', webUsername);
+    console.log('Profile nickname (URL):', NICKNAME);
+    console.log('Is owner (case-insensitive):', webUsername.toLowerCase() === NICKNAME.toLowerCase());
+
+    // Ownership: compare username from JWT with :nickname from URL (case-insensitive)
+    if (!isOwner && webUsername && webUsername.toLowerCase() === NICKNAME.toLowerCase()) {
+      isOwner = true;
+      console.log('Owner confirmed via username match');
+      document.getElementById('btnEditToggle').style.display = '';
     }
   } catch(e) {
-    loginBtn.href = '/?login=true'; loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; };
-    loginBtn.style.display = '';
+    console.error('checkWebAuth error:', e);
+    showLoginBtn();
   }
 }
 
