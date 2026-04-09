@@ -818,7 +818,8 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "services",            "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "profile_public",      "BOOLEAN NOT NULL DEFAULT TRUE");
   await ensureColumn("fp1_foxes", "sections_visibility", "JSONB NOT NULL DEFAULT '{}'");
-  await ensureColumn("fp1_foxes", "featured_project_id", "INTEGER");
+  await ensureColumn("fp1_foxes", "featured_project_id", "BIGINT");
+  await pool.query(`ALTER TABLE fp1_foxes ALTER COLUMN featured_project_id TYPE BIGINT`).catch(()=>{});
   await ensureColumn("fp1_foxes", "invoicing",           "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "display_name",        "VARCHAR(100)");
   await ensureColumn("fp1_foxes", "specializations",     "JSONB NOT NULL DEFAULT '[]'");
