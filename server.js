@@ -2155,6 +2155,22 @@ app.post("/api/auth/verify-otp", verifyOtpLimiter, express.json(), async (req, r
   }
 });
 
+// GET /api/auth/web-me — returns current web-session fox info (JWT auth)
+app.get("/api/auth/web-me", requireWebAppAuth, async (req, res) => {
+  try {
+    const userId = req.tgUser.id;
+    const foxId  = req.foxJwt?.fox_id;
+    const q = foxId
+      ? await pool.query(`SELECT id, username, display_name FROM fp1_foxes WHERE id=$1 AND is_deleted=FALSE LIMIT 1`, [foxId])
+      : await pool.query(`SELECT id, username, display_name FROM fp1_foxes WHERE user_id=$1 AND is_deleted=FALSE LIMIT 1`, [userId]);
+    if (!q.rowCount) return res.status(404).json({ error: "not_found" });
+    const f = q.rows[0];
+    res.json({ fox_id: f.id, username: f.username, display_name: f.display_name });
+  } catch(e) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
 app.post("/api/auth/onboard", express.json(), async (req, res) => {
   try {
     const authHeader = req.headers.authorization || "";
@@ -2302,6 +2318,7 @@ app.get("/faq",      (_req, res) => { res.setHeader("Cache-Control","no-store");
 app.get("/faq.html", (_req, res) => { res.setHeader("Cache-Control","no-store"); res.sendFile(path.join(__dirname, "faq.html")); });
 app.get("/voting",      (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
 app.get("/voting.html", (_req, res) => res.sendFile(path.join(__dirname, "voting.html")));
+app.get("/login", (_req, res) => res.sendFile(path.join(__dirname, "login.html")));
 app.get("/fox/:nickname", async (req, res) => {
   console.log('FOX_PROFILE nick:', req.params.nickname);
   const result = await pool.query('SELECT id, username FROM fp1_foxes ORDER BY id LIMIT 10');
@@ -8770,7 +8787,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
 app.post("/api/fox-public/:nickname/check-owner", requireWebAppAuth, async (req, res) => {
   try {
     const { nickname } = req.params;
-    const tgUserId = req.telegramUser.id;
+    const tgUserId = req.tgUser.id;
     const r = await pool.query(
       `SELECT id FROM fp1_foxes WHERE LOWER(username)=LOWER($1) AND user_id=$2 LIMIT 1`,
       [nickname, tgUserId]
@@ -8784,7 +8801,7 @@ app.post("/api/fox-public/:nickname/check-owner", requireWebAppAuth, async (req,
 // PUT /api/fox/profile — consolidated save (all profile fields at once)
 app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
   try {
-    const tgUserId = req.telegramUser.id;
+    const tgUserId = req.tgUser.id;
     const {
       display_name, bio, specialization, district,
       social_links, portfolio_items, experience_items,
@@ -8831,7 +8848,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
 // POST /api/fox-profile/save — save profile fields
 app.post("/api/fox-profile/save", requireWebAppAuth, async (req, res) => {
   try {
-    const tgUserId = req.telegramUser.id;
+    const tgUserId = req.tgUser.id;
     const {
       bio, specialization, social_links, portfolio_items,
       experience_items, skills, services, featured_project_id, invoicing
@@ -8866,7 +8883,7 @@ app.post("/api/fox-profile/save", requireWebAppAuth, async (req, res) => {
 // POST /api/fox-profile/visibility — toggle profile_public and sections_visibility
 app.post("/api/fox-profile/visibility", requireWebAppAuth, async (req, res) => {
   try {
-    const tgUserId = req.telegramUser.id;
+    const tgUserId = req.tgUser.id;
     const { profile_public, sections_visibility } = req.body;
     await pool.query(
       `UPDATE fp1_foxes SET profile_public=$1, sections_visibility=$2::jsonb WHERE user_id=$3`,
