@@ -4488,6 +4488,14 @@ async function sendBackupEmail() {
 
 cron.schedule("0 3 * * *", sendBackupEmail, { timezone: "Europe/Warsaw" });
 
+// Daily midnight Warsaw: reset available_today for all foxes
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const r = await pool.query(`UPDATE fp1_foxes SET available_today = FALSE WHERE available_today = TRUE`);
+    console.log(`[CRON] Reset available_today: ${r.rowCount} foxes`);
+  } catch(e) { console.error("[CRON] available_today reset error:", e.message); }
+}, { timezone: "Europe/Warsaw" });
+
 // Demo no-show cron removed — no penalties for venue join. Demo Fox stays until first check-in.
 
 /* ═══════════════════════════════════════════════════════════════
@@ -8740,6 +8748,24 @@ if (BOT_TOKEN) {
   app.use(bot.webhookCallback(`/${WEBHOOK_SECRET}`));
   app.get(`/${WEBHOOK_SECRET}`, (_req, res) => res.type("text/plain").send("WEBHOOK_OK"));
 }
+
+// PATCH /api/fox/available-today — quick toggle availability
+app.patch("/api/fox/available-today", requireWebAppAuth, express.json(), async (req, res) => {
+  try {
+    const { available } = req.body;
+    const foxId = req.foxJwt?.fox_id;
+    const userId = req.tgUser.id;
+    if (foxId) {
+      await pool.query(`UPDATE fp1_foxes SET available_today=$1 WHERE id=$2`, [!!available, foxId]);
+    } else {
+      await pool.query(`UPDATE fp1_foxes SET available_today=$1 WHERE user_id=$2`, [!!available, userId]);
+    }
+    res.json({ success: true });
+  } catch(e) {
+    console.error("AVAIL_TODAY_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
 
 /* ═══════════════════════════════════════════════════════════════
    FOX PUBLIC PROFILE API
