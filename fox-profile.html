@@ -436,7 +436,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
           <div class="stat-card"><div class="stat-num" id="statCompleted">—</div><div class="stat-label">Zlecenia<br>zaliczone</div></div>
           <div class="stat-card"><div class="stat-num" id="statFailed">—</div><div class="stat-label">Zlecenia<br>nieudane</div></div>
           <div class="stat-card"><div class="stat-num" id="statPending">—</div><div class="stat-label">W trakcie</div></div>
-          <div class="stat-card"><div class="stat-num" id="statRate">—</div><div class="stat-label">Response<br>rate</div></div>
+          <div class="stat-card"><div class="stat-num" id="statRate">—</div><div class="stat-label" id="statRateLabel">Wskaźnik<br>odpowiedzi</div></div>
         </div>
       </div>
 
@@ -818,7 +818,7 @@ function renderSocial(links) {
     website:   'fa-solid fa-globe',
   };
   const html2 = Object.entries(links).filter(([,v]) => v).map(([k,v]) =>
-    `<a class="social-btn" href="${escHtml(v)}" target="_blank" rel="noopener" title="${k}"><i class="${faIcons[k] || 'fa-solid fa-link'}" style="font-size:20px;color:#F97E00"></i></a>`
+    `<a class="social-btn" href="${escHtml(/^https?:\/\//i.test(v) ? v : 'https://' + v)}" target="_blank" rel="noopener" title="${k}"><i class="${faIcons[k] || 'fa-solid fa-link'}" style="font-size:20px;color:#F97E00"></i></a>`
   ).join('');
   row.innerHTML = html2;
 }
@@ -828,6 +828,7 @@ function renderStats(d) {
   document.getElementById('statFailed').textContent = d.checkins_failed ?? '—';
   document.getElementById('statPending').textContent = d.checkins_pending ?? '—';
   document.getElementById('statRate').textContent = d.response_rate != null ? d.response_rate + '%' : '—';
+  if (d.response_rate == null) document.getElementById('statRateLabel').innerHTML = 'Brak<br>zleceń';
 }
 
 function renderExperience() {
