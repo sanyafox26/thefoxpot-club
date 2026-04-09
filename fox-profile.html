@@ -1494,6 +1494,8 @@ function removeSpec(idx) {
 function renderSpecChips() { renderSpecTags(); }
 
 function generatePdf() {
+  console.log('CV button clicked');
+  console.log('html2pdf available:', typeof html2pdf);
   const name     = escHtml(localDisplayName || NICKNAME);
   const bio      = escHtml(profileData?.bio || '');
   const specs    = localSpecializations || [];
@@ -1610,6 +1612,17 @@ function generatePdf() {
   <div class="footer">Profil: thefoxpot.club/fox/${NICKNAME}</div>
 </body></html>`;
 
+  if (typeof html2pdf === 'undefined') {
+    console.warn('html2pdf not loaded, falling back to window.open');
+    const w = window.open('', '_blank');
+    if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
+    w.document.write(htmlString);
+    w.document.close();
+    w.print();
+    setTimeout(() => w.close(), 1500);
+    return;
+  }
+
   const filename = 'CV_' + (localDisplayName || NICKNAME).replace(/\s+/g, '_') + '.pdf';
   const opt = {
     margin: [15, 15, 15, 15],
@@ -1618,7 +1631,9 @@ function generatePdf() {
     html2canvas: { scale: 2, background: '#ffffff', useCORS: true },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
-  html2pdf().set(opt).from(htmlString).save();
+  html2pdf().set(opt).from(htmlString).save()
+    .then(() => console.log('PDF saved'))
+    .catch(e => console.error('html2pdf error:', e));
 }
 
 
