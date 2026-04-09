@@ -579,7 +579,7 @@ async function checkOwner() {
     const j = await r.json();
     isOwner = !!j.isOwner;
     if (isOwner) {
-      document.getElementById('btnEditToggle').style.display = '';
+      document.getElementById('btnEditToggle').style.display = 'block';
     }
   } catch (e) {}
 }
@@ -618,7 +618,7 @@ async function checkWebAuth() {
     if (!isOwner && webUsername && webUsername.toLowerCase() === NICKNAME.toLowerCase()) {
       isOwner = true;
       console.log('Owner confirmed via username match');
-      document.getElementById('btnEditToggle').style.display = '';
+      document.getElementById('btnEditToggle').style.display = 'block';
     }
   } catch(e) {
     console.error('checkWebAuth error:', e);
