@@ -253,7 +253,13 @@ body.print-mode #cv-print{display:block}
   .pcv-company{font-size:11px;color:#F97E00;margin-top:1px}
   .pcv-meta{font-size:10px;color:#888;white-space:nowrap}
   .pcv-desc{font-size:11px;color:#555;margin-top:3px;line-height:1.5}
-  .pcv-footer{margin-top:20px;padding-top:6px;border-top:1px solid #eee;font-size:9px;color:#bbb;text-align:center}
+  .pcv-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:6px}
+  .pcv-header-info{flex:1}
+  .pcv-avatar{width:80px;height:80px;border-radius:50%;object-fit:cover;flex-shrink:0}
+  .pcv-rodo{font-size:7px;font-style:italic;color:#aaa;margin-top:10px;line-height:1.4}
+  .pcv-footer{margin-top:6px;font-size:8px;color:#999;text-align:center}
+  @page{margin:15mm;size:A4}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 
   body{background:#fff;color:#111;padding-bottom:0}
   .topbar,.topbar-actions,.btn-edit-toggle,.save-bar,.cta-box,.section-vis-btn,.add-btn,.edit-card-btn,.btn-icon,.modal-overlay{display:none!important}
@@ -1579,19 +1585,27 @@ function generatePdf() {
       + '</div>';
   }
 
+  const avatarSrc = (localSectionsVis['photo'] !== false)
+    ? (document.getElementById('foxAvatar')?.src || '') : '';
+
   const cvEl = document.getElementById('cv-print');
   cvEl.innerHTML =
-      (logoSrc ? '<img class="pcv-logo" src="' + logoSrc + '" alt=""/>' : '')
-    + '<div class="pcv-name">'    + name        + '</div>'
-    + (locLine     ? '<div class="pcv-loc">'    + locLine     + '</div>' : '')
-    + '<div class="pcv-contact">' + contactLine + '</div>'
-    + (hourly      ? '<div class="pcv-extra">💰 ' + hourly + '</div>' : '')
-    + (langs.length? '<div class="pcv-extra">🗣 ' + langs.join(' · ') + '</div>' : '')
+      '<div class="pcv-header">'
+    +   '<div class="pcv-header-info">'
+    +     '<div class="pcv-name">'    + name        + '</div>'
+    +     (locLine     ? '<div class="pcv-loc">'    + locLine     + '</div>' : '')
+    +     '<div class="pcv-contact">' + contactLine + '</div>'
+    +     (hourly      ? '<div class="pcv-extra">💰 ' + hourly + '</div>' : '')
+    +     (langs.length? '<div class="pcv-extra">🗣 ' + langs.join(' · ') + '</div>' : '')
+    +   '</div>'
+    +   (avatarSrc ? '<img class="pcv-avatar" src="' + avatarSrc + '" alt=""/>' : '')
+    + '</div>'
     + (bio         ? '<div class="pcv-bio">'   + bio         + '</div>' : '')
     + (specs.length? '<div class="pcv-specs">' + specs.map(escHtml).join(' · ') + '</div>' : '')
     + '<hr class="pcv-hr"/>'
     + sectionsHtml
-    + '<div class="pcv-footer">Wygenerowano przez The FoxPot Club &middot; thefoxpot.club</div>';
+    + '<div class="pcv-rodo">Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (Rozporządzenie UE 2016/679).</div>'
+    + '<div class="pcv-footer">Profil na The FoxPot Club: thefoxpot.club/fox/' + NICKNAME + '</div>';
 
   document.body.classList.add('print-mode');
   window.print();
