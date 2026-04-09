@@ -446,8 +446,11 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
     <!-- Hero -->
     <div class="hero" id="heroSection">
       <div class="print-logo">The FoxPot Club — foxpot.club</div>
-      <div class="avatar-wrap">
-        <img class="avatar" id="foxAvatar" src="" alt=""/>
+      <div id="heroPhotoWrap">
+        <div class="avatar-wrap">
+          <img class="avatar" id="foxAvatar" src="" alt=""/>
+        </div>
+        <button class="hero-vis-btn" id="visHeroPhoto" onclick="toggleSectionVis('photo')"></button>
       </div>
       <div class="fox-nick" id="foxNick"></div>
       <div class="fox-spec" id="foxSpec" style="display:none"></div>
@@ -1086,6 +1089,7 @@ function applySectionsVisibility() {
 
   // Hero element toggles
   const heroItems = [
+    { key: 'photo',           wrapId: 'heroPhotoWrap',   btnId: 'visHeroPhoto' },
     { key: 'address',         wrapId: 'heroAddressWrap', btnId: 'visHeroAddress' },
     { key: 'email',           wrapId: 'heroEmailWrap',   btnId: 'visHeroEmail' },
     { key: 'rating',          wrapId: 'heroRatingWrap',  btnId: 'visHeroRating' },
@@ -1096,7 +1100,7 @@ function applySectionsVisibility() {
     { key: 'social_links',    wrapId: 'heroSocialWrap',  btnId: 'visHeroSocial' },
   ];
   const heroLabels = {
-    address: 'Adres', email: 'Email', rating: 'Rating', availability: 'Dostępność',
+    photo: 'Zdjęcie', address: 'Adres', email: 'Email', rating: 'Rating', availability: 'Dostępność',
     invoicing_badge: 'Faktury', bio: 'Bio', specializations: 'Specjalizacje', social_links: 'Linki'
   };
   heroItems.forEach(({key, wrapId, btnId}) => {
@@ -1503,6 +1507,9 @@ function generatePdf() {
   const vis = localSectionsVis;
   const show = s => vis[s] !== false;
 
+  // Avatar — absolute URL, respects photo toggle
+  const avatarSrc = (show('photo') && document.getElementById('foxAvatar')?.src) || '';
+
   // Contact line
   const locParts = [district, address, city].filter(Boolean);
   const cParts = [];
@@ -1512,10 +1519,10 @@ function generatePdf() {
   const contactLine = cParts.join(' &nbsp;|&nbsp; ');
 
   // Sections
-  let body = '';
+  let sections = '';
 
   if (show('experience') && localExperience.length) {
-    body += '<div class="section-title">Doświadczenie zawodowe</div>'
+    sections += '<div class="section-title">Doświadczenie zawodowe</div>'
       + localExperience.map(e =>
           '<div class="cv-row"><span class="cv-title">' + escHtml(e.title||'') + '</span>'
           + (e.period ? '<span class="cv-date">' + escHtml(e.period) + '</span>' : '') + '</div>'
@@ -1525,7 +1532,7 @@ function generatePdf() {
   }
 
   if (show('education') && localEducation.length) {
-    body += '<div class="section-title">Wykształcenie</div>'
+    sections += '<div class="section-title">Wykształcenie</div>'
       + localEducation.map(e => {
           const sub = [e.field, e.degree].filter(Boolean).map(escHtml).join(' · ');
           return '<div class="cv-row"><span class="cv-title" style="color:#F97E00">' + escHtml(e.school||'') + '</span>'
@@ -1535,12 +1542,12 @@ function generatePdf() {
   }
 
   if (show('skills') && localSkills.length) {
-    body += '<div class="section-title">Umiejętności</div>'
+    sections += '<div class="section-title">Umiejętności</div>'
       + '<div class="cv-tags">' + localSkills.map(escHtml).join(' · ') + '</div>';
   }
 
   if (show('services') && localServices.length) {
-    body += '<div class="section-title">Usługi / Oferta</div>'
+    sections += '<div class="section-title">Usługi / Oferta</div>'
       + localServices.map(s =>
           '<div class="cv-row"><span class="cv-title">' + escHtml(s.name||'') + '</span>'
           + (s.price ? '<span style="color:#F97E00;font-size:10px">' + escHtml(s.price) + '</span>' : '') + '</div>'
@@ -1549,7 +1556,7 @@ function generatePdf() {
   }
 
   if (show('portfolio') && localPortfolio.length) {
-    body += '<div class="section-title">Portfolio</div>'
+    sections += '<div class="section-title">Portfolio</div>'
       + localPortfolio.map(p => {
           const sub = [p.role, p.result].filter(Boolean).map(escHtml).join(' · ');
           return '<div class="cv-row"><span class="cv-title">' + escHtml(p.title||'') + '</span>'
@@ -1559,53 +1566,59 @@ function generatePdf() {
         }).join('');
   }
 
-  const doc = `<!DOCTYPE html>
+  // Header: flex row with optional photo
+  const headerHtml = avatarSrc
+    ? '<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px">'
+      + '<img src="'+avatarSrc+'" style="width:70px;height:70px;border-radius:50%;object-fit:cover;flex-shrink:0"/>'
+      + '<div style="flex:1"><h1>'+name+'</h1>'
+      + '<div class="contacts">'+contactLine+'</div>'
+      + (hourly  ? '<div class="contacts">Stawka: '+hourly+'</div>' : '')
+      + (langs.length ? '<div class="contacts">Języki: '+langs.join(' · ')+'</div>' : '')
+      + '</div></div>'
+    : '<h1>'+name+'</h1>'
+      + '<div class="contacts">'+contactLine+'</div>'
+      + (hourly  ? '<div class="contacts">Stawka: '+hourly+'</div>' : '')
+      + (langs.length ? '<div class="contacts">Języki: '+langs.join(' · ')+'</div>' : '');
+
+  const htmlString = `<!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8">
-<style>
+<head><meta charset="UTF-8"><style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#222; background:white; padding:15mm; }
   h1 { font-size:24px; font-weight:700; margin-bottom:4px; }
-  .contacts { font-size:10px; color:#555; margin-bottom:8px; }
+  .contacts { font-size:10px; color:#555; margin-bottom:4px; }
   .bio { font-size:11px; font-style:italic; margin:6px 0; color:#333; }
   .specs { font-size:10px; color:#F97E00; margin-bottom:8px; }
   .divider { border:none; border-top:2px solid #F97E00; margin:10px 0; }
   .section-title { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; border-bottom:1px solid #ddd; padding-bottom:3px; margin:14px 0 8px 0; color:#333; }
   .cv-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
   .cv-title { font-weight:700; font-size:11px; }
-  .cv-date { font-size:10px; color:#777; }
+  .cv-date { font-size:10px; color:#777; white-space:nowrap; }
   .cv-company { color:#F97E00; font-size:11px; margin-bottom:2px; }
   .cv-desc { font-size:10px; color:#555; margin-left:10px; margin-bottom:8px; line-height:1.5; }
   .cv-tags { font-size:10px; color:#333; line-height:1.8; margin-bottom:8px; }
   .footer { border-top:1px solid #eee; margin-top:20px; padding-top:6px; font-size:8px; color:#aaa; text-align:center; }
   .rodo { font-size:7px; color:#bbb; font-style:italic; margin-top:4px; text-align:center; }
-  @page { size:A4 portrait; margin:15mm; margin-header:0; margin-footer:0; }
-  @media print { body { padding:0; } }
-</style>
-</head>
+</style></head>
 <body>
-  <h1>${name}</h1>
-  <div class="contacts">${contactLine}</div>
-  ${hourly  ? '<div class="contacts">Stawka: '+hourly+'</div>' : ''}
-  ${langs.length ? '<div class="contacts">Języki: '+langs.join(' · ')+'</div>' : ''}
+  ${headerHtml}
   ${bio    ? '<div class="bio">'+bio+'</div>' : ''}
-  ${specs.length ? '<div class="specs">'+specs.map(s=>escHtml(s)).join(' · ')+'</div>' : ''}
+  ${specs.length ? '<div class="specs">'+specs.map(escHtml).join(' · ')+'</div>' : ''}
   <hr class="divider"/>
-  ${body}
+  ${sections}
   <div class="rodo">Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (Rozporządzenie UE 2016/679).</div>
   <div class="footer">Profil: thefoxpot.club/fox/${NICKNAME}</div>
-</body>
-</html>`;
+</body></html>`;
 
-  const w = window.open('', '_blank');
-  if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
-  // Strip emoji from bio (poor print support)
-  const cleanDoc = doc.replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]/gu, '');
-  w.document.write(cleanDoc);
-  w.document.close();
-  w.print();
-  setTimeout(() => w.close(), 1000);
+  const filename = 'CV_' + (localDisplayName || NICKNAME).replace(/\s+/g, '_') + '.pdf';
+  const opt = {
+    margin: [15, 15, 15, 15],
+    filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, background: '#ffffff', useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+  html2pdf().set(opt).from(htmlString).save();
 }
 
 
@@ -1613,5 +1626,6 @@ function generatePdf() {
 init();
 </script>
 <div id="cv-print"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </body>
 </html>
