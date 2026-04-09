@@ -438,7 +438,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
           <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('skills')" id="visSkills">👁</button>
         </div>
         <div class="skills-wrap" id="skillsWrap"></div>
-        <button class="add-btn" onclick="addSkillPrompt()">+ Dodaj umiejętność</button>
+        <button class="add-btn" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
+        <div class="spec-custom-input" id="skillInputWrap" style="display:none">
+          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
+          <button type="button" onclick="confirmAddSkill()">+ Dodaj</button>
+        </div>
       </div>
 
       <!-- Services -->
@@ -1010,9 +1014,17 @@ function showToast(msg) {
 }
 
 // ── Skills ──
-function addSkillPrompt() {
-  const v = prompt('Wpisz umiejętność:');
-  if (v?.trim()) { localSkills.push(v.trim()); renderSkills(); markDirty(); }
+function toggleSkillInput() {
+  const wrap = document.getElementById('skillInputWrap');
+  const isHidden = wrap.style.display === 'none';
+  wrap.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) document.getElementById('skillInputText').focus();
+}
+function confirmAddSkill() {
+  const inp = document.getElementById('skillInputText');
+  const v = inp.value.trim();
+  if (v) { localSkills.push(v); renderSkills(); markDirty(); inp.value = ''; }
+  document.getElementById('skillInputWrap').style.display = 'none';
 }
 function removeSkill(i) { if (!isEditMode) return; localSkills.splice(i,1); renderSkills(); markDirty(); }
 
