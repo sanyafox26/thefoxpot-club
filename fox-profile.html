@@ -439,9 +439,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         </div>
         <div class="skills-wrap" id="skillsWrap"></div>
         <button class="add-btn" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
-        <div class="spec-custom-input" id="skillInputWrap" style="display:none">
-          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
-          <button type="button" onclick="confirmAddSkill()">+ Dodaj</button>
+        <div id="skillInputWrap" style="display:none;gap:6px;margin-top:6px">
+          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." style="flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
+          <button type="button" style="background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer" onclick="confirmAddSkill()">+ Dodaj</button>
         </div>
       </div>
 
@@ -1018,6 +1018,7 @@ function toggleSkillInput() {
   const wrap = document.getElementById('skillInputWrap');
   const isHidden = wrap.style.display === 'none';
   wrap.style.display = isHidden ? 'flex' : 'none';
+  wrap.style.flexDirection = 'row';
   if (isHidden) document.getElementById('skillInputText').focus();
 }
 function confirmAddSkill() {
