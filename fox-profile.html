@@ -1088,8 +1088,10 @@ function applySectionsVisibility() {
     const hidden = localSectionsVis[key] === false;
     if (wrap) {
       if (isOwner) {
+        wrap.style.display = '';       // clear any display:none set before owner was confirmed
         wrap.style.opacity = hidden ? '0.35' : '';
       } else {
+        wrap.style.opacity = '';
         wrap.style.display = hidden ? 'none' : '';
       }
     }

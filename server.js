@@ -8835,6 +8835,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
       [fox.user_id]
     );
     fox.reviews = rev.rows;
+    console.log('sections_visibility from DB:', fox.username, fox.sections_visibility);
     // response_rate: completed / (completed + failed) * 100
     const total = Number(fox.checkins_completed) + Number(fox.checkins_failed);
     fox.response_rate = total > 0 ? Math.round((Number(fox.checkins_completed) / total) * 100) : null;
@@ -8921,6 +8922,7 @@ app.patch("/api/fox/sections", requireWebAppAuth, express.json(), async (req, re
   try {
     const foxId = req.foxJwt?.fox_id;
     const { sections_visibility } = req.body;
+    console.log('PATCH sections: foxId=%s tgUser=%s body=%j', foxId, req.tgUser?.id, sections_visibility);
     if (foxId) {
       await pool.query(`UPDATE fp1_foxes SET sections_visibility=$1::jsonb WHERE id=$2`,
         [JSON.stringify(sections_visibility || {}), foxId]);
