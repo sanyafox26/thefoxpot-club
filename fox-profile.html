@@ -231,6 +231,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 body.print-mode #cv-print{display:block}
 body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 @media print{
+  *{background:#ffffff!important;background-color:#ffffff!important;color:#222222!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body *{display:none!important}
   body #cv-print,body #cv-print *{display:revert!important}
   html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
