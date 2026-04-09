@@ -78,11 +78,6 @@ const app = express();
 
 // /health must be before helmet/cors so Railway healthcheck is never blocked
 app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
-app.get("/_tmp_fix_ol_lysak", async (_req, res) => {
-  await pool.query(`UPDATE fp1_foxes SET profile_public = TRUE WHERE LOWER(username) = 'ol_lysak'`);
-  const r = await pool.query(`SELECT username, profile_public FROM fp1_foxes WHERE LOWER(username) = 'ol_lysak'`);
-  res.json(r.rows);
-});
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -819,8 +814,9 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "portfolio_items",     "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "experience_items",    "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "education",            "JSONB NOT NULL DEFAULT '[]'");
-  // One-time: restore public profile for ol_lysak
-  await pool.query(`UPDATE fp1_foxes SET profile_public = TRUE WHERE LOWER(username) = 'ol_lysak'`).catch(()=>{});
+  // Fix: restore public profile for ol_lysak (runs every boot, idempotent)
+  await pool.query(`UPDATE fp1_foxes SET profile_public = TRUE WHERE LOWER(username) = 'ol_lysak'`);
+  console.log('Migration: SET profile_public=TRUE for ol_lysak done');
   // Fix social_links: prepend https:// to values missing protocol
   await pool.query(`
     UPDATE fp1_foxes
