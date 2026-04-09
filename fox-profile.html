@@ -53,11 +53,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .spec-custom-input input{flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none}
 .spec-custom-input button{background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer}
 .spec-tags-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;min-height:0}
-.spec-tag{display:inline-flex;align-items:center;gap:5px;background:#F97E00;border-radius:16px;padding:4px 10px 4px 12px;font-size:12px;font-weight:700;color:#000}
-.spec-tag-x{background:rgba(0,0,0,.2);border:none;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:#000;line-height:1;padding:0;flex-shrink:0}
-.spec-tag-x:hover{background:rgba(0,0,0,.4)}
+.spec-tag{display:inline-flex;align-items:center;gap:5px;background:transparent;border:1px solid #F97E00;border-radius:16px;padding:4px 10px 4px 12px;font-size:12px;font-weight:600;color:#F97E00}
+.spec-tag-x{background:rgba(249,126,0,.15);border:none;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:#F97E00;line-height:1;padding:0;flex-shrink:0}
+.spec-tag-x:hover{background:rgba(249,126,0,.35)}
 .pub-spec-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;justify-content:center}
-.pub-spec-tag{background:rgba(249,126,0,.12);border:1px solid rgba(249,126,0,.3);border-radius:16px;padding:4px 12px;font-size:13px;color:var(--accent)}
+.pub-spec-tag{background:transparent;border:1px solid #F97E00;border-radius:16px;padding:4px 12px;font-size:13px;color:#F97E00}
 
 /* ── top bar ── */
 .topbar{position:sticky;top:0;z-index:100;background:rgba(26,29,41,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:12px 20px}
@@ -108,24 +108,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .exp-title{font-size:15px;font-weight:600}
 .exp-company{font-size:13px;color:var(--accent);font-weight:500;margin-top:2px}
 .exp-period{font-size:12px;color:var(--muted);margin-top:2px}
-.exp-desc{font-size:13px;color:rgba(255,255,255,.6);margin-top:8px;line-height:1.55}
+.exp-desc{font-size:13px;color:#999;margin-top:8px;line-height:1.55}
 
 /* ── education ── */
 .edu-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;position:relative}
-.edu-school{font-size:15px;font-weight:600}
-.edu-field{font-size:13px;color:var(--accent);font-weight:500;margin-top:2px}
+.edu-school{font-size:15px;font-weight:600;color:var(--accent)}
+.edu-field{font-size:13px;color:var(--text);font-weight:500;margin-top:2px}
 .edu-degree{font-size:12px;color:var(--muted);margin-top:2px}
 .edu-years{font-size:12px;color:var(--muted);margin-top:2px}
 
 /* ── skills ── */
 .skills-wrap{display:flex;flex-wrap:wrap;gap:8px}
-.skill-chip{background:rgba(249,126,0,.1);border:1px solid rgba(249,126,0,.25);border-radius:20px;padding:5px 13px;font-size:13px;color:var(--accent)}
+.skill-chip{background:transparent;border:1px solid #F97E00;border-radius:20px;padding:5px 13px;font-size:13px;color:#F97E00}
 
 /* ── services ── */
 .service-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .service-info{}
 .service-name{font-size:15px;font-weight:600}
-.service-desc{font-size:13px;color:rgba(255,255,255,.6);margin-top:4px;line-height:1.5}
+.service-desc{font-size:13px;color:#999;margin-top:4px;line-height:1.5}
 .service-price{font-size:14px;font-weight:600;color:var(--accent);white-space:nowrap;flex-shrink:0}
 .invoicing-note{font-size:12px;color:var(--muted);margin-top:4px;text-align:right}
 
@@ -137,9 +137,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .portfolio-card:hover{border-color:rgba(249,126,0,.4)}
 .portfolio-name{font-size:14px;font-weight:600}
 .portfolio-role{font-size:12px;color:var(--muted);margin-top:2px}
-.portfolio-result{font-size:13px;color:rgba(255,255,255,.65);margin-top:6px;line-height:1.45}
+.portfolio-result{font-size:13px;color:#999;margin-top:6px;line-height:1.45}
 .portfolio-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.portfolio-tag{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--muted)}
+.portfolio-tag{background:transparent;border:1px solid #F97E00;border-radius:6px;padding:2px 8px;font-size:11px;color:#F97E00}
 .portfolio-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px}
 .portfolio-link:hover{text-decoration:underline}
 
@@ -148,7 +148,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .review-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .review-venue{font-size:14px;font-weight:600}
 .review-stars{font-size:14px;color:var(--accent)}
-.review-text{font-size:13px;color:rgba(255,255,255,.65);line-height:1.5}
+.review-text{font-size:13px;color:#999;line-height:1.5}
 .review-date{font-size:11px;color:var(--muted);margin-top:6px}
 
 /* ── CTA ── */
@@ -226,7 +226,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   .fox-bio,.exp-desc,.service-desc,.portfolio-result,.review-text{color:#333}
   .exp-company,.service-price,.review-stars,.rating-pill span,.fox-spec{color:#F97E00}
   .stat-num{color:#F97E00}
-  .skill-chip{background:#fff3e6;border-color:#F97E00;color:#e06b00}
+  .skill-chip{background:transparent;border:1px solid #F97E00;color:#F97E00}
   .social-btn{border-color:#ccc;color:#555}
   .muted,.portfolio-tag,.review-date,.exp-period,.fox-city,.stat-label{color:#666}
   .print-logo{display:block!important;text-align:center;font-family:'Bebas Neue',sans-serif;font-size:13px;color:#F97E00;margin-bottom:6px}
