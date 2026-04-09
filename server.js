@@ -8785,13 +8785,11 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
               f.sections_visibility, f.featured_project_id, f.invoicing,
               f.founder_number, f.created_at,
               f.available_today, f.available_from, f.available_to,
-              COALESCE(COUNT(c.id) FILTER (WHERE c.confirmed_at IS NOT NULL), 0) AS checkins_completed,
-              COALESCE(COUNT(c.id) FILTER (WHERE c.confirmed_at IS NULL AND c.expires_at < NOW()), 0) AS checkins_failed,
-              COALESCE(COUNT(c.id) FILTER (WHERE c.confirmed_at IS NULL AND c.expires_at >= NOW()), 0) AS checkins_pending
+              0 AS checkins_completed,
+              0 AS checkins_failed,
+              0 AS checkins_pending
        FROM fp1_foxes f
-       LEFT JOIN fp1_checkins c ON c.user_id = f.user_id
-       WHERE LOWER(f.username) = LOWER($1)
-       GROUP BY f.id`,
+       WHERE LOWER(f.username) = LOWER($1)`,
       [nickname]
     );
     if (!r.rowCount) return res.status(404).json({ error: "not_found" });
