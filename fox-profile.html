@@ -691,6 +691,8 @@ async function checkOwner() {
     isOwner = !!j.isOwner;
     if (isOwner) {
       document.getElementById('btnEditToggle').style.display = 'block';
+      const ab = document.getElementById('btnAvail');
+      if (ab) { ab.style.display = ''; renderAvailBtn(); }
     }
   } catch (e) {}
 }
