@@ -296,8 +296,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         <label>Specjalizacja</label>
         <div class="spec-tags-wrap" id="specTagsWrap"></div>
         <div class="spec-dropdown-wrap" id="specDropdownWrap">
-          <button type="button" class="spec-add-btn" onclick="toggleSpecDropdown()">+ Dodaj specjalizację</button>
-          <div class="spec-dropdown" id="specDropdown"></div>
+          <button type="button" class="spec-add-btn" onclick="event.stopPropagation();toggleSpecDropdown()">+ Dodaj specjalizację</button>
+          <div class="spec-dropdown" id="specDropdown" onclick="event.stopPropagation()"></div>
         </div>
       </div>
 
@@ -1149,7 +1149,7 @@ function renderSpecDropdown() {
     out += `<div class="spec-dd-group">${escHtml(g.label)}</div>`;
     g.items.forEach(item => {
       const already = localSpecializations.includes(item);
-      out += `<div class="spec-dd-item${already?' already':''}" onmousedown="event.preventDefault();addSpec(${JSON.stringify(item)})">${escHtml(item)}${already?' ✓':''}</div>`;
+      out += `<div class="spec-dd-item${already?' already':''}" onclick="addSpec(${JSON.stringify(item)})">${escHtml(item)}${already?' ✓':''}</div>`;
     });
   });
   dd.innerHTML = out;
