@@ -820,6 +820,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "featured_project_id", "INTEGER");
   await ensureColumn("fp1_foxes", "invoicing",           "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "display_name",        "VARCHAR(100)");
+  await ensureColumn("fp1_foxes", "specializations",     "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "available_today",     "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "available_from",      "TIME");
   await ensureColumn("fp1_foxes", "available_to",        "TIME");
@@ -8777,7 +8778,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
     const { nickname } = req.params;
     const r = await pool.query(
       `SELECT f.id, f.user_id, f.username, f.display_name, f.rating, f.city, f.district,
-              f.bio, f.specialization, f.social_links, f.portfolio_items,
+              f.bio, f.specialization, f.specializations, f.social_links, f.portfolio_items,
               f.experience_items, f.skills, f.services, f.profile_public,
               f.sections_visibility, f.featured_project_id, f.invoicing,
               f.founder_number, f.created_at,
@@ -8843,12 +8844,14 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
     await pool.query(
       `UPDATE fp1_foxes SET
         display_name=$1, bio=$2, specialization=$3, district=$4,
+        specializations=$17::jsonb,
         social_links=$5::jsonb, portfolio_items=$6::jsonb,
         experience_items=$7::jsonb, skills=$8::jsonb, services=$9::jsonb,
         featured_project_id=$10, invoicing=$11,
         profile_public=$12, sections_visibility=$13::jsonb,
-        available_today=$14, available_from=$15::time, available_to=$16::time
-       WHERE user_id=$17`,
+        available_today=$14, available_from=$15::time, available_to=$16::time,
+        specializations=$17::jsonb
+       WHERE user_id=$18`,
       [
         display_name || null,
         bio || null,
@@ -8866,6 +8869,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         !!available_today,
         available_from || null,
         available_to || null,
+        JSON.stringify(specializations || []),
         tgUserId
       ]
     );
