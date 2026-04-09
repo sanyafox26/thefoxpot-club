@@ -90,9 +90,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .section{margin:0 16px 20px;animation:fadeUp .4s ease both}
 .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .section-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--text)}
-.section-vis-btn{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;transition:color .2s;display:none}
-.section-vis-btn:hover{color:var(--text)}
-.edit-mode .section-vis-btn{display:block}
+.section-vis-btn{display:none;align-items:center;border:none;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap}
+.section-vis-btn.sec-on{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#22c55e}
+.section-vis-btn.sec-off{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171}
+.is-owner .section-vis-btn{display:inline-flex}
+.section-hidden-owner{opacity:.35}
 
 /* ── stats ── */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -689,11 +691,13 @@ async function checkOwner() {
     const j = await r.json();
     isOwner = !!j.isOwner;
     if (isOwner) {
+      document.body.classList.add('is-owner');
       document.getElementById('btnEditToggle').style.display = 'block';
       const ab = document.getElementById('btnAvail');
       if (ab) { renderAvailBtn(); }
       const badge = document.getElementById('availBadge');
       if (badge) { badge.style.cursor = 'pointer'; badge.onclick = toggleAvailToday; }
+      applySectionsVisibility();
     }
   } catch (e) {}
 }
@@ -732,11 +736,13 @@ async function checkWebAuth() {
     if (!isOwner && webUsername && webUsername.toLowerCase() === NICKNAME.toLowerCase()) {
       isOwner = true;
       console.log('Owner confirmed via username match');
+      document.body.classList.add('is-owner');
       document.getElementById('btnEditToggle').style.display = 'block';
       const ab = document.getElementById('btnAvail');
       if (ab) { renderAvailBtn(); }
       const badge = document.getElementById('availBadge');
       if (badge) { badge.style.cursor = 'pointer'; badge.onclick = toggleAvailToday; }
+      applySectionsVisibility();
     }
   } catch(e) {
     console.error('checkWebAuth error:', e);
@@ -976,8 +982,19 @@ function applySectionsVisibility() {
     const el = document.getElementById(`sec${s.charAt(0).toUpperCase()+s.slice(1)}`);
     const btn = document.getElementById(`vis${s.charAt(0).toUpperCase()+s.slice(1)}`);
     const hidden = localSectionsVis[s] === false;
-    if (el) el.style.display = (hidden && !isEditMode) ? 'none' : '';
-    if (btn) btn.textContent = hidden ? '🙈' : '👁';
+    if (el) {
+      if (isOwner) {
+        el.style.display = '';
+        el.classList.toggle('section-hidden-owner', hidden);
+      } else {
+        el.style.display = hidden ? 'none' : '';
+        el.classList.remove('section-hidden-owner');
+      }
+    }
+    if (btn) {
+      btn.textContent = hidden ? '🔴 Ukryta' : '🟢 Widoczna';
+      btn.className = 'section-vis-btn ' + (hidden ? 'sec-off' : 'sec-on');
+    }
   });
 }
 
@@ -1030,7 +1047,13 @@ function toggleSectionVis(sec) {
   if (!isOwner) return;
   localSectionsVis[sec] = localSectionsVis[sec] !== false ? false : true;
   applySectionsVisibility();
-  markDirty();
+  const token = localStorage.getItem('fox_jwt') || '';
+  const initData = (typeof TG !== 'undefined' && TG?.initData) ? TG.initData : '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (initData) headers['x-telegram-init-data'] = initData;
+  else if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/fox/sections', { method: 'PATCH', headers, body: JSON.stringify({ sections_visibility: localSectionsVis }) })
+    .catch(() => {});
 }
 
 

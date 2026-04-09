@@ -8907,6 +8907,25 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/fox/sections — save sections_visibility only
+app.patch("/api/fox/sections", requireWebAppAuth, express.json(), async (req, res) => {
+  try {
+    const foxId = req.foxJwt?.fox_id;
+    const { sections_visibility } = req.body;
+    if (foxId) {
+      await pool.query(`UPDATE fp1_foxes SET sections_visibility=$1::jsonb WHERE id=$2`,
+        [JSON.stringify(sections_visibility || {}), foxId]);
+    } else {
+      await pool.query(`UPDATE fp1_foxes SET sections_visibility=$1::jsonb WHERE user_id=$2`,
+        [JSON.stringify(sections_visibility || {}), req.tgUser.id]);
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error("FOX_SECTIONS_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
 // POST /api/fox-profile/save — save profile fields
 app.post("/api/fox-profile/save", requireWebAppAuth, async (req, res) => {
   try {
