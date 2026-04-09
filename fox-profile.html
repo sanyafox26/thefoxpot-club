@@ -45,15 +45,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .private-screen p{font-size:14px;color:var(--muted)}
 
 
-.spec-group-label{font-size:11px;color:#F97E00;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px}
-.spec-chips-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
-.spec-chip{background:#2a2d3e;border:1px solid #444;border-radius:20px;padding:4px 12px;font-size:12px;color:#fff;cursor:pointer;transition:all .18s;user-select:none}
-.spec-chip:hover{border-color:#F97E00;color:#F97E00}
-.spec-chip.selected{background:#F97E00;border-color:#F97E00;color:#000;font-weight:700}
-.spec-chip.disabled{opacity:.3;cursor:default;pointer-events:none}
-.spec-selected-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:0}
-.spec-selected-tag{background:rgba(249,126,0,.15);border:1px solid rgba(249,126,0,.4);border-radius:16px;padding:5px 11px;font-size:12px;color:var(--accent);font-weight:600}
-.spec-max-warn{font-size:12px;color:#ff8080;margin-top:5px;display:none}
+.spec-dropdown-wrap{position:relative}
+.spec-add-btn{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px dashed var(--border);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--muted);cursor:pointer;width:100%;transition:all .2s;margin-bottom:8px}
+.spec-add-btn:hover{border-color:var(--accent);color:var(--text)}
+.spec-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:#23263a;border:1px solid var(--border);border-radius:12px;z-index:50;max-height:260px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.spec-dropdown.open{display:block}
+.spec-dd-group{font-size:10px;color:#F97E00;font-weight:700;text-transform:uppercase;letter-spacing:.7px;padding:10px 14px 4px}
+.spec-dd-item{padding:8px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .15s}
+.spec-dd-item:hover{background:rgba(249,126,0,.12);color:#F97E00}
+.spec-dd-item.already{opacity:.35;cursor:default;pointer-events:none}
+.spec-tags-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;min-height:0}
+.spec-tag{display:inline-flex;align-items:center;gap:5px;background:#F97E00;border-radius:16px;padding:4px 10px 4px 12px;font-size:12px;font-weight:700;color:#000}
+.spec-tag-x{background:rgba(0,0,0,.2);border:none;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:#000;line-height:1;padding:0;flex-shrink:0}
+.spec-tag-x:hover{background:rgba(0,0,0,.4)}
 .pub-spec-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;justify-content:center}
 .pub-spec-tag{background:rgba(249,126,0,.12);border:1px solid rgba(249,126,0,.3);border-radius:16px;padding:4px 12px;font-size:13px;color:var(--accent)}
 
@@ -287,12 +291,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         <div class="char-count"><span id="bioCount">0</span>/150</div>
       </div>
 
-      <!-- Specialization multi-select -->
+      <!-- Specialization dropdown-tag -->
       <div class="ep-field">
-        <label>Specjalizacja <span style="color:var(--muted);font-weight:400">(max 3)</span></label>
-        <div id="specChipsContainer"></div>
-        <div class="spec-max-warn" id="specMaxWarn">Możesz wybrać maksymalnie 3</div>
-        <div class="spec-selected-wrap" id="specSelectedTags"></div>
+        <label>Specjalizacja</label>
+        <div class="spec-tags-wrap" id="specTagsWrap"></div>
+        <div class="spec-dropdown-wrap" id="specDropdownWrap">
+          <button type="button" class="spec-add-btn" onclick="toggleSpecDropdown()">+ Dodaj specjalizację</button>
+          <div class="spec-dropdown" id="specDropdown"></div>
+        </div>
       </div>
 
       <!-- District -->
@@ -1118,47 +1124,71 @@ async function toggleAvailToday() {
 
 
 const SPEC_GROUPS = [
-  { label: '🍽️ Gastronomia & Hospitality', items: ['Kelner / Barman','Kucharz / Szef kuchni','Barista / Sommelier','Organizacja eventów','Catering'] },
-  { label: '💻 Technologia', items: ['IT / Programowanie','Web & Mobile Development','UI/UX Design','Data & Analytics','Cyberbezpieczeństwo'] },
-  { label: '🎨 Kreatywne', items: ['Fotografia','Videografia / Montaż','Grafika / Branding','Muzyk / Artysta','Copywriting / Content'] },
-  { label: '📊 Biznes', items: ['Marketing & Social Media','Sprzedaż / Business Dev','Finanse / Księgowość','Prawo / Doradztwo prawne','HR / Rekrutacja','Zarządzanie projektami'] },
-  { label: '💪 Zdrowie & Sport', items: ['Personal Trainer / Sport','Dietetyk / Wellness','Medycyna / Opieka'] },
-  { label: '📚 Edukacja', items: ['Nauczyciel / Korepetytor','Tłumacz / Lektor','Coaching / Mentoring'] },
-  { label: '🔧 Rzemiosło & Usługi', items: ['Budownictwo / Remonty','Elektronika / Naprawa','Uroda / Fryzjer / SPA','Transport / Logistyka','Inne'] },
+  { label: '🍽️ Gastronomia & Hospitality', items: ['Kelner','Barman','Kucharz','Szef kuchni','Barista','Sommelier','Organizacja eventów','Catering','Host / Hostessa'] },
+  { label: '💻 Technologia', items: ['Programista','Web Developer','Mobile Developer','UI Designer','UX Designer','Data Analyst','DevOps','Cyberbezpieczeństwo','IT Support'] },
+  { label: '🎨 Kreatywne', items: ['Fotograf','Videograf','Montażysta','Grafik','Branding Designer','Muzyk','Wokalista','Aktor','Copywriter','Content Creator'] },
+  { label: '📊 Biznes', items: ['Marketing Manager','Social Media Manager','Sprzedawca','Business Developer','Księgowy','Doradca prawny','HR Specialist','Rekruter','Project Manager','Przedsiębiorca'] },
+  { label: '💪 Zdrowie & Sport', items: ['Personal Trainer','Dietetyk','Fizjoterapeuta','Pielęgniarka / Pielęgniarz','Lekarz','Coach wellness'] },
+  { label: '📚 Edukacja', items: ['Nauczyciel','Korepetytor','Tłumacz','Lektor języków','Coach','Mentor'] },
+  { label: '🔧 Rzemiosło & Usługi', items: ['Budowlaniec','Elektryk','Hydraulik','Mechanik','Fryzjer','Kosmetyczka','Tatuażysta','Krawiec / Krawcowa','Kierowca','Inne'] },
 ];
 
-function renderSpecChips() {
-  const container = document.getElementById('specChipsContainer');
-  const selectedWrap = document.getElementById('specSelectedTags');
-  const warn = document.getElementById('specMaxWarn');
-  if (!container) return;
-  let out = '';
-  SPEC_GROUPS.forEach(g => {
-    out += `<div class="spec-group-label">${escHtml(g.label)}</div><div class="spec-chips-wrap">`;
-    g.items.forEach(item => {
-      const sel = localSpecializations.includes(item);
-      const dis = !sel && localSpecializations.length >= 3;
-      out += `<span class="spec-chip${sel?' selected':''}${dis?' disabled':''}" onclick="toggleSpec(${JSON.stringify(item)})">${escHtml(item)}</span>`;
-    });
-    out += '</div>';
-  });
-  container.innerHTML = out;
-  // Selected tags below
-  selectedWrap.innerHTML = localSpecializations.map(s => `<span class="spec-selected-tag">${escHtml(s)}</span>`).join('');
-  warn.style.display = localSpecializations.length >= 3 ? 'block' : 'none';
+function renderSpecTags() {
+  const wrap = document.getElementById('specTagsWrap');
+  if (!wrap) return;
+  wrap.innerHTML = localSpecializations.map((s, i) =>
+    `<span class="spec-tag">${escHtml(s)}<button type="button" class="spec-tag-x" onclick="removeSpec(${i})">×</button></span>`
+  ).join('');
 }
 
-function toggleSpec(item) {
-  const idx = localSpecializations.indexOf(item);
-  if (idx >= 0) {
-    localSpecializations.splice(idx, 1);
-  } else {
-    if (localSpecializations.length >= 3) return;
+function renderSpecDropdown() {
+  const dd = document.getElementById('specDropdown');
+  if (!dd) return;
+  let out = '';
+  SPEC_GROUPS.forEach(g => {
+    out += `<div class="spec-dd-group">${escHtml(g.label)}</div>`;
+    g.items.forEach(item => {
+      const already = localSpecializations.includes(item);
+      out += `<div class="spec-dd-item${already?' already':''}" onclick="addSpec(${JSON.stringify(item)})">${escHtml(item)}${already?' ✓':''}</div>`;
+    });
+  });
+  dd.innerHTML = out;
+}
+
+function toggleSpecDropdown() {
+  const dd = document.getElementById('specDropdown');
+  if (!dd) return;
+  renderSpecDropdown();
+  dd.classList.toggle('open');
+}
+
+function addSpec(item) {
+  if (!localSpecializations.includes(item)) {
     localSpecializations.push(item);
+    renderSpecTags();
+    markDirty();
   }
-  renderSpecChips();
+  renderSpecDropdown();
+}
+
+function removeSpec(idx) {
+  localSpecializations.splice(idx, 1);
+  renderSpecTags();
+  renderSpecDropdown();
   markDirty();
 }
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('specDropdownWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const dd = document.getElementById('specDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
+
+// Keep old name as alias for populateEditForm call
+function renderSpecChips() { renderSpecTags(); }
 
 // ── Init ──
 init();
