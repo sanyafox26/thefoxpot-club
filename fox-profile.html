@@ -823,7 +823,7 @@ function render() {
     // Also keep old single field hidden
     document.getElementById('foxSpec').style.display = 'none';
   }
-  let city = [d.district, d.city].filter(Boolean).join(', ');
+  let city = [d.district, d.contact_address, d.city].filter(Boolean).join(' · ');
   document.getElementById('foxCity').textContent = city || '';
   document.getElementById('foxRating').textContent = d.rating || 0;
   if (d.bio) { document.getElementById('foxBio').textContent = d.bio; document.getElementById('foxBio').style.display = ''; }
@@ -1404,17 +1404,16 @@ function generatePdf() {
   const bio = escHtml(profileData?.bio || '');
   const specs = localSpecializations || [];
   const profileUrl = location.href;
-  const city = escHtml(localAddress || localDistrict || '');
-  const email = escHtml(localEmail || '');
   const vis = localSectionsVis;
   const show = s => vis[s] !== false;
 
   // Header contact line
   const contactParts = [];
-  if (city) contactParts.push(city);
-  if (email) contactParts.push(email);
+  if (localDistrict) contactParts.push(escHtml(localDistrict));
+  if (localAddress) contactParts.push(escHtml(localAddress));
+  if (localEmail) contactParts.push(escHtml(localEmail));
   contactParts.push('<a href="'+profileUrl+'" style="color:#F97E00">'+profileUrl+'</a>');
-  const contactLine = contactParts.join(' &nbsp;·&nbsp; ');
+  const contactLine = contactParts.join(' &nbsp;|&nbsp; ');
 
   let sectionsHtml = '';
 
