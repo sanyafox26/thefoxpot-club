@@ -296,37 +296,37 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         <button type="button" class="spec-add-btn" onclick="toggleSpecList()">+ Dodaj specjalizację</button>
         <select id="specSelect" size="8" style="display:none;background:#1a1d29;color:#fff;border:1px solid #F97E00;width:100%;border-radius:8px;margin-top:6px;padding:4px 0" onchange="handleSpecChange(this)">
           <optgroup label="🍽️ Gastronomia & Hospitality">
-            <option>Kelner</option><option>Barman</option><option>Kucharz</option><option>Szef kuchni</option>
-            <option>Barista</option><option>Sommelier</option><option>Organizacja eventów</option>
-            <option>Catering</option><option>Host / Hostessa</option>
+            <option>Barista</option><option>Barman</option><option>Catering</option><option>Host / Hostessa</option>
+            <option>Kelner</option><option>Kucharz</option><option>Organizacja eventów</option>
+            <option>Sommelier</option><option>Szef kuchni</option>
           </optgroup>
           <optgroup label="💻 Technologia">
-            <option>Programista</option><option>Web Developer</option><option>Mobile Developer</option>
-            <option>UI Designer</option><option>UX Designer</option><option>Data Analyst</option>
-            <option>DevOps</option><option>Cyberbezpieczeństwo</option><option>IT Support</option>
+            <option>Cyberbezpieczeństwo</option><option>Data Analyst</option><option>DevOps</option>
+            <option>IT Support</option><option>Mobile Developer</option><option>Programista</option>
+            <option>UI Designer</option><option>UX Designer</option><option>Web Developer</option>
           </optgroup>
           <optgroup label="🎨 Kreatywne">
-            <option>Fotograf</option><option>Videograf</option><option>Montażysta</option>
-            <option>Grafik</option><option>Branding Designer</option><option>Muzyk</option>
-            <option>Wokalista</option><option>Aktor</option><option>Copywriter</option><option>Content Creator</option>
+            <option>Aktor</option><option>Branding Designer</option><option>Content Creator</option>
+            <option>Copywriter</option><option>Fotograf</option><option>Grafik</option>
+            <option>Montażysta</option><option>Muzyk</option><option>Videograf</option><option>Wokalista</option>
           </optgroup>
           <optgroup label="💼 Biznes">
-            <option>Marketing Manager</option><option>Social Media Manager</option><option>Sprzedawca</option>
-            <option>Business Developer</option><option>Księgowy</option><option>Doradca prawny</option>
-            <option>HR Specialist</option><option>Rekruter</option><option>Project Manager</option><option>Przedsiębiorca</option>
+            <option>Business Developer</option><option>Doradca prawny</option><option>HR Specialist</option>
+            <option>Księgowy</option><option>Marketing Manager</option><option>Project Manager</option>
+            <option>Przedsiębiorca</option><option>Rekruter</option><option>Social Media Manager</option><option>Sprzedawca</option>
           </optgroup>
           <optgroup label="💪 Zdrowie & Sport">
-            <option>Personal Trainer</option><option>Dietetyk</option><option>Fizjoterapeuta</option>
-            <option>Pielęgniarka / Pielęgniarz</option><option>Lekarz</option><option>Coach wellness</option>
+            <option>Coach wellness</option><option>Dietetyk</option><option>Fizjoterapeuta</option>
+            <option>Lekarz</option><option>Personal Trainer</option><option>Pielęgniarka / Pielęgniarz</option>
           </optgroup>
           <optgroup label="📚 Edukacja">
-            <option>Nauczyciel</option><option>Korepetytor</option><option>Tłumacz</option>
-            <option>Lektor języków</option><option>Coach</option><option>Mentor</option>
+            <option>Coach</option><option>Korepetytor</option><option>Lektor języków</option>
+            <option>Mentor</option><option>Nauczyciel</option><option>Tłumacz</option>
           </optgroup>
           <optgroup label="🔧 Rzemiosło & Usługi">
-            <option>Budowlaniec</option><option>Elektryk</option><option>Hydraulik</option>
-            <option>Mechanik</option><option>Fryzjer</option><option>Kosmetyczka</option>
-            <option>Tatuażysta</option><option>Krawiec / Krawcowa</option><option>Kierowca</option><option>Inne</option>
+            <option>Budowlaniec</option><option>Elektryk</option><option>Fryzjer</option>
+            <option>Hydraulik</option><option>Inne</option><option>Kierowca</option>
+            <option>Kosmetyczka</option><option>Krawiec / Krawcowa</option><option>Mechanik</option><option>Tatuażysta</option>
           </optgroup>
           <optgroup label="✏️ Własna">
             <option value="__custom__">✏️ Wpisz własną specjalizację...</option>
@@ -1023,8 +1023,7 @@ function toggleSkillInput() {
 function confirmAddSkill() {
   const inp = document.getElementById('skillInputText');
   const v = inp.value.trim();
-  if (v) { localSkills.push(v); renderSkills(); markDirty(); inp.value = ''; }
-  document.getElementById('skillInputWrap').style.display = 'none';
+  if (v) { localSkills.push(v); renderSkills(); markDirty(); inp.value = ''; inp.focus(); }
 }
 function removeSkill(i) { if (!isEditMode) return; localSkills.splice(i,1); renderSkills(); markDirty(); }
 
