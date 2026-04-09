@@ -817,9 +817,10 @@ function renderSocial(links) {
     twitter:   'fa-brands fa-x-twitter',
     website:   'fa-solid fa-globe',
   };
-  const html2 = Object.entries(links).filter(([,v]) => v).map(([k,v]) =>
-    `<a class="social-btn" href="${escHtml(/^https?:\/\//i.test(v) ? v : 'https://' + v)}" target="_blank" rel="noopener" title="${k}"><i class="${faIcons[k] || 'fa-solid fa-link'}" style="font-size:20px;color:#F97E00"></i></a>`
-  ).join('');
+  const html2 = Object.entries(links).filter(([,v]) => v).map(([k,v]) => {
+    const url = /^https?:\/\//i.test(v) ? v : 'https://' + v;
+    return `<a class="social-btn" href="${escHtml(url)}" target="_blank" rel="noopener" title="${k}"><i class="${faIcons[k] || 'fa-solid fa-link'}" style="font-size:20px;color:#F97E00"></i></a>`;
+  }).join('');
   row.innerHTML = html2;
 }
 

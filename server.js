@@ -814,6 +814,19 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "portfolio_items",     "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "experience_items",    "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "education",            "JSONB NOT NULL DEFAULT '[]'");
+  // Fix social_links: prepend https:// to values missing protocol
+  await pool.query(`
+    UPDATE fp1_foxes
+    SET social_links = (
+      SELECT jsonb_object_agg(key,
+        CASE WHEN value = 'null'::jsonb OR value::text = '""' THEN value
+             WHEN (value #>> '{}') ~ '^https?://' THEN value
+             ELSE to_jsonb('https://' || (value #>> '{}'))
+        END)
+      FROM jsonb_each(social_links)
+    )
+    WHERE social_links IS NOT NULL AND social_links != '{}'::jsonb
+  `).catch(()=>{});
   await ensureColumn("fp1_foxes", "skills",              "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "services",            "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "profile_public",      "BOOLEAN NOT NULL DEFAULT TRUE");
