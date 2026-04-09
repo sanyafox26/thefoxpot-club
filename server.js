@@ -8835,7 +8835,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
   try {
     const tgUserId = req.tgUser.id;
     const {
-      display_name, bio, specialization, district,
+      display_name, bio, specialization, specializations, district,
       social_links, portfolio_items, experience_items,
       skills, services, featured_project_id, invoicing,
       profile_public, sections_visibility,
@@ -8844,7 +8844,6 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
     await pool.query(
       `UPDATE fp1_foxes SET
         display_name=$1, bio=$2, specialization=$3, district=$4,
-        specializations=$17::jsonb,
         social_links=$5::jsonb, portfolio_items=$6::jsonb,
         experience_items=$7::jsonb, skills=$8::jsonb, services=$9::jsonb,
         featured_project_id=$10, invoicing=$11,
@@ -8855,7 +8854,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
       [
         display_name || null,
         bio || null,
-        specialization || null,
+        Array.isArray(specializations) && specializations.length ? specializations[0] : (specialization || null),
         district || null,
         JSON.stringify(social_links || {}),
         JSON.stringify(portfolio_items || []),
@@ -8869,7 +8868,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         !!available_today,
         available_from || null,
         available_to || null,
-        JSON.stringify(specializations || []),
+        JSON.stringify(Array.isArray(specializations) ? specializations : []),
         tgUserId
       ]
     );
