@@ -390,6 +390,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         od <input type="time" id="editAvailFrom"/> do <input type="time" id="editAvailTo"/>
       </div>
 
+      <!-- Skills input -->
+      <div class="ep-field">
+        <label>Umiejętności</label>
+        <div class="skills-wrap" id="skillsWrapEdit" style="margin-bottom:6px"></div>
+        <div id="skillInputWrap" style="display:none;gap:6px;margin-top:4px">
+          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." style="flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
+          <button type="button" style="background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer" onclick="confirmAddSkill()">+ Dodaj</button>
+        </div>
+        <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
+      </div>
+
       <button class="btn-save-profile" onclick="saveAll()">💾 Zapisz zmiany</button>
     </div>
 
@@ -455,11 +466,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
           <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('skills')" id="visSkills">👁</button>
         </div>
         <div class="skills-wrap" id="skillsWrap"></div>
-        <button class="add-btn" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
-        <div id="skillInputWrap" style="display:none;gap:6px;margin-top:6px">
-          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." style="flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
-          <button type="button" style="background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer" onclick="confirmAddSkill()">+ Dodaj</button>
-        </div>
       </div>
 
       <!-- Services -->
@@ -880,11 +886,15 @@ function deleteEduItem() {
 }
 
 function renderSkills() {
-  const wrap = document.getElementById('skillsWrap');
-  if (!localSkills.length) { wrap.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak umiejętności.</div>'; return; }
-  wrap.innerHTML = localSkills.map((s,i)=>`
+  const chips = localSkills.map((s,i)=>`
     <span class="skill-chip" ${isEditMode?`onclick="removeSkill(${i})" style="cursor:pointer" title="Kliknij aby usunąć"`:''}>
       ${escHtml(s)}${isEditMode?' ✕':''}
+    </span>`).join('') || '<div style="color:var(--muted);font-size:13px">Brak umiejętności.</div>';
+  const pub = document.getElementById('skillsWrap'); if (pub) pub.innerHTML = chips;
+  const edit = document.getElementById('skillsWrapEdit');
+  if (edit) edit.innerHTML = localSkills.map((s,i)=>`
+    <span class="skill-chip" onclick="removeSkill(${i})" style="cursor:pointer" title="Kliknij aby usunąć">
+      ${escHtml(s)} ✕
     </span>`).join('');
 }
 
