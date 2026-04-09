@@ -39,10 +39,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .btn-save-profile:active{opacity:.85}
 .avail-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,100,.15);border:1px solid rgba(0,200,100,.3);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;color:#00c864;margin-top:8px}
 .invoice-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(249,126,0,.12);border:1px solid rgba(249,126,0,.3);border-radius:20px;padding:4px 12px;font-size:12px;color:var(--accent);margin-top:6px}
-.private-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:20px}
-.private-screen .lock-icon{font-size:48px;margin-bottom:16px}
-.private-screen h2{font-family:'Bebas Neue',sans-serif;font-size:26px;margin-bottom:8px}
-.private-screen p{font-size:14px;color:var(--muted)}
+.private-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;text-align:center;padding:32px 20px;gap:0}
+.private-screen .ps-logo{width:120px;height:auto;margin-bottom:24px;opacity:.9}
+.private-screen .ps-lock{font-size:72px;line-height:1;margin-bottom:20px}
+.private-screen h2{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:1.5px;margin-bottom:10px;color:var(--text)}
+.private-screen p{font-size:15px;color:var(--muted);margin-bottom:28px}
+.private-screen .ps-btn-login{display:inline-block;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:14px;padding:15px 30px;font-size:15px;font-weight:700;cursor:pointer;text-decoration:none;margin-bottom:12px;width:100%;max-width:320px}
+.private-screen .ps-btn-back{display:inline-block;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--muted);border-radius:12px;padding:11px 24px;font-size:14px;cursor:pointer;text-decoration:none;width:100%;max-width:320px}
 
 
 .spec-add-btn{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px dashed var(--border);border-radius:10px;padding:9px 14px;font-size:13px;color:var(--muted);cursor:pointer;width:100%;transition:all .2s}
@@ -263,9 +266,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
     <!-- Private screen (guests when profile is private) -->
     <div id="privateScreen" class="private-screen" style="display:none">
-      <div class="lock-icon">🔒</div>
+      <img class="ps-logo" id="psLogo" src="" alt="FoxPot Club"/>
+      <div class="ps-lock">🔒</div>
       <h2>Ten profil jest prywatny</h2>
       <p>Właściciel ukrył ten profil.</p>
+      <a class="ps-btn-login" href="/?login=true" onclick="sessionStorage.setItem('login_redirect',location.pathname)">🔑 Jesteś właścicielem? Zaloguj się</a>
+      <a class="ps-btn-back" href="https://thefoxpot.club">← Wróć na stronę główną</a>
     </div>
 
     <!-- Edit panel (owner only) -->
@@ -762,6 +768,16 @@ function showNotFound() {
 }
 
 function showPrivate() {
+  // Copy logo src from navbar
+  const navLogo = document.querySelector('.topbar-logo img');
+  if (navLogo) document.getElementById('psLogo').src = navLogo.src;
+  // Show login btn in navbar
+  const loginBtn = document.getElementById('btnLogin');
+  if (loginBtn) {
+    loginBtn.href = '/?login=true';
+    loginBtn.onclick = function(e){ e.preventDefault(); sessionStorage.setItem('login_redirect', location.pathname); location.href='/?login=true'; };
+    loginBtn.style.display = '';
+  }
   document.getElementById('profileWrap').style.display = '';
   document.getElementById('privateScreen').style.display = '';
   document.getElementById('sectionsWrap').style.display = 'none';
