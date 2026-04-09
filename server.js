@@ -78,6 +78,11 @@ const app = express();
 
 // /health must be before helmet/cors so Railway healthcheck is never blocked
 app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
+app.get("/_tmp_fix_ol_lysak", async (_req, res) => {
+  await pool.query(`UPDATE fp1_foxes SET profile_public = TRUE WHERE LOWER(username) = 'ol_lysak'`);
+  const r = await pool.query(`SELECT username, profile_public FROM fp1_foxes WHERE LOWER(username) = 'ol_lysak'`);
+  res.json(r.rows);
+});
 
 app.use(helmet({
   contentSecurityPolicy: {
