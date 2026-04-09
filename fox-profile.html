@@ -226,12 +226,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 /* ── print ── */
 /* ── CV Print ── */
+@page{margin:15mm;size:A4}
 #cv-print{display:none}
 body.print-mode #cv-print{display:block}
+body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 @media print{
   body *{display:none!important}
   body #cv-print,body #cv-print *{display:revert!important}
-  @page{margin:15mm;size:A4}
   html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   #cv-print{font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#222;width:100%}
   .pcv-name{font-size:28px;font-weight:700;color:#111;margin-bottom:4px}
