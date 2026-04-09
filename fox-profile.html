@@ -18,6 +18,32 @@
 html{background:var(--bg)}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:60px}
 
+
+/* ── edit panel ── */
+.edit-panel{background:#1e2135;border-bottom:1px solid var(--border);padding:16px;display:none}
+.edit-mode .edit-panel{display:block}
+.edit-panel-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;margin-bottom:14px;color:var(--accent)}
+.edit-row{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.edit-row-label{font-size:14px;font-weight:500}
+.edit-row-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.ep-field{margin-bottom:12px}
+.ep-field label{font-size:11px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.ep-field input,.ep-field textarea,.ep-field select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;outline:none;resize:vertical}
+.ep-field input:focus,.ep-field textarea:focus,.ep-field select:focus{border-color:var(--accent)}
+.ep-field .char-count{font-size:11px;color:var(--muted);text-align:right;margin-top:3px}
+.ep-section-title{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px}
+.ep-social-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ep-avail-hours{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px;color:var(--muted)}
+.ep-avail-hours input[type=time]{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;width:100px}
+.btn-save-profile{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px}
+.btn-save-profile:active{opacity:.85}
+.avail-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,100,.15);border:1px solid rgba(0,200,100,.3);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;color:#00c864;margin-top:8px}
+.invoice-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(249,126,0,.12);border:1px solid rgba(249,126,0,.3);border-radius:20px;padding:4px 12px;font-size:12px;color:var(--accent);margin-top:6px}
+.private-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:20px}
+.private-screen .lock-icon{font-size:48px;margin-bottom:16px}
+.private-screen h2{font-family:'Bebas Neue',sans-serif;font-size:26px;margin-bottom:8px}
+.private-screen p{font-size:14px;color:var(--muted)}
+
 /* ── top bar ── */
 .topbar{position:sticky;top:0;z-index:100;background:rgba(26,29,41,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:12px 20px}
 .topbar-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--accent);letter-spacing:1px;text-decoration:none}
@@ -202,16 +228,107 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   </div>
   <div id="profileWrap" style="display:none">
 
-    <!-- Profile visibility toggle (owner only) -->
-    <div class="profile-toggle-row" id="visibilityRow" style="display:none">
-      <div>
-        <div class="toggle-label">Profil publiczny</div>
-        <div class="toggle-sub">Wyłącz, aby ukryć profil przed innymi</div>
+
+
+
+    <!-- Private screen (guests when profile is private) -->
+    <div id="privateScreen" class="private-screen" style="display:none">
+      <div class="lock-icon">🔒</div>
+      <h2>Ten profil jest prywatny</h2>
+      <p>Właściciel ukrył ten profil.</p>
+    </div>
+
+    <!-- Edit panel (owner only) -->
+    <div class="edit-panel" id="editPanel">
+      <div class="edit-panel-title">✏️ Edytuj profil</div>
+
+      <!-- Public/private toggle -->
+      <div class="edit-row" style="margin-bottom:14px">
+        <div>
+          <div class="edit-row-label">Profil publiczny</div>
+          <div class="edit-row-sub">Wyłącz, aby ukryć profil przed innymi</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="editPublic" onchange="localProfilePublic=this.checked"/>
+          <span class="toggle-track"></span>
+        </label>
       </div>
-      <label class="toggle-switch">
-        <input type="checkbox" id="togglePublic" onchange="onVisibilityChange()"/>
-        <span class="toggle-track"></span>
-      </label>
+
+      <!-- Display name -->
+      <div class="ep-field">
+        <label>Display Name (max 60 znaków)</label>
+        <input id="editDisplayName" maxlength="60" placeholder="Jak chcesz być widoczny?"/>
+      </div>
+
+      <!-- Bio -->
+      <div class="ep-field">
+        <label>Bio</label>
+        <textarea id="editBio" maxlength="150" rows="3" placeholder="Kilka słów o sobie..." oninput="document.getElementById('bioCount').textContent=this.value.length"></textarea>
+        <div class="char-count"><span id="bioCount">0</span>/150</div>
+      </div>
+
+      <!-- Specialization -->
+      <div class="ep-field">
+        <label>Specjalizacja</label>
+        <select id="editSpec">
+          <option value="">— brak —</option>
+          <option value="Gastronomia">Gastronomia</option>
+          <option value="Fotografia/Video">Fotografia / Video</option>
+          <option value="Design">Design</option>
+          <option value="IT/Dev">IT / Dev</option>
+          <option value="Marketing">Marketing</option>
+          <option value="Muzyka">Muzyka</option>
+          <option value="Sport/Fitness">Sport / Fitness</option>
+          <option value="Inne">Inne</option>
+        </select>
+      </div>
+
+      <!-- District -->
+      <div class="ep-field">
+        <label>Dzielnica</label>
+        <input id="editDistrict" maxlength="60" placeholder="np. Śródmieście"/>
+      </div>
+
+      <!-- Social links -->
+      <div class="ep-section-title">Linki społecznościowe</div>
+      <div class="ep-social-grid">
+        <div class="ep-field"><label>LinkedIn</label><input id="slLinkedin" type="url" placeholder="https://linkedin.com/in/..."/></div>
+        <div class="ep-field"><label>Instagram</label><input id="slInstagram" type="url" placeholder="https://instagram.com/..."/></div>
+        <div class="ep-field"><label>Facebook</label><input id="slFacebook" type="url" placeholder="https://facebook.com/..."/></div>
+        <div class="ep-field"><label>TikTok</label><input id="slTiktok" type="url" placeholder="https://tiktok.com/@..."/></div>
+        <div class="ep-field"><label>YouTube</label><input id="slYoutube" type="url" placeholder="https://youtube.com/..."/></div>
+        <div class="ep-field"><label>Strona WWW</label><input id="slWebsite" type="url" placeholder="https://..."/></div>
+      </div>
+
+      <!-- Invoicing toggle -->
+      <div class="ep-section-title">Dodatkowe</div>
+      <div class="edit-row" style="margin-bottom:10px">
+        <div>
+          <div class="edit-row-label">Wystawiam faktury VAT</div>
+          <div class="edit-row-sub">Pokaż badge na profilu</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="editInvoicing" onchange="localInvoicing=this.checked"/>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <!-- Available today -->
+      <div class="edit-row" style="margin-bottom:10px">
+        <div>
+          <div class="edit-row-label">Jestem dostępny dziś</div>
+          <div class="edit-row-sub">Pokaż badge na profilu</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="editAvailable" onchange="localAvailToday=this.checked;document.getElementById('availHoursRow').style.display=this.checked?'flex':'none'"/>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="ep-avail-hours" id="availHoursRow" style="display:none">
+        od <input type="time" id="editAvailFrom"/> do <input type="time" id="editAvailTo"/>
+      </div>
+
+      <button class="btn-save-profile" onclick="saveAll()">💾 Zapisz zmiany</button>
     </div>
 
     <!-- Hero -->
@@ -225,6 +342,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
       <div class="fox-city" id="foxCity"></div>
       <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
       <div class="pioneer-badge" id="pioneerBadge" style="display:none"></div>
+      <div class="avail-badge" id="availBadge" style="display:none">🟢 Dostępny dziś</div>
+      <div class="invoice-badge" id="invoiceBadge" style="display:none">🧾 Wystawia faktury</div>
       <div class="fox-bio" id="foxBio" style="display:none"></div>
       <div class="social-row" id="socialRow"></div>
     </div>
@@ -388,6 +507,11 @@ let dirty = false;
 let localBio = '';
 let localSpec = '';
 let localSocial = {};
+let localDisplayName = '';
+let localDistrict = '';
+let localAvailToday = false;
+let localAvailFrom = '';
+let localAvailTo = '';
 let localExperience = [];
 let localSkills = [];
 let localServices = [];
@@ -409,6 +533,7 @@ async function init() {
   if (!NICKNAME) { showNotFound(); return; }
   try {
     const r = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}`);
+    if (r.status === 403) { showPrivate(); return; }
     if (!r.ok) { showNotFound(); return; }
     profileData = await r.json();
     initLocals();
@@ -425,6 +550,11 @@ function initLocals() {
   localBio = d.bio || '';
   localSpec = d.specialization || '';
   localSocial = d.social_links || {};
+  localDisplayName = d.display_name || '';
+  localDistrict = d.district || '';
+  localAvailToday = !!d.available_today;
+  localAvailFrom = d.available_from || '';
+  localAvailTo = d.available_to || '';
   localExperience = JSON.parse(JSON.stringify(d.experience_items || []));
   localSkills = JSON.parse(JSON.stringify(d.skills || []));
   localServices = JSON.parse(JSON.stringify(d.services || []));
@@ -446,14 +576,20 @@ async function checkOwner() {
     isOwner = !!j.isOwner;
     if (isOwner) {
       document.getElementById('btnEditToggle').style.display = '';
-      document.getElementById('visibilityRow').style.display = 'flex';
-      document.getElementById('togglePublic').checked = localProfilePublic;
     }
   } catch (e) {}
 }
 
 function showNotFound() {
   document.getElementById('notFound').style.display = '';
+}
+
+function showPrivate() {
+  document.getElementById('profileWrap').style.display = '';
+  document.getElementById('privateScreen').style.display = '';
+  document.getElementById('sectionsWrap').style.display = 'none';
+  document.getElementById('heroSection').style.display = 'none';
+  document.getElementById('ctaBox').style.display = 'none';
 }
 
 // ── Render ──
@@ -478,6 +614,9 @@ function render() {
   document.getElementById('foxCity').textContent = city || '';
   document.getElementById('foxRating').textContent = d.rating || 0;
   if (d.bio) { document.getElementById('foxBio').textContent = d.bio; document.getElementById('foxBio').style.display = ''; }
+  // Avail / invoice badges
+  if (d.available_today) { document.getElementById('availBadge').style.display = ''; }
+  if (d.invoicing) { document.getElementById('invoiceBadge').style.display = ''; }
   // Social
   renderSocial(d.social_links || {});
   // Stats
@@ -621,13 +760,37 @@ function toggleEditMode() {
   document.body.classList.toggle('edit-mode', isEditMode);
   const btn = document.getElementById('btnEditToggle');
   btn.textContent = isEditMode ? '✓ Zakończ edycję' : '✏️ Edytuj profil';
-  if (!isEditMode) { dirty = false; hideSaveBar(); }
+  if (isEditMode) {
+    populateEditForm();
+  } else {
+    dirty = false;
+    hideSaveBar();
+  }
   applySectionsVisibility();
   renderExperience();
   renderSkills();
   renderServices();
   renderPortfolio();
-  document.getElementById('visibilityRow').style.display = isOwner ? 'flex' : 'none';
+}
+
+function populateEditForm() {
+  document.getElementById('editPublic').checked = localProfilePublic;
+  document.getElementById('editDisplayName').value = localDisplayName;
+  document.getElementById('editBio').value = localBio;
+  document.getElementById('bioCount').textContent = localBio.length;
+  document.getElementById('editSpec').value = localSpec;
+  document.getElementById('editDistrict').value = localDistrict;
+  document.getElementById('slLinkedin').value = localSocial.linkedin || '';
+  document.getElementById('slInstagram').value = localSocial.instagram || '';
+  document.getElementById('slFacebook').value = localSocial.facebook || '';
+  document.getElementById('slTiktok').value = localSocial.tiktok || '';
+  document.getElementById('slYoutube').value = localSocial.youtube || '';
+  document.getElementById('slWebsite').value = localSocial.website || '';
+  document.getElementById('editInvoicing').checked = localInvoicing;
+  document.getElementById('editAvailable').checked = localAvailToday;
+  document.getElementById('editAvailFrom').value = localAvailFrom;
+  document.getElementById('editAvailTo').value = localAvailTo;
+  document.getElementById('availHoursRow').style.display = localAvailToday ? 'flex' : 'none';
 }
 
 function markDirty() { dirty = true; showSaveBar(); }
@@ -641,35 +804,66 @@ function toggleSectionVis(sec) {
   markDirty();
 }
 
-function onVisibilityChange() {
-  localProfilePublic = document.getElementById('togglePublic').checked;
-  markDirty();
-}
+
 
 async function saveAll() {
   if (!isOwner) return;
+  // Read form fields into local vars
+  localDisplayName = document.getElementById('editDisplayName')?.value?.trim() || '';
+  localBio = document.getElementById('editBio')?.value?.trim() || '';
+  localSpec = document.getElementById('editSpec')?.value || '';
+  localDistrict = document.getElementById('editDistrict')?.value?.trim() || '';
+  localSocial = {
+    linkedin:  document.getElementById('slLinkedin')?.value?.trim() || '',
+    instagram: document.getElementById('slInstagram')?.value?.trim() || '',
+    facebook:  document.getElementById('slFacebook')?.value?.trim() || '',
+    tiktok:    document.getElementById('slTiktok')?.value?.trim() || '',
+    youtube:   document.getElementById('slYoutube')?.value?.trim() || '',
+    website:   document.getElementById('slWebsite')?.value?.trim() || '',
+  };
+  localAvailToday = document.getElementById('editAvailable')?.checked || false;
+  localAvailFrom = document.getElementById('editAvailFrom')?.value || '';
+  localAvailTo = document.getElementById('editAvailTo')?.value || '';
   const initData = TG?.initData || '';
   try {
-    await fetch('/api/fox-profile/save', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-telegram-init-data':initData},
+    const r = await fetch('/api/fox/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-telegram-init-data': initData },
       body: JSON.stringify({
-        bio: localBio, specialization: localSpec,
-        social_links: localSocial, portfolio_items: localPortfolio,
-        experience_items: localExperience, skills: localSkills,
-        services: localServices, featured_project_id: localFeaturedId,
-        invoicing: localInvoicing
+        display_name: localDisplayName,
+        bio: localBio,
+        specialization: localSpec,
+        district: localDistrict,
+        social_links: localSocial,
+        portfolio_items: localPortfolio,
+        experience_items: localExperience,
+        skills: localSkills,
+        services: localServices,
+        featured_project_id: localFeaturedId,
+        invoicing: localInvoicing,
+        profile_public: localProfilePublic,
+        sections_visibility: localSectionsVis,
+        available_today: localAvailToday,
+        available_from: localAvailFrom || null,
+        available_to: localAvailTo || null,
       })
     });
-    await fetch('/api/fox-profile/visibility', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-telegram-init-data':initData},
-      body: JSON.stringify({ profile_public: localProfilePublic, sections_visibility: localSectionsVis })
-    });
+    if (!r.ok) throw new Error('save failed');
     dirty = false;
     hideSaveBar();
     showToast('✅ Zapisano!');
+    await refreshProfile();
   } catch (e) { showToast('❌ Błąd zapisu'); }
+}
+
+async function refreshProfile() {
+  try {
+    const r = await fetch(`/api/fox-public/${encodeURIComponent(NICKNAME)}`);
+    if (!r.ok) return;
+    profileData = await r.json();
+    initLocals();
+    render();
+  } catch (e) {}
 }
 
 function discardChanges() {

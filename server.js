@@ -820,6 +820,9 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "featured_project_id", "INTEGER");
   await ensureColumn("fp1_foxes", "invoicing",           "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "display_name",        "VARCHAR(100)");
+  await ensureColumn("fp1_foxes", "available_today",     "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes", "available_from",      "TIME");
+  await ensureColumn("fp1_foxes", "available_to",        "TIME");
   // Drop NOT NULL constraints that may exist from old schema
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN code DROP NOT NULL`).catch(()=>{});
   await pool.query(`ALTER TABLE fp1_invite_uses ALTER COLUMN used_by_tg DROP NOT NULL`).catch(()=>{});
@@ -8730,6 +8733,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
               f.experience_items, f.skills, f.services, f.profile_public,
               f.sections_visibility, f.featured_project_id, f.invoicing,
               f.founder_number, f.created_at,
+              f.available_today, f.available_from, f.available_to,
               COALESCE(COUNT(c.id) FILTER (WHERE c.confirmed_at IS NOT NULL), 0) AS checkins_completed,
               COALESCE(COUNT(c.id) FILTER (WHERE c.confirmed_at IS NULL AND c.expires_at < NOW()), 0) AS checkins_failed,
               COALESCE(COUNT(c.id) FILTER (WHERE c.confirmed_at IS NULL AND c.expires_at >= NOW()), 0) AS checkins_pending
@@ -8774,6 +8778,53 @@ app.post("/api/fox-public/:nickname/check-owner", requireWebAppAuth, async (req,
     res.json({ isOwner: r.rowCount > 0 });
   } catch (e) {
     res.json({ isOwner: false });
+  }
+});
+
+// PUT /api/fox/profile — consolidated save (all profile fields at once)
+app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
+  try {
+    const tgUserId = req.telegramUser.id;
+    const {
+      display_name, bio, specialization, district,
+      social_links, portfolio_items, experience_items,
+      skills, services, featured_project_id, invoicing,
+      profile_public, sections_visibility,
+      available_today, available_from, available_to
+    } = req.body;
+    await pool.query(
+      `UPDATE fp1_foxes SET
+        display_name=$1, bio=$2, specialization=$3, district=$4,
+        social_links=$5::jsonb, portfolio_items=$6::jsonb,
+        experience_items=$7::jsonb, skills=$8::jsonb, services=$9::jsonb,
+        featured_project_id=$10, invoicing=$11,
+        profile_public=$12, sections_visibility=$13::jsonb,
+        available_today=$14, available_from=$15::time, available_to=$16::time
+       WHERE user_id=$17`,
+      [
+        display_name || null,
+        bio || null,
+        specialization || null,
+        district || null,
+        JSON.stringify(social_links || {}),
+        JSON.stringify(portfolio_items || []),
+        JSON.stringify(experience_items || []),
+        JSON.stringify(skills || []),
+        JSON.stringify(services || []),
+        featured_project_id || null,
+        !!invoicing,
+        profile_public !== false,
+        JSON.stringify(sections_visibility || {}),
+        !!available_today,
+        available_from || null,
+        available_to || null,
+        tgUserId
+      ]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error("FOX_PROFILE_PUT_ERR", e);
+    res.status(500).json({ error: "server_error" });
   }
 });
 
