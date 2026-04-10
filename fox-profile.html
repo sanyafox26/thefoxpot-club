@@ -1684,7 +1684,15 @@ async function generatePdf() {
   </div>`;
 
   const element = document.createElement('div');
-  element.style.cssText = 'position:absolute;top:0;left:0;z-index:-1;width:794px;background:white;';
+  element.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 794px;
+    background: white;
+    z-index: 99999;
+    opacity: 0.01;
+  `;
   element.innerHTML = html;
   document.body.appendChild(element);
   console.log('element innerHTML length:', element.innerHTML.length);
@@ -1698,7 +1706,9 @@ async function generatePdf() {
       scale: 2,
       backgroundColor: '#ffffff',
       useCORS: true,
-      logging: false
+      logging: true,
+      allowTaint: false,
+      foreignObjectRendering: false
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
