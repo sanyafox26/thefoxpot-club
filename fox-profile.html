@@ -1516,11 +1516,11 @@ function generatePdf() {
   // Contact lines (each on separate row)
   const locParts = [district, address, city].filter(Boolean);
   let contactLines = '';
-  if (locParts.length) contactLines += '<span style="display:block">' + locParts.join(' · ') + '</span>';
-  if (email) contactLines += '<span style="display:block">📧 <span style="color:#555;text-decoration:none">' + email + '</span></span>';
-  contactLines += '<span style="display:block">🌐 ' + profileUrl + '</span>';
-  if (hourly)       contactLines += '<span style="display:block">💰 ' + hourly + '</span>';
-  if (langs.length) contactLines += '<span style="display:block">🗣 ' + langs.join(' · ') + '</span>';
+  if (locParts.length) contactLines += '<div class="cv-contact-line">📍 ' + locParts.join(' · ') + '</div>';
+  if (email) contactLines += '<div class="cv-contact-line">📧 <span style="color:#555;text-decoration:none">' + email + '</span></div>';
+  contactLines += '<div class="cv-contact-line">🌐 ' + profileUrl + '</div>';
+  if (hourly)       contactLines += '<div class="cv-contact-line">💰 ' + hourly + '</div>';
+  if (langs.length) contactLines += '<div class="cv-contact-line">🗣 ' + langs.join(' · ') + '</div>';
 
   // Sections
   let sections = '';
@@ -1584,7 +1584,8 @@ function generatePdf() {
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#222; background:white; padding:15mm; }
   h1 { font-size:24px; font-weight:700; margin-bottom:4px; }
-  .cv-contacts { line-height:1.8; font-size:10px; color:#555; margin-bottom:6px; }
+  .cv-contacts { margin-bottom:6px; }
+  .cv-contact-line { display:block; font-size:10px; color:#555; line-height:1.9; text-decoration:none; }
   .bio { font-size:11px; font-style:italic; margin:6px 0; color:#333; }
   .specs { font-size:10px; color:#F97E00; margin-bottom:8px; }
   .divider { border:none; border-top:2px solid #F97E00; margin:10px 0; }
