@@ -718,6 +718,7 @@ async function init() {
     if (r.status === 403) { showPrivate(); return; }
     if (!r.ok) { showNotFound(); return; }
     profileData = await r.json();
+    window.profileData = profileData;
     console.log('API response:', profileData);
     window.DEBUG_PROFILE = profileData;
     initLocals();
