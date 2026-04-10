@@ -1495,66 +1495,59 @@ function removeSpec(idx) {
 function renderSpecChips() { renderSpecTags(); }
 
 function buildCVhtml() {
-  // Зчитуємо з DOM
-  const name    = document.querySelector('[data-cv="name"]')?.textContent || '';
-  const address = document.querySelector('[data-cv="address"]')?.textContent || '';
-  const email   = document.querySelector('[data-cv="email"]')?.textContent || '';
-  const bio     = document.querySelector('[data-cv="bio"]')?.textContent || '';
+  if (!profileData) { console.error('No profileData'); return '<p>Brak danych</p>'; }
 
-  // Спеціалізації
-  const specs = [...document.querySelectorAll('.spec-tag, .specialization-tag, .pub-spec-tag')]
-    .map(el => el.textContent.replace('×','').trim())
-    .filter(Boolean).join(' · ');
+  const name    = escHtml(localDisplayName || NICKNAME);
+  const address = escHtml([localDistrict, localAddress, profileData.city].filter(Boolean).join(' · '));
+  const email   = escHtml(localEmail || '');
+  const bio     = escHtml(profileData.bio || '');
+  const specs   = localSpecializations.map(escHtml).join(' · ');
+  const show    = s => localSectionsVis[s] !== false;
+  const nickname = NICKNAME;
 
   // Досвід
   let expHtml = '';
-  document.querySelectorAll('.experience-item, [data-section="experience"] .cv-item').forEach(item => {
-    const title   = item.querySelector('.exp-title, .item-title')?.textContent || '';
-    const company = item.querySelector('.exp-company, .item-company')?.textContent || '';
-    const period  = item.querySelector('.exp-period, .item-period')?.textContent || '';
-    const desc    = item.querySelector('.exp-desc, .item-desc')?.textContent || '';
-    expHtml += `<div class="cv-row"><span class="cv-title">${title}</span><span class="cv-date">${period}</span></div>
-    <div class="cv-company">${company}</div>
-    ${desc ? `<div class="cv-desc">${desc}</div>` : ''}<br>`;
-  });
+  if (show('experience')) {
+    localExperience.forEach(e => {
+      expHtml += `<div class="cv-row"><span class="cv-title">${escHtml(e.title||'')}</span><span class="cv-date">${escHtml(e.period||'')}</span></div>`
+        + (e.company ? `<div class="cv-company">${escHtml(e.company)}</div>` : '')
+        + (e.desc    ? `<div class="cv-desc">${escHtml(e.desc)}</div>` : '') + '<br>';
+    });
+  }
 
   // Освіта
   let eduHtml = '';
-  document.querySelectorAll('.education-item, [data-section="education"] .cv-item').forEach(item => {
-    const school = item.querySelector('.edu-school, .item-title')?.textContent || '';
-    const field  = item.querySelector('.edu-field, .item-field')?.textContent || '';
-    const degree = item.querySelector('.edu-degree, .item-degree')?.textContent || '';
-    const years  = item.querySelector('.edu-years, .item-period')?.textContent || '';
-    eduHtml += `<div class="cv-row"><span class="cv-company">${school}</span><span class="cv-date">${years}</span></div>
-    <div class="cv-desc">${field} · ${degree}</div><br>`;
-  });
+  if (show('education')) {
+    localEducation.forEach(e => {
+      const sub = [e.field, e.degree].filter(Boolean).map(escHtml).join(' · ');
+      eduHtml += `<div class="cv-row"><span class="cv-company">${escHtml(e.school||'')}</span><span class="cv-date">${escHtml(e.years||'')}</span></div>`
+        + (sub ? `<div class="cv-desc">${sub}</div>` : '') + '<br>';
+    });
+  }
 
   // Навички
-  const skills = [...document.querySelectorAll('.skill-tag, [data-section="skills"] .tag')]
-    .map(el => el.textContent.replace('×','').trim())
-    .filter(Boolean).join(' · ');
+  const skills = show('skills') ? localSkills.map(escHtml).join(' · ') : '';
 
   // Послуги
   let servHtml = '';
-  document.querySelectorAll('.service-item, [data-section="services"] .cv-item').forEach(item => {
-    const title = item.querySelector('.serv-title, .item-title')?.textContent || '';
-    const price = item.querySelector('.serv-price, .item-price')?.textContent || '';
-    const desc  = item.querySelector('.serv-desc, .item-desc')?.textContent || '';
-    servHtml += `<div class="cv-row"><span class="cv-title">${title}</span><span class="cv-date" style="color:#F97E00">${price}</span></div>
-    <div class="cv-desc">${desc}</div><br>`;
-  });
+  if (show('services')) {
+    localServices.forEach(s => {
+      servHtml += `<div class="cv-row"><span class="cv-title">${escHtml(s.name||'')}</span><span class="cv-date" style="color:#F97E00">${escHtml(s.price||'')}</span></div>`
+        + (s.desc ? `<div class="cv-desc">${escHtml(s.desc)}</div>` : '') + '<br>';
+    });
+  }
 
   // Портфоліо
   let portHtml = '';
-  document.querySelectorAll('.portfolio-item, [data-section="portfolio"] .cv-item').forEach(item => {
-    const title  = item.querySelector('.port-title, .item-title')?.textContent || '';
-    const role   = item.querySelector('.port-role, .item-role')?.textContent || '';
-    const result = item.querySelector('.port-result, .item-result')?.textContent || '';
-    portHtml += `<div class="cv-title">${title}</div>
-    <div class="cv-desc">${role}${result ? ' · ' + result : ''}</div><br>`;
-  });
+  if (show('portfolio')) {
+    localPortfolio.forEach(p => {
+      const sub = [p.role, p.result].filter(Boolean).map(escHtml).join(' · ');
+      portHtml += `<div class="cv-title">${escHtml(p.title||'')}</div>`
+        + (sub ? `<div class="cv-desc">${sub}</div>` : '') + '<br>';
+    });
+  }
 
-  const nickname = window.location.pathname.split('/').pop();
+  console.log('buildCVhtml — name:', name, '| exp:', localExperience.length, '| skills:', localSkills.length);
 
   return `
   <div style="font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;padding:15mm;width:180mm;">
