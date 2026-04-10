@@ -1048,14 +1048,22 @@ function render() {
     }
   }
   const birthdateEl = document.getElementById('foxBirthdate');
-  if (birthdateEl) {
-    if (d.birthdate) { birthdateEl.textContent = d.birthdate; birthdateEl.style.display = ''; }
-    else birthdateEl.style.display = 'none';
+  const birthdateWrap = document.getElementById('heroBirthdateWrap');
+  if (d.birthdate && d.birthdate !== 'undefined') {
+    if (birthdateEl) { birthdateEl.textContent = d.birthdate; birthdateEl.style.display = ''; }
+    if (birthdateWrap) birthdateWrap.style.display = '';
+  } else {
+    if (birthdateEl) birthdateEl.style.display = 'none';
+    if (birthdateWrap) birthdateWrap.style.display = 'none';
   }
   const phoneEl = document.getElementById('foxPhone');
-  if (phoneEl) {
-    if (d.phone) { phoneEl.innerHTML = '<a href="tel:'+escHtml(d.phone)+'">📞 '+escHtml(d.phone)+'</a>'; phoneEl.style.display = ''; }
-    else phoneEl.style.display = 'none';
+  const phoneWrap = document.getElementById('heroPhoneWrap');
+  if (d.phone && d.phone !== 'undefined') {
+    if (phoneEl) { phoneEl.innerHTML = '<a href="tel:'+escHtml(d.phone)+'">📞 '+escHtml(d.phone)+'</a>'; phoneEl.style.display = ''; }
+    if (phoneWrap) phoneWrap.style.display = '';
+  } else {
+    if (phoneEl) phoneEl.style.display = 'none';
+    if (phoneWrap) phoneWrap.style.display = 'none';
   }
   document.getElementById('foxRating').textContent = d.rating || 0;
   if (d.bio) { document.getElementById('foxBio').textContent = d.bio; document.getElementById('foxBio').style.display = ''; }
@@ -1280,12 +1288,22 @@ function applySectionsVisibility() {
   ];
   const heroLabels = {
     photo: 'Zdjęcie', address: 'Adres', email: 'Email', rating: 'Rating', availability: 'Dostępność',
-    invoicing_badge: 'Faktury', bio: 'Bio', specializations: 'Specjalizacje', social_links: 'Linki'
+    invoicing_badge: 'Faktury', bio: 'Bio', specializations: 'Specjalizacje', social_links: 'Linki',
+    birthdate: 'Urodziny', phone: 'Telefon'
   };
   heroItems.forEach(({key, wrapId, btnId}) => {
     const wrap = document.getElementById(wrapId);
     const btn  = document.getElementById(btnId);
     const hidden = localSectionsVis[key] === false;
+    // birthdate/phone: hide wrap entirely when field is empty
+    if (key === 'birthdate' && (!localBirthdate || localBirthdate === 'undefined')) {
+      if (wrap) wrap.style.display = 'none';
+      return;
+    }
+    if (key === 'phone' && (!localPhone || localPhone === 'undefined')) {
+      if (wrap) wrap.style.display = 'none';
+      return;
+    }
     if (wrap) {
       if (isOwner) {
         wrap.style.display = '';       // clear any display:none set before owner was confirmed
