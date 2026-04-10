@@ -1666,9 +1666,6 @@ async function generatePdf() {
   addLine(localDisplayName || username, 22, '#222222', true);
   y += 2;
 
-  console.log('localDistrict raw:', localDistrict);
-  console.log('localAddress raw:', localAddress);
-  console.log('localBio raw:', localBio);
   const addr = [localDistrict, localAddress, 'Warsaw'].filter(Boolean).join(' · ');
   if (addr) addLine('Adres: ' + addr, 9, '#555555');
   addLine('thefoxpot.club/fox/' + username, 9, '#F97E00');
@@ -1775,7 +1772,7 @@ async function generatePdf() {
   doc.setFont('helvetica', 'normal');
   doc.text('Profil: thefoxpot.club/fox/' + username, 105, y, { align: 'center' });
   y += 4;
-  doc.text('Wyrażam zgodę na przetwarzanie moich danych osobowych dla celów rekrutacji (RODO UE 2016/679).', 105, y, { align: 'center' });
+  doc.text('Zgoda na przetwarzanie danych osobowych dla celow rekrutacji (RODO UE 2016/679).', 105, y, { align: 'center' });
 
   doc.save('CV_' + (localDisplayName||username).replace(/\s+/g,'_') + '.pdf');
 }
