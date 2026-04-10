@@ -1573,10 +1573,21 @@ function buildCVhtml() {
   </div>`;
 }
 
-function generatePdf() {
+async function generatePdf() {
+  if (!profileData) {
+    console.log('profileData is null, fetching from API...');
+    const resp = await fetch('/api/fox-public/' + encodeURIComponent(NICKNAME));
+    if (!resp.ok) { alert('Nie udało się załadować danych profilu.'); return; }
+    profileData = await resp.json();
+    initLocals();
+  }
+  console.log('profileData:', profileData);
+  console.log('localDisplayName:', localDisplayName, '| localExperience:', localExperience.length);
+
   const w = window.open('', '_blank');
   if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
   const html = buildCVhtml();
+  console.log('CV HTML length:', html.length);
   w.document.write(html);
   w.document.close();
   setTimeout(() => { w.print(); }, 500);
