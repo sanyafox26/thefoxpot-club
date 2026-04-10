@@ -1624,7 +1624,27 @@ async function generatePdf() {
 
   function safeText(str) {
     if (!str) return '';
-    return decodeHtml(str)
+    // спочатку decode HTML entities
+    str = decodeHtml(str);
+    // прибрати emoji
+    str = str.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '');
+    // замінити спеціальні символи
+    str = str
+      .replace(/—/g, '-')
+      .replace(/–/g, '-')
+      .replace(/…/g, '...')
+      .replace(/«/g, '"')
+      .replace(/»/g, '"')
+      .replace(/„/g, '"')
+      .replace(/\u201C/g, '"')
+      .replace(/\u201D/g, '"')
+      .replace(/\u2018/g, "'")
+      .replace(/\u2019/g, "'")
+      .replace(/×/g, 'x')
+      .replace(/°/g, ' stopni')
+      .replace(/[^\x00-\x7F\u00C0-\u024F]/g, '');
+    // польські символи
+    return str
       .replace(/ą/g,'a').replace(/Ą/g,'A')
       .replace(/ć/g,'c').replace(/Ć/g,'C')
       .replace(/ę/g,'e').replace(/Ę/g,'E')
@@ -1633,9 +1653,7 @@ async function generatePdf() {
       .replace(/ó/g,'o').replace(/Ó/g,'O')
       .replace(/ś/g,'s').replace(/Ś/g,'S')
       .replace(/ź/g,'z').replace(/Ź/g,'Z')
-      .replace(/ż/g,'z').replace(/Ż/g,'Z')
-      .replace(/і/g,'i').replace(/є/g,'ie')
-      .replace(/ї/g,'i').replace(/й/g,'j');
+      .replace(/ż/g,'z').replace(/Ż/g,'Z');
   }
 
   function removeEmoji(str) {
