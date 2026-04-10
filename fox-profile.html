@@ -1670,9 +1670,9 @@ async function generatePdf() {
   console.log('localAddress raw:', localAddress);
   console.log('localBio raw:', localBio);
   const addr = [localDistrict, localAddress, 'Warsaw'].filter(Boolean).join(' · ');
-  if (addr) addLine('📍 ' + addr, 9, '#555555');
-  addLine('Fox: thefoxpot.club/fox/' + username, 9, '#F97E00');
-  if (localEmail) addLine('📧 ' + localEmail, 9, '#555555');
+  if (addr) addLine('Adres: ' + addr, 9, '#555555');
+  addLine('thefoxpot.club/fox/' + username, 9, '#F97E00');
+  if (localEmail) addLine('Email: ' + localEmail, 9, '#555555');
   y += 2;
 
   if (localBio) addLine(localBio, 9, '#333333', false, 0);
