@@ -1684,9 +1684,11 @@ async function generatePdf() {
   </div>`;
 
   const element = document.createElement('div');
-  element.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:210mm;background:white;';
+  element.style.cssText = 'position:absolute;top:0;left:0;z-index:-1;width:794px;background:white;';
   element.innerHTML = html;
   document.body.appendChild(element);
+  console.log('element innerHTML length:', element.innerHTML.length);
+  console.log('element offsetHeight:', element.offsetHeight);
 
   const opt = {
     margin: [15, 15, 15, 15],
@@ -1704,7 +1706,7 @@ async function generatePdf() {
   try {
     await html2pdf().set(opt).from(element).save();
   } catch(e) {
-    console.error('PDF error:', e);
+    console.error('PDF generation error:', e);
   } finally {
     document.body.removeChild(element);
   }
