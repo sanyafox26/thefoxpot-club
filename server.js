@@ -848,6 +848,7 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "media",               "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "birthdate",           "VARCHAR(20)");
   await ensureColumn("fp1_foxes", "phone",               "VARCHAR(30)");
+  await ensureColumn("fp1_foxes", "languages",           "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "available_today",     "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "available_from",      "TIME");
   await ensureColumn("fp1_foxes", "available_to",        "TIME");
@@ -8812,7 +8813,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
               f.founder_number, f.created_at,
               f.available_today, f.available_from, f.available_to,
               f.courses, f.achievements, f.hobbies, f.volunteering, f.media,
-              f.birthdate, f.phone,
+              f.birthdate, f.phone, f.languages,
               0 AS checkins_completed,
               0 AS checkins_failed,
               0 AS checkins_pending
@@ -8882,7 +8883,7 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
       available_today, available_from, available_to,
       contact_email, contact_address,
       courses, achievements, hobbies, volunteering, media,
-      birthdate, phone
+      birthdate, phone, languages
     } = req.body;
     await pool.query(
       `UPDATE fp1_foxes SET
@@ -8898,7 +8899,8 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         contact_address=$21,
         courses=$22::jsonb, achievements=$23::jsonb, hobbies=$24::jsonb,
         volunteering=$25::jsonb, media=$26::jsonb,
-        birthdate=$27, phone=$28
+        birthdate=$27, phone=$28,
+        languages=$29::jsonb
        WHERE user_id=$18`,
       [
         display_name || null,
@@ -8928,7 +8930,8 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         JSON.stringify(Array.isArray(volunteering) ? volunteering : []),
         JSON.stringify(Array.isArray(media) ? media : []),
         birthdate || null,
-        phone || null
+        phone || null,
+        JSON.stringify(Array.isArray(languages) ? languages : [])
       ]
     );
     res.json({ success: true });
