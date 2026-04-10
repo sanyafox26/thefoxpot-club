@@ -1565,6 +1565,8 @@ function buildCVhtml(photoBase64) {
 
   console.log('buildCVhtml — name:', name, '| exp:', localExperience.length, '| skills:', localSkills.length);
 
+  const profileLink = `<div style="font-size:10px;line-height:1.9"><a href="https://thefoxpot.club/fox/${nickname}" style="color:#F97E00;text-decoration:none">🦊 thefoxpot.club/fox/${nickname}</a></div>`;
+
   const headerHtml = photoBase64
     ? `<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px">
         <img src="${photoBase64}" style="width:70px;height:70px;border-radius:50%;object-fit:cover;flex-shrink:0"/>
@@ -1572,6 +1574,7 @@ function buildCVhtml(photoBase64) {
           <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">${name}</h1>
           <div style="font-size:10px;color:#555;line-height:1.9">
             ${address ? `<div>📍 ${address}</div>` : ''}
+            ${profileLink}
             ${email   ? `<div>📧 ${email}</div>`   : ''}
           </div>
         </div>
@@ -1579,6 +1582,7 @@ function buildCVhtml(photoBase64) {
     : `<h1 style="font-size:24px;font-weight:700;margin:0 0 4px">${name}</h1>
        <div style="font-size:10px;color:#555;line-height:1.9;margin-bottom:8px">
          ${address ? `<div>📍 ${address}</div>` : ''}
+         ${profileLink}
          ${email   ? `<div>📧 ${email}</div>`   : ''}
        </div>`;
 
@@ -1586,7 +1590,6 @@ function buildCVhtml(photoBase64) {
   <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;padding:15mm}@media print{@page{margin:15mm;size:A4 portrait}body{padding:0}}</style>
   </head><body>
   ${headerHtml}
-  <div style="font-size:10px;color:#F97E00;text-decoration:none;margin:4px 0 6px">🦊 Pełny profil z portfolio i zdjęciem: <a href="https://thefoxpot.club/fox/${nickname}" style="color:#F97E00;text-decoration:none">https://thefoxpot.club/fox/${nickname}</a></div>
   ${bio   ? `<div style="font-style:italic;font-size:11px;margin:6px 0;color:#333">${bio}</div>` : ''}
   ${specs ? `<div style="font-size:10px;color:#F97E00;margin-bottom:8px">${specs}</div>` : ''}
   <div style="border-top:2px solid #F97E00;margin:10px 0"></div>
