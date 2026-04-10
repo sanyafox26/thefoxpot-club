@@ -388,8 +388,16 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <input id="editEmail" type="email" maxlength="200" placeholder="twoj@email.com"/>
       </div>
       <div class="ep-field">
-        <label>Adres / Miasto</label>
-        <input id="editAddress" type="text" maxlength="200" placeholder="np. Praga-Północ, Warszawa"/>
+        <label>Adres (ulica i numer)</label>
+        <input id="editAddress" type="text" maxlength="200" placeholder="np. ul. Marszałkowska 123"/>
+      </div>
+      <div class="ep-field">
+        <label>Kod pocztowy</label>
+        <input id="editPostalCode" type="text" maxlength="10" placeholder="np. 03-420"/>
+      </div>
+      <div class="ep-field">
+        <label>Miasto</label>
+        <input id="editCity" type="text" maxlength="100" placeholder="np. Warszawa"/>
       </div>
       <div class="ep-field">
         <label>Data urodzenia</label>
@@ -862,6 +870,8 @@ let localVolunteering = [];
 let localMedia = [];
 let localBirthdate = '';
 let localPhone = '';
+let localPostalCode = '';
+let localCity = '';
 let localLanguages = [];
 let localFeaturedId = null;
 let localInvoicing = false;
@@ -929,6 +939,8 @@ function initLocals() {
   localMedia = JSON.parse(JSON.stringify(d.media || []));
   localBirthdate = d.birthdate || '';
   localPhone = d.phone || '';
+  localPostalCode = d.postal_code || '';
+  localCity = d.city || '';
   localLanguages = JSON.parse(JSON.stringify(d.languages || []));
   localFeaturedId = d.featured_project_id || null;
   localInvoicing = !!d.invoicing;
@@ -1385,6 +1397,8 @@ function populateEditForm() {
   document.getElementById('editDistrict').value = localDistrict;
   document.getElementById('editEmail').value = localEmail;
   document.getElementById('editAddress').value = localAddress;
+  document.getElementById('editPostalCode').value = localPostalCode;
+  document.getElementById('editCity').value = localCity;
   document.getElementById('editBirthdate').value = localBirthdate;
   document.getElementById('editPhone').value = localPhone;
   renderLanguageList();
@@ -1429,6 +1443,8 @@ async function saveAll() {
   localDistrict = document.getElementById('editDistrict')?.value?.trim() || '';
   localEmail = document.getElementById('editEmail')?.value?.trim() || '';
   localAddress = document.getElementById('editAddress')?.value?.trim() || '';
+  localPostalCode = document.getElementById('editPostalCode')?.value?.trim() || '';
+  localCity = document.getElementById('editCity')?.value?.trim() || '';
   localBirthdate = document.getElementById('editBirthdate')?.value?.trim() || '';
   localPhone = document.getElementById('editPhone')?.value?.trim() || '';
   localSocial = {
@@ -1479,6 +1495,8 @@ async function saveAll() {
         media: localMedia,
         birthdate: localBirthdate || null,
         phone: localPhone || null,
+        postal_code: localPostalCode || null,
+        city: localCity || null,
         languages: localLanguages,
       })
     });
@@ -2150,7 +2168,6 @@ async function generatePdf() {
   // ── HEADER (two-column) ──
   const name = safeText(removeEmoji(localDisplayName || username)).toUpperCase();
   const specs = (localSpecializations || []).slice(0, 3).map(s => safeText(s)).join(', ') || safeText(localSpec || '');
-  const addr = show('address') ? [localDistrict, localAddress].filter(Boolean).map(s => safeText(s)).join(', ') : '';
   const email = show('email') ? safeText(localEmail || '') : '';
   const birthdate = show('birthdate') ? safeText(localBirthdate || '') : '';
   const phone = show('phone') ? safeText(localPhone || '') : '';
@@ -2206,7 +2223,9 @@ async function generatePdf() {
   if (birthdate) contactItems.push(['Data ur.:', birthdate]);
   if (phone)     contactItems.push(['Tel:',      phone]);
   if (email)     contactItems.push(['Email:',    email]);
-  if (addr)      contactItems.push(['Adres:',    addr]);
+  if (show('address') && localAddress) contactItems.push(['Adres:', safeText(localAddress)]);
+  const cityLine = [localPostalCode, localCity].filter(Boolean).join(' ');
+  if (show('address') && cityLine) contactItems.push(['', safeText(cityLine)]);
   contactItems.push(['Profil:', 'thefoxpot.club/fox/' + username]);
 
   contactItems.forEach(([label, val]) => {
