@@ -841,6 +841,11 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "invoicing",           "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "display_name",        "VARCHAR(100)");
   await ensureColumn("fp1_foxes", "specializations",     "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "courses",             "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "achievements",        "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "hobbies",             "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "volunteering",        "JSONB NOT NULL DEFAULT '[]'");
+  await ensureColumn("fp1_foxes", "media",               "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "available_today",     "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "available_from",      "TIME");
   await ensureColumn("fp1_foxes", "available_to",        "TIME");
@@ -8804,6 +8809,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
               f.sections_visibility, f.featured_project_id, f.invoicing,
               f.founder_number, f.created_at,
               f.available_today, f.available_from, f.available_to,
+              f.courses, f.achievements, f.hobbies, f.volunteering, f.media,
               0 AS checkins_completed,
               0 AS checkins_failed,
               0 AS checkins_pending
@@ -8871,7 +8877,8 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
       skills, services, featured_project_id, invoicing,
       profile_public, sections_visibility,
       available_today, available_from, available_to,
-      contact_email, contact_address
+      contact_email, contact_address,
+      courses, achievements, hobbies, volunteering, media
     } = req.body;
     await pool.query(
       `UPDATE fp1_foxes SET
@@ -8884,7 +8891,9 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         specializations=$17::jsonb,
         education=$19::jsonb,
         contact_email=$20,
-        contact_address=$21
+        contact_address=$21,
+        courses=$22::jsonb, achievements=$23::jsonb, hobbies=$24::jsonb,
+        volunteering=$25::jsonb, media=$26::jsonb
        WHERE user_id=$18`,
       [
         display_name || null,
@@ -8907,7 +8916,12 @@ app.put("/api/fox/profile", requireWebAppAuth, async (req, res) => {
         tgUserId,
         JSON.stringify(Array.isArray(education) ? education : []),
         contact_email || null,
-        contact_address || null
+        contact_address || null,
+        JSON.stringify(Array.isArray(courses) ? courses : []),
+        JSON.stringify(Array.isArray(achievements) ? achievements : []),
+        JSON.stringify(Array.isArray(hobbies) ? hobbies : []),
+        JSON.stringify(Array.isArray(volunteering) ? volunteering : []),
+        JSON.stringify(Array.isArray(media) ? media : [])
       ]
     );
     res.json({ success: true });

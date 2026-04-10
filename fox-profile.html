@@ -442,6 +442,17 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
       </div>
 
+      <!-- Hobbies input -->
+      <div class="ep-field">
+        <label>Hobby i zainteresowania</label>
+        <div class="skills-wrap" id="hobbiesWrapEdit" style="margin-bottom:6px"></div>
+        <div id="hobbyInputWrap" style="display:none;gap:6px;margin-top:4px">
+          <input type="text" id="hobbyInputText" placeholder="Np. Fotografia, Wspinaczka, Gotowanie..." style="flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddHobby()}">
+          <button type="button" style="background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer" onclick="confirmAddHobby()">+ Dodaj</button>
+        </div>
+        <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleHobbyInput()">+ Dodaj hobby</button>
+      </div>
+
       <button class="btn-save-profile" onclick="saveAll()">💾 Zapisz zmiany</button>
     </div>
 
@@ -555,6 +566,55 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <div id="featuredWrap"></div>
         <div class="portfolio-grid" id="portfolioGrid"></div>
         <button class="add-btn" onclick="openPortfolioModal(null)">+ Dodaj projekt</button>
+      </div>
+
+      <!-- Courses -->
+      <div class="section" id="secCourses" data-sec="courses">
+        <div class="section-head">
+          <div class="section-title">Kursy i szkolenia</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('courses')" id="visCourses">👁</button>
+        </div>
+        <div id="coursesList"></div>
+        <button class="add-btn" onclick="openCourseModal(null)">+ Dodaj kurs</button>
+      </div>
+
+      <!-- Achievements -->
+      <div class="section" id="secAchievements" data-sec="achievements">
+        <div class="section-head">
+          <div class="section-title">Osiągnięcia i nagrody</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('achievements')" id="visAchievements">👁</button>
+        </div>
+        <div id="achievementsList"></div>
+        <button class="add-btn" onclick="openAchieveModal(null)">+ Dodaj osiągnięcie</button>
+      </div>
+
+      <!-- Hobbies -->
+      <div class="section" id="secHobbies" data-sec="hobbies">
+        <div class="section-head">
+          <div class="section-title">Hobby i zainteresowania</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('hobbies')" id="visHobbies">👁</button>
+        </div>
+        <div class="skills-wrap" id="hobbiesWrap"></div>
+      </div>
+
+      <!-- Volunteering -->
+      <div class="section" id="secVolunteering" data-sec="volunteering">
+        <div class="section-head">
+          <div class="section-title">Wolontariat</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('volunteering')" id="visVolunteering">👁</button>
+        </div>
+        <div id="volunteeringList"></div>
+        <button class="add-btn" onclick="openVolunteerModal(null)">+ Dodaj wolontariat</button>
+      </div>
+
+      <!-- Media -->
+      <div class="section" id="secMedia" data-sec="media">
+        <div class="section-head">
+          <div class="section-title">Publikacje i media</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('media')" id="visMedia">👁</button>
+        </div>
+        <div id="mediaList"></div>
+        <button class="add-btn" onclick="openMediaModal(null)">+ Dodaj publikację</button>
       </div>
 
       <!-- Reviews -->
@@ -672,6 +732,69 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
   </div>
 </div>
 
+<!-- Modal: Course -->
+<div class="modal-overlay" id="modalCourse">
+  <div class="modal-sheet">
+    <div class="modal-title">Kurs / szkolenie</div>
+    <div class="field-group"><label>Nazwa kursu *</label><input id="courseName" placeholder="np. Google Analytics Certification"/></div>
+    <div class="field-group"><label>Instytucja / organizator</label><input id="courseInstitution" placeholder="np. Coursera, Google"/></div>
+    <div class="field-group"><label>Rok</label><input id="courseYear" placeholder="np. 2023"/></div>
+    <div class="field-group"><label>Link (opcjonalnie)</label><input id="courseUrl" type="url" placeholder="https://..."/></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalCourse')">Anuluj</button>
+      <button class="btn-delete" id="courseDeleteBtn" onclick="deleteCourseItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveCourseItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Achievement -->
+<div class="modal-overlay" id="modalAchieve">
+  <div class="modal-sheet">
+    <div class="modal-title">Osiągnięcie / nagroda</div>
+    <div class="field-group"><label>Tytuł *</label><input id="achieveName" placeholder="np. Najlepszy sprzedawca roku"/></div>
+    <div class="field-group"><label>Rok</label><input id="achieveYear" placeholder="np. 2022"/></div>
+    <div class="field-group"><label>Opis</label><textarea id="achieveDesc" rows="2" placeholder="Krótki opis osiągnięcia"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalAchieve')">Anuluj</button>
+      <button class="btn-delete" id="achieveDeleteBtn" onclick="deleteAchieveItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveAchieveItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Volunteer -->
+<div class="modal-overlay" id="modalVolunteer">
+  <div class="modal-sheet">
+    <div class="modal-title">Wolontariat</div>
+    <div class="field-group"><label>Organizacja *</label><input id="volunteerOrg" placeholder="np. Wielka Orkiestra Świątecznej Pomocy"/></div>
+    <div class="field-group"><label>Rola</label><input id="volunteerRole" placeholder="np. Koordynator wolontariuszy"/></div>
+    <div class="field-group"><label>Okres</label><input id="volunteerPeriod" placeholder="np. 2020–2022"/></div>
+    <div class="field-group"><label>Opis</label><textarea id="volunteerDesc" rows="2" placeholder="Czym się zajmowałeś?"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalVolunteer')">Anuluj</button>
+      <button class="btn-delete" id="volunteerDeleteBtn" onclick="deleteVolunteerItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveVolunteerItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Media -->
+<div class="modal-overlay" id="modalMedia">
+  <div class="modal-sheet">
+    <div class="modal-title">Publikacja / media</div>
+    <div class="field-group"><label>Tytuł *</label><input id="mediaTitle" placeholder="np. Wywiad dla Forbes Polska"/></div>
+    <div class="field-group"><label>Źródło</label><input id="mediaSource" placeholder="np. Gazeta Wyborcza"/></div>
+    <div class="field-group"><label>Rok</label><input id="mediaYear" placeholder="np. 2023"/></div>
+    <div class="field-group"><label>Link</label><input id="mediaUrl" type="url" placeholder="https://..."/></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modalMedia')">Anuluj</button>
+      <button class="btn-delete" id="mediaDeleteBtn" onclick="deleteMediaItem()" style="display:none">Usuń</button>
+      <button class="btn-save" onclick="saveMediaItem()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── State ──
 let profileData = null;
@@ -696,6 +819,11 @@ let localEducation = [];
 let localSkills = [];
 let localServices = [];
 let localPortfolio = [];
+let localCourses = [];
+let localAchievements = [];
+let localHobbies = [];
+let localVolunteering = [];
+let localMedia = [];
 let localFeaturedId = null;
 let localInvoicing = false;
 let localSectionsVis = {};
@@ -705,6 +833,10 @@ let editingExpIdx = null;
 let editingEduIdx = null;
 let editingSvcIdx = null;
 let editingPortIdx = null;
+let editingCourseIdx = null;
+let editingAchieveIdx = null;
+let editingVolunteerIdx = null;
+let editingMediaIdx = null;
 
 const NICKNAME = location.pathname.split('/fox/')[1]?.split('/')[0] || '';
 const TG = window.Telegram?.WebApp;
@@ -751,6 +883,11 @@ function initLocals() {
   localSkills = JSON.parse(JSON.stringify(d.skills || []));
   localServices = JSON.parse(JSON.stringify(d.services || []));
   localPortfolio = JSON.parse(JSON.stringify(d.portfolio_items || []));
+  localCourses = JSON.parse(JSON.stringify(d.courses || []));
+  localAchievements = JSON.parse(JSON.stringify(d.achievements || []));
+  localHobbies = JSON.parse(JSON.stringify(d.hobbies || []));
+  localVolunteering = JSON.parse(JSON.stringify(d.volunteering || []));
+  localMedia = JSON.parse(JSON.stringify(d.media || []));
   localFeaturedId = d.featured_project_id || null;
   localInvoicing = !!d.invoicing;
   localSectionsVis = JSON.parse(JSON.stringify(d.sections_visibility || {}));
@@ -906,6 +1043,11 @@ function render() {
   renderSkills();
   renderServices();
   renderPortfolio();
+  renderCourses();
+  renderAchievements();
+  renderHobbies();
+  renderVolunteering();
+  renderMedia();
   renderReviews(d.reviews || []);
   // Section visibility
   applySectionsVisibility();
@@ -1072,7 +1214,7 @@ function renderReviews(reviews) {
 }
 
 function applySectionsVisibility() {
-  const secs = ['stats','experience','education','skills','services','portfolio','reviews'];
+  const secs = ['stats','experience','education','skills','services','portfolio','courses','achievements','hobbies','volunteering','media','reviews'];
   secs.forEach(s=>{
     const el = document.getElementById(`sec${s.charAt(0).toUpperCase()+s.slice(1)}`);
     const btn = document.getElementById(`vis${s.charAt(0).toUpperCase()+s.slice(1)}`);
@@ -1147,6 +1289,11 @@ function toggleEditMode() {
   renderSkills();
   renderServices();
   renderPortfolio();
+  renderCourses();
+  renderAchievements();
+  renderHobbies();
+  renderVolunteering();
+  renderMedia();
 }
 
 function populateEditForm() {
@@ -1240,6 +1387,11 @@ async function saveAll() {
         available_today: localAvailToday,
         available_from: localAvailFrom || null,
         available_to: localAvailTo || null,
+        courses: localCourses,
+        achievements: localAchievements,
+        hobbies: localHobbies,
+        volunteering: localVolunteering,
+        media: localMedia,
       })
     });
     if (!r.ok) throw new Error('save failed');
@@ -1268,6 +1420,11 @@ function discardChanges() {
   renderSkills();
   renderServices();
   renderPortfolio();
+  renderCourses();
+  renderAchievements();
+  renderHobbies();
+  renderVolunteering();
+  renderMedia();
   applySectionsVisibility();
   document.getElementById('togglePublic').checked = localProfilePublic;
   showToast('Zmiany anulowane');
@@ -1388,6 +1545,175 @@ function deletePortItem() {
     localPortfolio.splice(editingPortIdx,1);
     renderPortfolio(); markDirty(); closeModal('modalPortfolio');
   }
+}
+
+// ── Courses ──
+function renderCourses() {
+  const list = document.getElementById('coursesList');
+  if (!list) return;
+  if (!localCourses.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak kursów.</div>'; return; }
+  list.innerHTML = localCourses.map((c,i)=>`
+    <div class="exp-card" style="margin-bottom:10px">
+      <button class="edit-card-btn" onclick="openCourseModal(${i})">✏️</button>
+      <div class="exp-title">${escHtml(c.name||'')}</div>
+      ${c.institution?`<div class="exp-company">${escHtml(c.institution)}</div>`:''}
+      ${c.year?`<div class="exp-period">${escHtml(c.year)}</div>`:''}
+      ${c.url?`<div style="margin-top:4px;font-size:12px"><a href="${escHtml(c.url)}" target="_blank" rel="noopener" style="color:var(--accent)">${escHtml(c.url)}</a></div>`:''}
+    </div>`).join('');
+}
+function openCourseModal(idx) {
+  editingCourseIdx = idx;
+  const c = idx !== null ? localCourses[idx] : {};
+  document.getElementById('courseName').value = c.name||'';
+  document.getElementById('courseInstitution').value = c.institution||'';
+  document.getElementById('courseYear').value = c.year||'';
+  document.getElementById('courseUrl').value = c.url||'';
+  document.getElementById('courseDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalCourse');
+}
+function saveCourseItem() {
+  const name = document.getElementById('courseName').value.trim();
+  if (!name) return;
+  const item = { name, institution: document.getElementById('courseInstitution').value.trim(), year: document.getElementById('courseYear').value.trim(), url: document.getElementById('courseUrl').value.trim() };
+  if (editingCourseIdx !== null) localCourses[editingCourseIdx] = item;
+  else localCourses.push(item);
+  renderCourses(); markDirty(); closeModal('modalCourse');
+}
+function deleteCourseItem() {
+  if (editingCourseIdx !== null) { localCourses.splice(editingCourseIdx,1); renderCourses(); markDirty(); closeModal('modalCourse'); }
+}
+
+// ── Achievements (profile) ──
+function renderAchievements() {
+  const list = document.getElementById('achievementsList');
+  if (!list) return;
+  if (!localAchievements.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak osiągnięć.</div>'; return; }
+  list.innerHTML = localAchievements.map((a,i)=>`
+    <div class="exp-card" style="margin-bottom:10px">
+      <button class="edit-card-btn" onclick="openAchieveModal(${i})">✏️</button>
+      <div class="exp-title">${escHtml(a.title||'')}</div>
+      ${a.year?`<div class="exp-period">${escHtml(a.year)}</div>`:''}
+      ${a.description?`<div class="exp-desc">${escHtml(a.description)}</div>`:''}
+    </div>`).join('');
+}
+function openAchieveModal(idx) {
+  editingAchieveIdx = idx;
+  const a = idx !== null ? localAchievements[idx] : {};
+  document.getElementById('achieveName').value = a.title||'';
+  document.getElementById('achieveYear').value = a.year||'';
+  document.getElementById('achieveDesc').value = a.description||'';
+  document.getElementById('achieveDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalAchieve');
+}
+function saveAchieveItem() {
+  const title = document.getElementById('achieveName').value.trim();
+  if (!title) return;
+  const item = { title, year: document.getElementById('achieveYear').value.trim(), description: document.getElementById('achieveDesc').value.trim() };
+  if (editingAchieveIdx !== null) localAchievements[editingAchieveIdx] = item;
+  else localAchievements.push(item);
+  renderAchievements(); markDirty(); closeModal('modalAchieve');
+}
+function deleteAchieveItem() {
+  if (editingAchieveIdx !== null) { localAchievements.splice(editingAchieveIdx,1); renderAchievements(); markDirty(); closeModal('modalAchieve'); }
+}
+
+// ── Hobbies ──
+function renderHobbies() {
+  const chips = localHobbies.map((h,i)=>`
+    <span class="skill-chip" ${isEditMode?`onclick="removeHobby(${i})" style="cursor:pointer" title="Kliknij aby usunąć"`:''}>
+      ${escHtml(h)}${isEditMode?' ✕':''}
+    </span>`).join('') || '<div style="color:var(--muted);font-size:13px">Brak hobby.</div>';
+  const pub = document.getElementById('hobbiesWrap'); if (pub) pub.innerHTML = chips;
+  const edit = document.getElementById('hobbiesWrapEdit');
+  if (edit) edit.innerHTML = localHobbies.map((h,i)=>`
+    <span class="skill-chip" onclick="removeHobby(${i})" style="cursor:pointer" title="Kliknij aby usunąć">
+      ${escHtml(h)} ✕
+    </span>`).join('');
+}
+function toggleHobbyInput() {
+  const wrap = document.getElementById('hobbyInputWrap');
+  const isHidden = wrap.style.display === 'none';
+  wrap.style.display = isHidden ? 'flex' : 'none';
+  wrap.style.flexDirection = 'row';
+  if (isHidden) document.getElementById('hobbyInputText').focus();
+}
+function confirmAddHobby() {
+  const inp = document.getElementById('hobbyInputText');
+  const v = inp.value.trim();
+  if (v) { localHobbies.push(v); renderHobbies(); markDirty(); inp.value = ''; inp.focus(); }
+}
+function removeHobby(i) { if (!isEditMode) return; localHobbies.splice(i,1); renderHobbies(); markDirty(); }
+
+// ── Volunteering ──
+function renderVolunteering() {
+  const list = document.getElementById('volunteeringList');
+  if (!list) return;
+  if (!localVolunteering.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak wolontariatu.</div>'; return; }
+  list.innerHTML = localVolunteering.map((v,i)=>`
+    <div class="exp-card" style="margin-bottom:10px">
+      <button class="edit-card-btn" onclick="openVolunteerModal(${i})">✏️</button>
+      <div class="exp-title">${escHtml(v.role||'')}</div>
+      ${v.org?`<div class="exp-company">${escHtml(v.org)}</div>`:''}
+      ${v.period?`<div class="exp-period">${escHtml(v.period)}</div>`:''}
+      ${v.description?`<div class="exp-desc">${escHtml(v.description)}</div>`:''}
+    </div>`).join('');
+}
+function openVolunteerModal(idx) {
+  editingVolunteerIdx = idx;
+  const v = idx !== null ? localVolunteering[idx] : {};
+  document.getElementById('volunteerOrg').value = v.org||'';
+  document.getElementById('volunteerRole').value = v.role||'';
+  document.getElementById('volunteerPeriod').value = v.period||'';
+  document.getElementById('volunteerDesc').value = v.description||'';
+  document.getElementById('volunteerDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalVolunteer');
+}
+function saveVolunteerItem() {
+  const org = document.getElementById('volunteerOrg').value.trim();
+  if (!org) return;
+  const item = { org, role: document.getElementById('volunteerRole').value.trim(), period: document.getElementById('volunteerPeriod').value.trim(), description: document.getElementById('volunteerDesc').value.trim() };
+  if (editingVolunteerIdx !== null) localVolunteering[editingVolunteerIdx] = item;
+  else localVolunteering.push(item);
+  renderVolunteering(); markDirty(); closeModal('modalVolunteer');
+}
+function deleteVolunteerItem() {
+  if (editingVolunteerIdx !== null) { localVolunteering.splice(editingVolunteerIdx,1); renderVolunteering(); markDirty(); closeModal('modalVolunteer'); }
+}
+
+// ── Media ──
+function renderMedia() {
+  const list = document.getElementById('mediaList');
+  if (!list) return;
+  if (!localMedia.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">Brak publikacji.</div>'; return; }
+  list.innerHTML = localMedia.map((m,i)=>`
+    <div class="exp-card" style="margin-bottom:10px">
+      <button class="edit-card-btn" onclick="openMediaModal(${i})">✏️</button>
+      <div class="exp-title">${escHtml(m.title||'')}</div>
+      ${m.source?`<div class="exp-company">${escHtml(m.source)}</div>`:''}
+      ${m.year?`<div class="exp-period">${escHtml(m.year)}</div>`:''}
+      ${m.url?`<div style="margin-top:4px;font-size:12px"><a href="${escHtml(m.url)}" target="_blank" rel="noopener" style="color:var(--accent)">${escHtml(m.url)}</a></div>`:''}
+    </div>`).join('');
+}
+function openMediaModal(idx) {
+  editingMediaIdx = idx;
+  const m = idx !== null ? localMedia[idx] : {};
+  document.getElementById('mediaTitle').value = m.title||'';
+  document.getElementById('mediaSource').value = m.source||'';
+  document.getElementById('mediaYear').value = m.year||'';
+  document.getElementById('mediaUrl').value = m.url||'';
+  document.getElementById('mediaDeleteBtn').style.display = idx !== null ? '' : 'none';
+  openModal('modalMedia');
+}
+function saveMediaItem() {
+  const title = document.getElementById('mediaTitle').value.trim();
+  if (!title) return;
+  const item = { title, source: document.getElementById('mediaSource').value.trim(), year: document.getElementById('mediaYear').value.trim(), url: document.getElementById('mediaUrl').value.trim() };
+  if (editingMediaIdx !== null) localMedia[editingMediaIdx] = item;
+  else localMedia.push(item);
+  renderMedia(); markDirty(); closeModal('modalMedia');
+}
+function deleteMediaItem() {
+  if (editingMediaIdx !== null) { localMedia.splice(editingMediaIdx,1); renderMedia(); markDirty(); closeModal('modalMedia'); }
 }
 
 // ── Modal helpers ──
@@ -1750,6 +2076,71 @@ async function generatePdf() {
     addSection('UMIEJETNOSCI');
     addLine(localSkills.join(' · '), 9, '#333333');
     y += 2;
+  }
+
+  // КУРСИ
+  if (localCourses?.length) {
+    addSection('KURSY I SZKOLENIA');
+    localCourses.forEach(c => {
+      if (y > pageH - margin) { doc.addPage(); y = margin; }
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
+      doc.text(safeText(removeEmoji(c.name||'')), margin, y);
+      if (c.year) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(c.year), 195, y, { align: 'right' }); }
+      y += lineH;
+      if (c.institution) addLine(c.institution, 9, '#F97E00', false, 2);
+      y += 2;
+    });
+  }
+
+  // OSIĄGNIĘCIA
+  if (localAchievements?.length) {
+    addSection('OSIAGNIECIA I NAGRODY');
+    localAchievements.forEach(a => {
+      if (y > pageH - margin) { doc.addPage(); y = margin; }
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
+      doc.text(safeText(removeEmoji(a.title||'')), margin, y);
+      if (a.year) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(a.year), 195, y, { align: 'right' }); }
+      y += lineH;
+      if (a.description) addLine(a.description, 9, '#555555', false, 2);
+      y += 2;
+    });
+  }
+
+  // HOBBY
+  if (localHobbies?.length) {
+    addSection('HOBBY I ZAINTERESOWANIA');
+    addLine(localHobbies.join(' · '), 9, '#333333');
+    y += 2;
+  }
+
+  // WOLONTARIAT
+  if (localVolunteering?.length) {
+    addSection('WOLONTARIAT');
+    localVolunteering.forEach(v => {
+      if (y > pageH - margin) { doc.addPage(); y = margin; }
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
+      doc.text(safeText(removeEmoji(v.role||v.org||'')), margin, y);
+      if (v.period) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(v.period), 195, y, { align: 'right' }); }
+      y += lineH;
+      if (v.org) addLine(v.org, 9, '#F97E00', false, 2);
+      if (v.description) addLine(v.description, 9, '#555555', false, 4);
+      y += 2;
+    });
+  }
+
+  // MEDIA
+  if (localMedia?.length) {
+    addSection('PUBLIKACJE I MEDIA');
+    localMedia.forEach(m => {
+      if (y > pageH - margin) { doc.addPage(); y = margin; }
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
+      doc.text(safeText(removeEmoji(m.title||'')), margin, y);
+      if (m.year) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(m.year), 195, y, { align: 'right' }); }
+      y += lineH;
+      if (m.source) addLine(m.source, 9, '#F97E00', false, 2);
+      if (m.url) addLine(m.url, 9, '#555555', false, 2);
+      y += 2;
+    });
   }
 
   // ПОСЛУГИ
