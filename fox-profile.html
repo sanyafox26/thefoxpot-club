@@ -1609,7 +1609,24 @@ function buildCVhtml(photoBase64) {
 
 async function generatePdf() {
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', putOnlyUsedFonts: true });
+  doc.setLanguage('pl');
+
+  function safeText(str) {
+    if (!str) return '';
+    return str
+      .replace(/ą/g,'a').replace(/Ą/g,'A')
+      .replace(/ć/g,'c').replace(/Ć/g,'C')
+      .replace(/ę/g,'e').replace(/Ę/g,'E')
+      .replace(/ł/g,'l').replace(/Ł/g,'L')
+      .replace(/ń/g,'n').replace(/Ń/g,'N')
+      .replace(/ó/g,'o').replace(/Ó/g,'O')
+      .replace(/ś/g,'s').replace(/Ś/g,'S')
+      .replace(/ź/g,'z').replace(/Ź/g,'Z')
+      .replace(/ż/g,'z').replace(/Ż/g,'Z')
+      .replace(/і/g,'i').replace(/є/g,'ie')
+      .replace(/ї/g,'i').replace(/й/g,'j');
+  }
 
   const username = window.location.pathname.split('/').pop();
   const margin = 15;
@@ -1622,7 +1639,7 @@ async function generatePdf() {
     doc.setFontSize(size || 10);
     doc.setTextColor(color || '#222222');
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    const lines = doc.splitTextToSize(text || '', 180 - (indent||0));
+    const lines = doc.splitTextToSize(safeText(text) || '', 180 - (indent||0));
     doc.text(lines, margin + (indent||0), y);
     y += lines.length * (lineH * ((size||10)/10));
   }
@@ -1641,7 +1658,7 @@ async function generatePdf() {
 
   const addr = [localDistrict, localAddress, 'Warsaw'].filter(Boolean).join(' · ');
   if (addr) addLine('📍 ' + addr, 9, '#555555');
-  addLine('🦊 thefoxpot.club/fox/' + username, 9, '#F97E00');
+  addLine('Fox: thefoxpot.club/fox/' + username, 9, '#F97E00');
   if (localEmail) addLine('📧 ' + localEmail, 9, '#555555');
   y += 2;
 
@@ -1660,16 +1677,16 @@ async function generatePdf() {
 
   // ДОСВІД
   if (localExperience?.length) {
-    addSection('DOŚWIADCZENIE ZAWODOWE');
+    addSection('DOSWIADCZENIE ZAWODOWE');
     localExperience.forEach(e => {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor('#222222');
-      doc.text(e.title||'', margin, y);
+      doc.text(safeText(e.title||''), margin, y);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor('#777777');
-      doc.text(e.period||'', 195, y, { align: 'right' });
+      doc.text(safeText(e.period||''), 195, y, { align: 'right' });
       y += lineH;
       addLine(e.company||'', 9, '#F97E00', false, 2);
       if (e.description) addLine(e.description, 9, '#555555', false, 4);
@@ -1679,16 +1696,16 @@ async function generatePdf() {
 
   // ОСВІТА
   if (localEducation?.length) {
-    addSection('WYKSZTAŁCENIE');
+    addSection('WYKSZTALCENIE');
     localEducation.forEach(e => {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor('#F97E00');
-      doc.text(e.school||'', margin, y);
+      doc.text(safeText(e.school||''), margin, y);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor('#777777');
-      doc.text(e.years||'', 195, y, { align: 'right' });
+      doc.text(safeText(e.years||''), 195, y, { align: 'right' });
       y += lineH;
       addLine((e.field||'') + (e.degree ? ' · '+e.degree : ''), 9, '#555555', false, 2);
       y += 2;
@@ -1697,22 +1714,22 @@ async function generatePdf() {
 
   // НАВИЧКИ
   if (localSkills?.length) {
-    addSection('UMIEJĘTNOŚCI');
+    addSection('UMIEJETNOSCI');
     addLine(localSkills.join(' · '), 9, '#333333');
     y += 2;
   }
 
   // ПОСЛУГИ
   if (localServices?.length) {
-    addSection('USŁUGI / OFERTA');
+    addSection('USLUGI / OFERTA');
     localServices.forEach(s => {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor('#F97E00');
-      doc.text(s.name||'', margin, y);
+      doc.text(safeText(s.name||''), margin, y);
       if (s.price) {
         doc.setFontSize(9);
-        doc.text(s.price, 195, y, { align: 'right' });
+        doc.text(safeText(s.price), 195, y, { align: 'right' });
       }
       y += lineH;
       if (s.description) addLine(s.description, 9, '#555555', false, 2);
@@ -1727,7 +1744,7 @@ async function generatePdf() {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor('#222222');
-      doc.text(p.name||'', margin, y);
+      doc.text(safeText(p.name||''), margin, y);
       y += lineH;
       if (p.role) addLine(p.role + (p.result ? ' · '+p.result : ''), 9, '#555555', false, 2);
       if (p.url) addLine(p.url, 9, '#F97E00', false, 2);
