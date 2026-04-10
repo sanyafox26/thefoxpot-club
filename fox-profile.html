@@ -453,14 +453,14 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         </div>
         <button class="hero-vis-btn" id="visHeroPhoto" onclick="toggleSectionVis('photo')"></button>
       </div>
-      <div class="fox-nick" id="foxNick"></div>
+      <div class="fox-nick" id="foxNick" data-cv="name"></div>
       <div class="fox-spec" id="foxSpec" style="display:none"></div>
       <div id="heroAddressWrap">
-        <div class="fox-city" id="foxCity"></div>
+        <div class="fox-city" id="foxCity" data-cv="address"></div>
         <button class="hero-vis-btn" id="visHeroAddress" onclick="toggleSectionVis('address')"></button>
       </div>
       <div id="heroEmailWrap">
-        <div class="fox-email" id="foxEmail" style="display:none"></div>
+        <div class="fox-email" id="foxEmail" data-cv="email" style="display:none"></div>
         <button class="hero-vis-btn" id="visHeroEmail" onclick="toggleSectionVis('email')"></button>
       </div>
       <div id="heroRatingWrap">
@@ -476,7 +476,7 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <button class="hero-vis-btn" id="visHeroInvoice" onclick="toggleSectionVis('invoicing_badge')"></button>
       </div>
       <div id="heroBioWrap">
-        <div class="fox-bio" id="foxBio" style="display:none"></div>
+        <div class="fox-bio" id="foxBio" data-cv="bio" style="display:none"></div>
         <button class="hero-vis-btn" id="visHeroBio" onclick="toggleSectionVis('bio')"></button>
       </div>
       <div id="heroSpecsWrap">
@@ -1494,141 +1494,109 @@ function removeSpec(idx) {
 
 function renderSpecChips() { renderSpecTags(); }
 
+function buildCVhtml() {
+  // Зчитуємо з DOM
+  const name    = document.querySelector('[data-cv="name"]')?.textContent || '';
+  const address = document.querySelector('[data-cv="address"]')?.textContent || '';
+  const email   = document.querySelector('[data-cv="email"]')?.textContent || '';
+  const bio     = document.querySelector('[data-cv="bio"]')?.textContent || '';
+
+  // Спеціалізації
+  const specs = [...document.querySelectorAll('.spec-tag, .specialization-tag, .pub-spec-tag')]
+    .map(el => el.textContent.replace('×','').trim())
+    .filter(Boolean).join(' · ');
+
+  // Досвід
+  let expHtml = '';
+  document.querySelectorAll('.experience-item, [data-section="experience"] .cv-item').forEach(item => {
+    const title   = item.querySelector('.exp-title, .item-title')?.textContent || '';
+    const company = item.querySelector('.exp-company, .item-company')?.textContent || '';
+    const period  = item.querySelector('.exp-period, .item-period')?.textContent || '';
+    const desc    = item.querySelector('.exp-desc, .item-desc')?.textContent || '';
+    expHtml += `<div class="cv-row"><span class="cv-title">${title}</span><span class="cv-date">${period}</span></div>
+    <div class="cv-company">${company}</div>
+    ${desc ? `<div class="cv-desc">${desc}</div>` : ''}<br>`;
+  });
+
+  // Освіта
+  let eduHtml = '';
+  document.querySelectorAll('.education-item, [data-section="education"] .cv-item').forEach(item => {
+    const school = item.querySelector('.edu-school, .item-title')?.textContent || '';
+    const field  = item.querySelector('.edu-field, .item-field')?.textContent || '';
+    const degree = item.querySelector('.edu-degree, .item-degree')?.textContent || '';
+    const years  = item.querySelector('.edu-years, .item-period')?.textContent || '';
+    eduHtml += `<div class="cv-row"><span class="cv-company">${school}</span><span class="cv-date">${years}</span></div>
+    <div class="cv-desc">${field} · ${degree}</div><br>`;
+  });
+
+  // Навички
+  const skills = [...document.querySelectorAll('.skill-tag, [data-section="skills"] .tag')]
+    .map(el => el.textContent.replace('×','').trim())
+    .filter(Boolean).join(' · ');
+
+  // Послуги
+  let servHtml = '';
+  document.querySelectorAll('.service-item, [data-section="services"] .cv-item').forEach(item => {
+    const title = item.querySelector('.serv-title, .item-title')?.textContent || '';
+    const price = item.querySelector('.serv-price, .item-price')?.textContent || '';
+    const desc  = item.querySelector('.serv-desc, .item-desc')?.textContent || '';
+    servHtml += `<div class="cv-row"><span class="cv-title">${title}</span><span class="cv-date" style="color:#F97E00">${price}</span></div>
+    <div class="cv-desc">${desc}</div><br>`;
+  });
+
+  // Портфоліо
+  let portHtml = '';
+  document.querySelectorAll('.portfolio-item, [data-section="portfolio"] .cv-item').forEach(item => {
+    const title  = item.querySelector('.port-title, .item-title')?.textContent || '';
+    const role   = item.querySelector('.port-role, .item-role')?.textContent || '';
+    const result = item.querySelector('.port-result, .item-result')?.textContent || '';
+    portHtml += `<div class="cv-title">${title}</div>
+    <div class="cv-desc">${role}${result ? ' · ' + result : ''}</div><br>`;
+  });
+
+  const nickname = window.location.pathname.split('/').pop();
+
+  return `
+  <div style="font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;padding:15mm;width:180mm;">
+    <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">${name}</h1>
+    <div style="font-size:10px;color:#555;line-height:1.9;margin-bottom:8px">
+      ${address ? `<div>📍 ${address}</div>` : ''}
+      ${email   ? `<div>📧 ${email}</div>`   : ''}
+    </div>
+    ${bio   ? `<div style="font-style:italic;font-size:11px;margin:6px 0">${bio}</div>` : ''}
+    ${specs ? `<div style="font-size:10px;color:#F97E00;margin-bottom:8px">${specs}</div>` : ''}
+    <div style="border-top:2px solid #F97E00;margin:10px 0"></div>
+    ${expHtml  ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">DOŚWIADCZENIE ZAWODOWE</div>${expHtml}` : ''}
+    ${eduHtml  ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">WYKSZTAŁCENIE</div>${eduHtml}` : ''}
+    ${skills   ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">UMIEJĘTNOŚCI</div><div style="font-size:10px;line-height:1.8">${skills}</div>` : ''}
+    ${servHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">USŁUGI / OFERTA</div>${servHtml}` : ''}
+    ${portHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">PORTFOLIO</div>${portHtml}` : ''}
+    <div style="border-top:1px solid #eee;margin-top:20px;padding-top:6px;font-size:8px;color:#aaa;text-align:center">
+      Profil: thefoxpot.club/fox/${nickname}
+    </div>
+    <div style="font-size:7px;color:#bbb;font-style:italic;text-align:center;margin-top:4px">
+      Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (UE 2016/679).
+    </div>
+  </div>`;
+}
+
 function generatePdf() {
   console.log('CV button clicked');
   console.log('html2pdf available:', typeof html2pdf);
-  const name     = escHtml(localDisplayName || NICKNAME);
-  const bio      = escHtml(profileData?.bio || '');
-  const specs    = localSpecializations || [];
-  const city     = escHtml(profileData?.city || '');
-  const district = escHtml(localDistrict || '');
-  const address  = escHtml(localAddress || '');
-  const email    = escHtml(localEmail || '');
-  const profileUrl = location.origin + '/fox/' + NICKNAME;
-  const hourly   = escHtml(profileData?.hourly_rate || '');
-  const langs    = Array.isArray(profileData?.languages) ? profileData.languages.map(escHtml) : [];
-  const vis = localSectionsVis;
-  const show = s => vis[s] !== false;
+  console.log('HTML length:', buildCVhtml().length);
 
-  // Avatar — absolute URL, respects photo toggle
-  const avatarSrc = (show('photo') && document.getElementById('foxAvatar')?.src) || '';
-
-  // Contact lines (each on separate row)
-  const locParts = [district, address, city].filter(Boolean);
-  let contactLines = '';
-  if (locParts.length) contactLines += '<div class="cv-contact-line">📍 ' + locParts.join(' · ') + '</div>';
-  if (email) contactLines += '<div class="cv-contact-line">📧 <span style="color:#555;text-decoration:none">' + email + '</span></div>';
-  contactLines += '<div class="cv-contact-line">🌐 ' + profileUrl + '</div>';
-  if (hourly)       contactLines += '<div class="cv-contact-line">💰 ' + hourly + '</div>';
-  if (langs.length) contactLines += '<div class="cv-contact-line">🗣 ' + langs.join(' · ') + '</div>';
-
-  // Sections
-  let sections = '';
-
-  if (show('experience') && localExperience.length) {
-    sections += '<div class="section-title">Doświadczenie zawodowe</div>'
-      + localExperience.map(e =>
-          '<div class="cv-row"><span class="cv-title">' + escHtml(e.title||'') + '</span>'
-          + (e.period ? '<span class="cv-date">' + escHtml(e.period) + '</span>' : '') + '</div>'
-          + (e.company ? '<div class="cv-company">' + escHtml(e.company) + '</div>' : '')
-          + (e.desc    ? '<div class="cv-desc">'   + escHtml(e.desc)    + '</div>' : '')
-        ).join('');
-  }
-
-  if (show('education') && localEducation.length) {
-    sections += '<div class="section-title">Wykształcenie</div>'
-      + localEducation.map(e => {
-          const sub = [e.field, e.degree].filter(Boolean).map(escHtml).join(' · ');
-          return '<div class="cv-row"><span class="cv-title" style="color:#F97E00">' + escHtml(e.school||'') + '</span>'
-            + (e.years ? '<span class="cv-date">' + escHtml(e.years) + '</span>' : '') + '</div>'
-            + (sub ? '<div class="cv-desc" style="margin-left:0">' + sub + '</div>' : '');
-        }).join('');
-  }
-
-  if (show('skills') && localSkills.length) {
-    sections += '<div class="section-title">Umiejętności</div>'
-      + '<div class="cv-tags">' + localSkills.map(escHtml).join(' · ') + '</div>';
-  }
-
-  if (show('services') && localServices.length) {
-    sections += '<div class="section-title">Usługi / Oferta</div>'
-      + localServices.map(s =>
-          '<div class="cv-row"><span class="cv-title">' + escHtml(s.name||'') + '</span>'
-          + (s.price ? '<span style="color:#F97E00;font-size:10px">' + escHtml(s.price) + '</span>' : '') + '</div>'
-          + (s.desc  ? '<div class="cv-desc" style="margin-left:0">' + escHtml(s.desc) + '</div>' : '')
-        ).join('');
-  }
-
-  if (show('portfolio') && localPortfolio.length) {
-    sections += '<div class="section-title">Portfolio</div>'
-      + localPortfolio.map(p => {
-          const sub = [p.role, p.result].filter(Boolean).map(escHtml).join(' · ');
-          return '<div class="cv-row"><span class="cv-title">' + escHtml(p.title||'') + '</span>'
-            + (p.url ? '<a href="'+escHtml(p.url)+'" style="color:#F97E00;font-size:10px">'+escHtml(p.url)+'</a>' : '') + '</div>'
-            + (sub ? '<div class="cv-desc" style="margin-left:0">' + sub + '</div>' : '')
-            + ((p.tags||[]).length ? '<div style="font-size:9px;color:#999;margin-bottom:8px">' + p.tags.map(escHtml).join(' · ') + '</div>' : '');
-        }).join('');
-  }
-
-  // Header: flex row with optional photo
-  const contactBlock = '<div class="cv-contacts">' + contactLines + '</div>';
-  const headerHtml = avatarSrc
-    ? '<div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:8px">'
-      + '<img src="'+avatarSrc+'" style="width:70px;height:70px;border-radius:50%;object-fit:cover;flex-shrink:0"/>'
-      + '<div style="flex:1"><h1>'+name+'</h1>' + contactBlock + '</div></div>'
-    : '<h1>'+name+'</h1>' + contactBlock;
-
-  const htmlString = `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:Arial,sans-serif; font-size:11px; color:#222; background:white; padding:15mm; }
-  h1 { font-size:24px; font-weight:700; margin-bottom:4px; }
-  .cv-contacts { margin-bottom:6px; }
-  .cv-contact-line { display:block; font-size:10px; color:#555; line-height:1.9; text-decoration:none; }
-  .bio { font-size:11px; font-style:italic; margin:6px 0; color:#333; }
-  .specs { font-size:10px; color:#F97E00; margin-bottom:8px; }
-  .divider { border:none; border-top:2px solid #F97E00; margin:10px 0; }
-  .section-title { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; border-bottom:1px solid #ddd; padding-bottom:3px; margin:14px 0 8px 0; color:#333; }
-  .cv-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
-  .cv-title { font-weight:700; font-size:11px; }
-  .cv-date { font-size:10px; color:#777; white-space:nowrap; }
-  .cv-company { color:#F97E00; font-size:11px; margin-bottom:2px; }
-  .cv-desc { font-size:10px; color:#555; margin-left:10px; margin-bottom:8px; line-height:1.5; }
-  .cv-tags { font-size:10px; color:#333; line-height:1.8; margin-bottom:8px; }
-  .footer { border-top:1px solid #eee; margin-top:20px; padding-top:6px; font-size:8px; color:#aaa; text-align:center; }
-  .rodo { font-size:7px; color:#bbb; font-style:italic; margin-top:4px; text-align:center; }
-</style></head>
-<body>
-  ${headerHtml}
-  ${bio    ? '<div class="bio">'+bio+'</div>' : ''}
-  ${specs.length ? '<div class="specs">'+specs.map(escHtml).join(' · ')+'</div>' : ''}
-  <hr class="divider"/>
-  ${sections}
-  <div class="rodo">Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (Rozporządzenie UE 2016/679).</div>
-  <div class="footer">Profil: thefoxpot.club/fox/${NICKNAME}</div>
-</body></html>`;
-
-  const filename = 'CV_' + (localDisplayName || NICKNAME).replace(/\s+/g, '_') + '.pdf';
+  const nickname = window.location.pathname.split('/').pop();
+  const filename = 'CV_' + nickname + '.pdf';
   const opt = {
-    margin: [15, 15, 15, 15],
+    margin: 0,
     filename,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true },
+    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
-  console.log('CV data check — profileData:', profileData);
-  console.log('CV data check — localDisplayName:', localDisplayName, '| NICKNAME:', NICKNAME);
-  console.log('CV data check — localExperience:', localExperience);
-  console.log('CV data check — localSkills:', localSkills);
-  console.log('CV data check — localSectionsVis:', localSectionsVis);
-  console.log('CV htmlString length:', htmlString.length);
-  console.log('CV htmlString preview:', htmlString.substring(0, 500));
-  console.log('CV name:', name, '| bio:', bio.substring(0,50), '| sections:', sections.substring(0,100));
-
   const element = document.createElement('div');
-  element.innerHTML = htmlString;
+  element.innerHTML = buildCVhtml();
   element.style.cssText = `
     position: fixed;
     top: 0;
@@ -1638,7 +1606,6 @@ function generatePdf() {
     color: #222;
     font-family: Arial, sans-serif;
     font-size: 11px;
-    padding: 15mm;
     z-index: -9999;
   `;
   document.body.appendChild(element);
