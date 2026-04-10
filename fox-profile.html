@@ -391,6 +391,14 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <label>Adres / Miasto</label>
         <input id="editAddress" type="text" maxlength="200" placeholder="np. Praga-Północ, Warszawa"/>
       </div>
+      <div class="ep-field">
+        <label>Data urodzenia</label>
+        <input id="editBirthdate" type="text" maxlength="20" placeholder="np. 15.05.1990"/>
+      </div>
+      <div class="ep-field">
+        <label>Telefon</label>
+        <input id="editPhone" type="tel" maxlength="30" placeholder="np. +48 123 456 789"/>
+      </div>
 
       <!-- Social links -->
       <div class="ep-section-title">Linki społecznościowe</div>
@@ -464,6 +472,14 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div id="heroEmailWrap">
         <div class="fox-email" id="foxEmail" data-cv="email" style="display:none"></div>
         <button class="hero-vis-btn" id="visHeroEmail" onclick="toggleSectionVis('email')"></button>
+      </div>
+      <div id="heroBirthdateWrap">
+        <div class="fox-city" id="foxBirthdate" style="display:none"></div>
+        <button class="hero-vis-btn" id="visHeroBirthdate" onclick="toggleSectionVis('birthdate')"></button>
+      </div>
+      <div id="heroPhoneWrap">
+        <div class="fox-email" id="foxPhone" style="display:none"></div>
+        <button class="hero-vis-btn" id="visHeroPhone" onclick="toggleSectionVis('phone')"></button>
       </div>
       <div id="heroRatingWrap">
         <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
@@ -824,6 +840,8 @@ let localAchievements = [];
 let localHobbies = [];
 let localVolunteering = [];
 let localMedia = [];
+let localBirthdate = '';
+let localPhone = '';
 let localFeaturedId = null;
 let localInvoicing = false;
 let localSectionsVis = {};
@@ -888,6 +906,8 @@ function initLocals() {
   localHobbies = JSON.parse(JSON.stringify(d.hobbies || []));
   localVolunteering = JSON.parse(JSON.stringify(d.volunteering || []));
   localMedia = JSON.parse(JSON.stringify(d.media || []));
+  localBirthdate = d.birthdate || '';
+  localPhone = d.phone || '';
   localFeaturedId = d.featured_project_id || null;
   localInvoicing = !!d.invoicing;
   localSectionsVis = JSON.parse(JSON.stringify(d.sections_visibility || {}));
@@ -1026,6 +1046,16 @@ function render() {
     } else {
       emailEl.style.display = 'none';
     }
+  }
+  const birthdateEl = document.getElementById('foxBirthdate');
+  if (birthdateEl) {
+    if (d.birthdate) { birthdateEl.textContent = d.birthdate; birthdateEl.style.display = ''; }
+    else birthdateEl.style.display = 'none';
+  }
+  const phoneEl = document.getElementById('foxPhone');
+  if (phoneEl) {
+    if (d.phone) { phoneEl.innerHTML = '<a href="tel:'+escHtml(d.phone)+'">📞 '+escHtml(d.phone)+'</a>'; phoneEl.style.display = ''; }
+    else phoneEl.style.display = 'none';
   }
   document.getElementById('foxRating').textContent = d.rating || 0;
   if (d.bio) { document.getElementById('foxBio').textContent = d.bio; document.getElementById('foxBio').style.display = ''; }
@@ -1236,9 +1266,11 @@ function applySectionsVisibility() {
 
   // Hero element toggles
   const heroItems = [
-    { key: 'photo',           wrapId: 'heroPhotoWrap',   btnId: 'visHeroPhoto' },
-    { key: 'address',         wrapId: 'heroAddressWrap', btnId: 'visHeroAddress' },
-    { key: 'email',           wrapId: 'heroEmailWrap',   btnId: 'visHeroEmail' },
+    { key: 'photo',           wrapId: 'heroPhotoWrap',      btnId: 'visHeroPhoto' },
+    { key: 'address',         wrapId: 'heroAddressWrap',    btnId: 'visHeroAddress' },
+    { key: 'email',           wrapId: 'heroEmailWrap',      btnId: 'visHeroEmail' },
+    { key: 'birthdate',       wrapId: 'heroBirthdateWrap',  btnId: 'visHeroBirthdate' },
+    { key: 'phone',           wrapId: 'heroPhoneWrap',      btnId: 'visHeroPhone' },
     { key: 'rating',          wrapId: 'heroRatingWrap',  btnId: 'visHeroRating' },
     { key: 'availability',    wrapId: 'heroAvailWrap',   btnId: null },
     { key: 'invoicing_badge', wrapId: 'heroInvoiceWrap', btnId: 'visHeroInvoice' },
@@ -1305,6 +1337,8 @@ function populateEditForm() {
   document.getElementById('editDistrict').value = localDistrict;
   document.getElementById('editEmail').value = localEmail;
   document.getElementById('editAddress').value = localAddress;
+  document.getElementById('editBirthdate').value = localBirthdate;
+  document.getElementById('editPhone').value = localPhone;
   document.getElementById('slLinkedin').value = localSocial.linkedin || '';
   document.getElementById('slInstagram').value = localSocial.instagram || '';
   document.getElementById('slFacebook').value = localSocial.facebook || '';
@@ -1346,6 +1380,8 @@ async function saveAll() {
   localDistrict = document.getElementById('editDistrict')?.value?.trim() || '';
   localEmail = document.getElementById('editEmail')?.value?.trim() || '';
   localAddress = document.getElementById('editAddress')?.value?.trim() || '';
+  localBirthdate = document.getElementById('editBirthdate')?.value?.trim() || '';
+  localPhone = document.getElementById('editPhone')?.value?.trim() || '';
   localSocial = {
     linkedin:  document.getElementById('slLinkedin')?.value?.trim() || '',
     instagram: document.getElementById('slInstagram')?.value?.trim() || '',
@@ -1392,6 +1428,8 @@ async function saveAll() {
         hobbies: localHobbies,
         volunteering: localVolunteering,
         media: localMedia,
+        birthdate: localBirthdate || null,
+        phone: localPhone || null,
       })
     });
     if (!r.ok) throw new Error('save failed');
@@ -1957,277 +1995,390 @@ function buildCVhtml(photoBase64) {
 async function generatePdf() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4', putOnlyUsedFonts: true });
-  doc.setLanguage('pl');
 
   function decodeHtml(str) {
     if (!str) return '';
-    return str
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+    return str.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
   }
-
   function safeText(str) {
     if (!str) return '';
-    // спочатку decode HTML entities
     str = decodeHtml(str);
-    // прибрати emoji
     str = str.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '');
-    // замінити спеціальні символи
-    str = str
-      .replace(/—/g, '-')
-      .replace(/–/g, '-')
-      .replace(/…/g, '...')
-      .replace(/«/g, '"')
-      .replace(/»/g, '"')
-      .replace(/„/g, '"')
-      .replace(/\u201C/g, '"')
-      .replace(/\u201D/g, '"')
-      .replace(/\u2018/g, "'")
-      .replace(/\u2019/g, "'")
-      .replace(/×/g, 'x')
-      .replace(/°/g, ' stopni')
-      .replace(/[^\x00-\x7F\u00C0-\u024F]/g, '');
-    // польські символи
-    return str
-      .replace(/ą/g,'a').replace(/Ą/g,'A')
-      .replace(/ć/g,'c').replace(/Ć/g,'C')
-      .replace(/ę/g,'e').replace(/Ę/g,'E')
-      .replace(/ł/g,'l').replace(/Ł/g,'L')
-      .replace(/ń/g,'n').replace(/Ń/g,'N')
-      .replace(/ó/g,'o').replace(/Ó/g,'O')
-      .replace(/ś/g,'s').replace(/Ś/g,'S')
-      .replace(/ź/g,'z').replace(/Ź/g,'Z')
-      .replace(/ż/g,'z').replace(/Ż/g,'Z');
+    str = str.replace(/—/g,'-').replace(/–/g,'-').replace(/…/g,'...').replace(/«/g,'"').replace(/»/g,'"')
+             .replace(/„/g,'"').replace(/\u201C/g,'"').replace(/\u201D/g,'"').replace(/\u2018/g,"'").replace(/\u2019/g,"'")
+             .replace(/×/g,'x').replace(/°/g,' stopni').replace(/[^\x00-\x7F\u00C0-\u024F]/g,'');
+    return str.replace(/ą/g,'a').replace(/Ą/g,'A').replace(/ć/g,'c').replace(/Ć/g,'C')
+              .replace(/ę/g,'e').replace(/Ę/g,'E').replace(/ł/g,'l').replace(/Ł/g,'L')
+              .replace(/ń/g,'n').replace(/Ń/g,'N').replace(/ó/g,'o').replace(/Ó/g,'O')
+              .replace(/ś/g,'s').replace(/Ś/g,'S').replace(/ź/g,'z').replace(/Ź/g,'Z')
+              .replace(/ż/g,'z').replace(/Ż/g,'Z');
   }
-
   function removeEmoji(str) {
     if (!str) return '';
-    return str.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F000}-\u{1F02F}]|[\u{1F0A0}-\u{1F0FF}]|[\u{1F100}-\u{1F1FF}]|[\u{1F200}-\u{1F2FF}]|[\u{1F004}]|[\u{1F0CF}]/gu, '').trim();
+    return str.replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]/gu, '').trim();
   }
 
   const username = window.location.pathname.split('/').pop();
   const margin = 15;
-  let y = margin;
+  const rightEdge = 195;
   const pageH = 297;
   const lineH = 5;
+  let y = margin;
+  const vis = localSectionsVis;
+  const show = s => vis[s] !== false;
 
-  function addLine(text, size, color, bold, indent) {
-    if (y > pageH - margin) { doc.addPage(); y = margin; }
+  function checkPage(needed) {
+    if (y + (needed || lineH) > pageH - margin) { doc.addPage(); y = margin; }
+  }
+
+  function addLine(text, size, color, bold, x, maxW) {
+    checkPage(lineH);
     doc.setFontSize(size || 10);
     doc.setTextColor(color || '#222222');
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    const lines = doc.splitTextToSize(safeText(removeEmoji(text)) || '', 180 - (indent||0));
-    doc.text(lines, margin + (indent||0), y);
-    y += lines.length * (lineH * ((size||10)/10));
+    const lines = doc.splitTextToSize(safeText(removeEmoji(text || '')), maxW || (rightEdge - (x || margin)));
+    doc.text(lines, x || margin, y);
+    y += lines.length * (lineH * ((size || 10) / 10));
   }
 
   function addSection(title) {
+    checkPage(12);
+    y += 4;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor('#333333');
+    doc.text(safeText(title), margin, y);
     y += 3;
-    addLine(title, 9, '#333333', true);
     doc.setDrawColor('#dddddd');
-    doc.line(margin, y, 195, y);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, rightEdge, y);
     y += 4;
   }
 
-  // ШАПКА
-  addLine(localDisplayName || username, 22, '#222222', true);
-  y += 2;
+  // ── HEADER (two-column) ──
+  const name = safeText(removeEmoji(localDisplayName || username)).toUpperCase();
+  const specs = (localSpecializations || []).slice(0, 3).map(s => safeText(s)).join(', ') || safeText(localSpec || '');
+  const addr = show('address') ? [localDistrict, localAddress].filter(Boolean).map(s => safeText(s)).join(', ') : '';
+  const email = show('email') ? safeText(localEmail || '') : '';
+  const birthdate = show('birthdate') ? safeText(localBirthdate || '') : '';
+  const phone = show('phone') ? safeText(localPhone || '') : '';
 
-  const addr = [localDistrict, localAddress, 'Warsaw'].filter(Boolean).join(' · ');
-  if (addr) addLine('Adres: ' + addr, 9, '#555555');
-  addLine('thefoxpot.club/fox/' + username, 9, '#F97E00');
-  if (localEmail) addLine('Email: ' + localEmail, 9, '#555555');
-  y += 2;
+  // Try to embed avatar photo
+  let photoDataUrl = null;
+  if (show('photo')) {
+    const avatarEl = document.getElementById('foxAvatar');
+    if (avatarEl && avatarEl.src && avatarEl.naturalWidth > 0) {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = avatarEl.naturalWidth;
+        canvas.height = avatarEl.naturalHeight;
+        canvas.getContext('2d').drawImage(avatarEl, 0, 0);
+        photoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      } catch(e) {}
+    }
+  }
 
-  if (localBio) addLine(localBio, 9, '#333333', false, 0);
-  y += 2;
+  const hasPhoto = !!photoDataUrl;
+  const photoW = 45;
+  const photoH = 45;
+  const rightX = hasPhoto ? margin + photoW + 8 : margin;
+  const rightW = rightEdge - rightX;
+  const headerStartY = y;
 
-  const specs = (localSpecializations||[]).join(' · ') || localSpec || '';
-  if (specs) addLine(specs, 9, '#F97E00');
+  if (hasPhoto) {
+    try { doc.addImage(photoDataUrl, 'JPEG', margin, y, photoW, photoH, undefined, 'FAST'); } catch(e) {}
+  }
 
-  // Лінія
+  // Right column: name
+  doc.setFontSize(18);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor('#222222');
+  const nameLines = doc.splitTextToSize(name, rightW);
+  doc.text(nameLines, rightX, y);
+  y += nameLines.length * 7;
+
+  // Specializations
+  if (specs) {
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor('#F97E00');
+    const specLines = doc.splitTextToSize(specs, rightW);
+    doc.text(specLines, rightX, y);
+    y += specLines.length * 5 + 2;
+  } else {
+    y += 2;
+  }
+
+  // Contact info
+  const contactItems = [];
+  if (birthdate) contactItems.push(['Data ur.:', birthdate]);
+  if (phone)     contactItems.push(['Tel:',      phone]);
+  if (email)     contactItems.push(['Email:',    email]);
+  if (addr)      contactItems.push(['Adres:',    addr]);
+  contactItems.push(['Profil:', 'thefoxpot.club/fox/' + username]);
+
+  contactItems.forEach(([label, val]) => {
+    if (y > pageH - margin) { doc.addPage(); y = margin; }
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor('#555555');
+    doc.text(label, rightX, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor('#333333');
+    const valLines = doc.splitTextToSize(val, rightW - 22);
+    doc.text(valLines, rightX + 20, y);
+    y += valLines.length * 4.5;
+  });
+
+  // Ensure y is below photo bottom
+  if (hasPhoto && y < headerStartY + photoH + 2) y = headerStartY + photoH + 2;
+
+  // Orange divider
   y += 3;
   doc.setDrawColor('#F97E00');
   doc.setLineWidth(0.5);
-  doc.line(margin, y, 195, y);
+  doc.line(margin, y, rightEdge, y);
   y += 5;
 
-  // ДОСВІД
-  if (localExperience?.length) {
-    addSection('DOSWIADCZENIE ZAWODOWE');
+  // Column positions for timeline sections
+  const dateX  = margin;
+  const titleX = margin + 45;
+  const titleW = rightEdge - titleX;
+
+  // ── KLUCZOWA WIEDZA I UMIEJETNOSCI ──
+  if (localSkills?.length && show('skills')) {
+    addSection('KLUCZOWA WIEDZA I UMIEJETNOSCI');
+    localSkills.slice(0, 8).forEach(s => {
+      checkPage(lineH);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor('#333333');
+      const lines = doc.splitTextToSize('• ' + safeText(s), rightEdge - margin - 4);
+      doc.text(lines, margin + 2, y);
+      y += lines.length * lineH;
+    });
+    y += 2;
+  }
+
+  // ── ZNAJOMOSC JEZYKOW ──
+  const langs = Array.isArray(profileData?.languages) ? profileData.languages : [];
+  if (langs.length) {
+    addSection('ZNAJOMOSC JEZYKOW');
+    langs.forEach(l => {
+      checkPage(lineH);
+      const text = typeof l === 'string' ? safeText(l)
+        : safeText((l.language || l.name || '') + (l.level ? ' - ' + l.level : ''));
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor('#333333');
+      doc.text(text, margin + 2, y);
+      y += lineH;
+    });
+    y += 2;
+  }
+
+  // ── DOSWIADCZENIE ──
+  if (localExperience?.length && show('experience')) {
+    addSection('DOSWIADCZENIE');
     localExperience.forEach(e => {
+      checkPage(8);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor('#777777');
+      doc.text(safeText(removeEmoji(e.period || '')), dateX, y);
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor('#222222');
-      doc.text(safeText(removeEmoji(e.title||'')), margin, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor('#777777');
-      doc.text(safeText(removeEmoji(e.period||'')), 195, y, { align: 'right' });
-      y += lineH;
-      addLine(e.company||'', 9, '#F97E00', false, 2);
-      if (e.description) addLine(e.description, 9, '#555555', false, 4);
+      const titleLines = doc.splitTextToSize(safeText(removeEmoji(e.title || '')), titleW);
+      doc.text(titleLines, titleX, y);
+      y += Math.max(titleLines.length * lineH, lineH);
+      if (e.company) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#F97E00');
+        const cl = doc.splitTextToSize(safeText(removeEmoji(e.company)), titleW);
+        doc.text(cl, titleX, y); y += cl.length * 4.5;
+      }
+      if (e.description) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+        const dl = doc.splitTextToSize(safeText(e.description), titleW);
+        doc.text(dl, titleX, y); y += dl.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // ОСВІТА
-  if (localEducation?.length) {
+  // ── WYKSZTALCENIE ──
+  if (localEducation?.length && show('education')) {
     addSection('WYKSZTALCENIE');
     localEducation.forEach(e => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#F97E00');
-      doc.text(safeText(removeEmoji(e.school||'')), margin, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor('#777777');
-      doc.text(safeText(removeEmoji(e.years||'')), 195, y, { align: 'right' });
-      y += lineH;
-      addLine((e.field||'') + (e.degree ? ' · '+e.degree : ''), 9, '#555555', false, 2);
+      checkPage(8);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#777777');
+      doc.text(safeText(removeEmoji(e.years || '')), dateX, y);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#F97E00');
+      const sl = doc.splitTextToSize(safeText(removeEmoji(e.school || '')), titleW);
+      doc.text(sl, titleX, y); y += Math.max(sl.length * lineH, lineH);
+      const sub = [e.field, e.degree].filter(Boolean).map(s => safeText(s)).join(' · ');
+      if (sub) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+        const subl = doc.splitTextToSize(sub, titleW);
+        doc.text(subl, titleX, y); y += subl.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // КУРСИ
-  if (localCourses?.length) {
+  // ── KURSY ──
+  if (localCourses?.length && show('courses')) {
     addSection('KURSY I SZKOLENIA');
     localCourses.forEach(c => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#222222');
-      doc.text(safeText(c.name||''), margin, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor('#777777');
-      doc.text(safeText(c.year||''), 195, y, { align: 'right' });
-      y += lineH;
-      if (c.institution) addLine(safeText(c.institution), 9, '#F97E00', false, 2);
-      if (c.url) addLine(safeText(c.url), 8, '#999999', false, 2);
+      checkPage(8);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#777777');
+      doc.text(safeText(c.year || ''), dateX, y);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#222222');
+      const nl = doc.splitTextToSize(safeText(c.name || ''), titleW);
+      doc.text(nl, titleX, y); y += Math.max(nl.length * lineH, lineH);
+      if (c.institution) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#F97E00');
+        const il = doc.splitTextToSize(safeText(c.institution), titleW);
+        doc.text(il, titleX, y); y += il.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // OSIĄGNIĘCIA
-  if (localAchievements?.length) {
+  // ── OSIAGNIECIA ──
+  if (localAchievements?.length && show('achievements')) {
     addSection('OSIAGNIECIA I NAGRODY');
     localAchievements.forEach(a => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#222222');
-      doc.text(safeText(a.title||''), margin, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor('#777777');
-      doc.text(safeText(a.year||''), 195, y, { align: 'right' });
-      y += lineH;
-      if (a.description) addLine(safeText(a.description), 9, '#555555', false, 2);
+      checkPage(8);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#777777');
+      doc.text(safeText(a.year || ''), dateX, y);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#222222');
+      const al = doc.splitTextToSize(safeText(a.title || ''), titleW);
+      doc.text(al, titleX, y); y += Math.max(al.length * lineH, lineH);
+      if (a.description) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+        const dl = doc.splitTextToSize(safeText(a.description), titleW);
+        doc.text(dl, titleX, y); y += dl.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // НАВИЧКИ
-  if (localSkills?.length) {
-    addSection('UMIEJETNOSCI');
-    addLine(localSkills.join(' · '), 9, '#333333');
-    y += 2;
+  // ── HOBBY ──
+  if (localHobbies?.length && show('hobbies')) {
+    addSection('HOBBY / ZAINTERESOWANIA');
+    checkPage(lineH);
+    doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor('#333333');
+    const hl = doc.splitTextToSize(localHobbies.map(h => safeText(h)).join(', '), rightEdge - margin);
+    doc.text(hl, margin, y); y += hl.length * lineH + 2;
   }
 
-  // HOBBY
-  if (localHobbies?.length) {
-    addSection('HOBBY I ZAINTERESOWANIA');
-    const hobbiesText = Array.isArray(localHobbies) ? localHobbies.join(' · ') : localHobbies;
-    addLine(safeText(hobbiesText), 9, '#333333');
-    y += 2;
-  }
-
-  // WOLONTARIAT
-  if (localVolunteering?.length) {
+  // ── WOLONTARIAT ──
+  if (localVolunteering?.length && show('volunteering')) {
     addSection('WOLONTARIAT');
     localVolunteering.forEach(v => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#222222');
-      doc.text(safeText(v.role||''), margin, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor('#777777');
-      doc.text(safeText(v.period||''), 195, y, { align: 'right' });
-      y += lineH;
-      if (v.org) addLine(safeText(v.org), 9, '#F97E00', false, 2);
-      if (v.description) addLine(safeText(v.description), 9, '#555555', false, 4);
+      checkPage(8);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#777777');
+      doc.text(safeText(v.period || ''), dateX, y);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#222222');
+      const rl = doc.splitTextToSize(safeText(v.role || ''), titleW);
+      doc.text(rl, titleX, y); y += Math.max(rl.length * lineH, lineH);
+      if (v.org) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#F97E00');
+        const ol = doc.splitTextToSize(safeText(v.org), titleW);
+        doc.text(ol, titleX, y); y += ol.length * 4.5;
+      }
+      if (v.description) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+        const dl = doc.splitTextToSize(safeText(v.description), titleW);
+        doc.text(dl, titleX, y); y += dl.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // MEDIA
-  if (localMedia?.length) {
+  // ── MEDIA ──
+  if (localMedia?.length && show('media')) {
     addSection('PUBLIKACJE I MEDIA');
     localMedia.forEach(m => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#222222');
-      doc.text(safeText(m.title||''), margin, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor('#777777');
-      doc.text(safeText(m.year||''), 195, y, { align: 'right' });
-      y += lineH;
-      if (m.source) addLine(safeText(m.source), 9, '#F97E00', false, 2);
-      if (m.url) addLine(safeText(m.url), 8, '#999999', false, 2);
+      checkPage(8);
+      doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#777777');
+      doc.text(safeText(m.year || ''), dateX, y);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#222222');
+      const ml = doc.splitTextToSize(safeText(m.title || ''), titleW);
+      doc.text(ml, titleX, y); y += Math.max(ml.length * lineH, lineH);
+      if (m.source) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#F97E00');
+        const srcl = doc.splitTextToSize(safeText(m.source), titleW);
+        doc.text(srcl, titleX, y); y += srcl.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // ПОСЛУГИ
-  if (localServices?.length) {
+  // ── USLUGI ──
+  if (localServices?.length && show('services')) {
     addSection('USLUGI / OFERTA');
     localServices.forEach(s => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#F97E00');
-      doc.text(safeText(removeEmoji(s.name||'')), margin, y);
-      if (s.price) {
-        doc.setFontSize(9);
-        doc.text(safeText(removeEmoji(s.price)), 195, y, { align: 'right' });
+      checkPage(8);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#F97E00');
+      const nl = doc.splitTextToSize(safeText(removeEmoji(s.name || '')), rightEdge - margin - 30);
+      doc.text(nl, margin, y);
+      if (s.price) { doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.text(safeText(s.price), rightEdge, y, { align: 'right' }); }
+      y += nl.length * lineH;
+      if (s.description) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+        const dl = doc.splitTextToSize(safeText(s.description), rightEdge - margin - 4);
+        doc.text(dl, margin + 2, y); y += dl.length * 4.5;
       }
-      y += lineH;
-      if (s.description) addLine(s.description, 9, '#555555', false, 2);
       y += 2;
     });
   }
 
-  // ПОРТФОЛІО
-  if (localPortfolio?.length) {
+  // ── PORTFOLIO ──
+  if (localPortfolio?.length && show('portfolio')) {
     addSection('PORTFOLIO');
     localPortfolio.forEach(p => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor('#222222');
-      doc.text(safeText(removeEmoji(p.name||'')), margin, y);
-      y += lineH;
-      if (p.role) addLine(p.role + (p.result ? ' · '+p.result : ''), 9, '#555555', false, 2);
-      if (p.url) addLine(p.url, 9, '#F97E00', false, 2);
+      checkPage(8);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor('#222222');
+      const nl = doc.splitTextToSize(safeText(removeEmoji(p.name || '')), rightEdge - margin);
+      doc.text(nl, margin, y); y += nl.length * lineH;
+      const sub = [p.role, p.result].filter(Boolean).map(s => safeText(s)).join(' · ');
+      if (sub) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+        const sl = doc.splitTextToSize(sub, rightEdge - margin - 4);
+        doc.text(sl, margin + 2, y); y += sl.length * 4.5;
+      }
+      if (p.url) {
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor('#F97E00');
+        const ul = doc.splitTextToSize(safeText(p.url), rightEdge - margin - 4);
+        doc.text(ul, margin + 2, y); y += ul.length * 4.5;
+      }
       y += 2;
     });
   }
 
-  // ПІДВАЛ
+  // ── O MNIE (bio) ──
+  if (localBio && show('bio')) {
+    addSection('O MNIE');
+    checkPage(lineH);
+    doc.setFontSize(10); doc.setFont('helvetica','italic'); doc.setTextColor('#333333');
+    const bl = doc.splitTextToSize(safeText(localBio), rightEdge - margin);
+    doc.text(bl, margin, y); y += bl.length * lineH + 2;
+  }
+
+  // ── FOOTER ──
   y = pageH - 15;
   doc.setDrawColor('#eeeeee');
-  doc.line(margin, y, 195, y);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y, rightEdge, y);
   y += 4;
-  doc.setFontSize(7);
-  doc.setTextColor('#aaaaaa');
-  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7); doc.setTextColor('#aaaaaa'); doc.setFont('helvetica','normal');
   doc.text('Profil: thefoxpot.club/fox/' + username, 105, y, { align: 'center' });
   y += 4;
   doc.text('Zgoda na przetwarzanie danych osobowych dla celow rekrutacji (RODO UE 2016/679).', 105, y, { align: 'center' });
 
-  doc.save('CV_' + (localDisplayName||username).replace(/\s+/g,'_') + '.pdf');
+  doc.save('CV_' + (localDisplayName || username).replace(/\s+/g, '_') + '.pdf');
 }
 
 
