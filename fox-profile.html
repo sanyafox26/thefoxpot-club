@@ -435,9 +435,9 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div class="ep-field">
         <label>Umiejętności</label>
         <div class="skills-wrap" id="skillsWrapEdit" style="margin-bottom:6px"></div>
-        <div id="skillInputWrap" style="display:none;gap:6px;margin-top:4px">
-          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." style="flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
-          <button type="button" style="background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer" onclick="confirmAddSkill()">+ Dodaj</button>
+        <div class="spec-custom-input" id="skillInputWrap" style="display:none">
+          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
+          <button type="button" onclick="confirmAddSkill()">+ Dodaj</button>
         </div>
         <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
       </div>
@@ -446,9 +446,9 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div class="ep-field">
         <label>Hobby i zainteresowania</label>
         <div class="skills-wrap" id="hobbiesWrapEdit" style="margin-bottom:6px"></div>
-        <div id="hobbyInputWrap" style="display:none;gap:6px;margin-top:4px">
-          <input type="text" id="hobbyInputText" placeholder="Np. Fotografia, Wspinaczka, Gotowanie..." style="flex:1;background:#1a1d29;color:#fff;border:1px solid #F97E00;border-radius:8px;padding:6px 10px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddHobby()}">
-          <button type="button" style="background:#F97E00;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer" onclick="confirmAddHobby()">+ Dodaj</button>
+        <div class="spec-custom-input" id="hobbyInputWrap" style="display:none">
+          <input type="text" id="hobbyInputText" placeholder="Np. Fotografia, Wspinaczka, Gotowanie..." onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddHobby()}">
+          <button type="button" onclick="confirmAddHobby()">+ Dodaj</button>
         </div>
         <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleHobbyInput()">+ Dodaj hobby</button>
       </div>
@@ -1441,10 +1441,8 @@ function showToast(msg, duration) {
 // ── Skills ──
 function toggleSkillInput() {
   const wrap = document.getElementById('skillInputWrap');
-  const isHidden = getComputedStyle(wrap).display === 'none';
-  wrap.style.cssText = isHidden
-    ? 'display:flex;flex-direction:row;gap:6px;margin-top:4px'
-    : 'display:none;gap:6px;margin-top:4px';
+  const isHidden = wrap.style.display === 'none';
+  wrap.style.display = isHidden ? '' : 'none';
   if (isHidden) document.getElementById('skillInputText').focus();
 }
 function confirmAddSkill() {
@@ -1639,8 +1637,7 @@ function renderHobbies() {
 function toggleHobbyInput() {
   const wrap = document.getElementById('hobbyInputWrap');
   const isHidden = wrap.style.display === 'none';
-  wrap.style.display = isHidden ? 'flex' : 'none';
-  wrap.style.flexDirection = 'row';
+  wrap.style.display = isHidden ? '' : 'none';
   if (isHidden) document.getElementById('hobbyInputText').focus();
 }
 function confirmAddHobby() {
