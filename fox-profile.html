@@ -2218,14 +2218,26 @@ async function generatePdf() {
     y += 2;
   }
 
+  // Address — two clean lines, no prefix, no district
+  if (show('address')) {
+    if (localAddress) {
+      doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+      const addrL = doc.splitTextToSize(safeText(localAddress), rightW);
+      doc.text(addrL, rightX, y); y += addrL.length * 4.5;
+    }
+    const cityLine = [localPostalCode, localCity].filter(Boolean).join(' ');
+    if (cityLine) {
+      doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor('#555555');
+      const cityL = doc.splitTextToSize(safeText(cityLine), rightW);
+      doc.text(cityL, rightX, y); y += cityL.length * 4.5;
+    }
+  }
+
   // Contact info
   const contactItems = [];
   if (birthdate) contactItems.push(['Data ur.:', birthdate]);
   if (phone)     contactItems.push(['Tel:',      phone]);
   if (email)     contactItems.push(['Email:',    email]);
-  if (show('address') && localAddress) contactItems.push(['Adres:', safeText(localAddress)]);
-  const cityLine = [localPostalCode, localCity].filter(Boolean).join(' ');
-  if (show('address') && cityLine) contactItems.push(['', safeText(cityLine)]);
   contactItems.push(['Profil:', 'thefoxpot.club/fox/' + username]);
 
   contactItems.forEach(([label, val]) => {
