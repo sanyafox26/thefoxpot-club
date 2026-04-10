@@ -1513,13 +1513,14 @@ function generatePdf() {
   // Avatar — absolute URL, respects photo toggle
   const avatarSrc = (show('photo') && document.getElementById('foxAvatar')?.src) || '';
 
-  // Contact line
+  // Contact lines (each on separate row)
   const locParts = [district, address, city].filter(Boolean);
-  const cParts = [];
-  if (locParts.length) cParts.push(locParts.join(' · '));
-  if (email) cParts.push(email);
-  cParts.push(profileUrl);
-  const contactLine = cParts.join(' &nbsp;|&nbsp; ');
+  let contactLines = '';
+  if (locParts.length) contactLines += '<span style="display:block">' + locParts.join(' · ') + '</span>';
+  if (email) contactLines += '<span style="display:block">📧 <span style="color:#555;text-decoration:none">' + email + '</span></span>';
+  contactLines += '<span style="display:block">🌐 ' + profileUrl + '</span>';
+  if (hourly)       contactLines += '<span style="display:block">💰 ' + hourly + '</span>';
+  if (langs.length) contactLines += '<span style="display:block">🗣 ' + langs.join(' · ') + '</span>';
 
   // Sections
   let sections = '';
@@ -1570,18 +1571,12 @@ function generatePdf() {
   }
 
   // Header: flex row with optional photo
+  const contactBlock = '<div class="cv-contacts">' + contactLines + '</div>';
   const headerHtml = avatarSrc
-    ? '<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px">'
+    ? '<div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:8px">'
       + '<img src="'+avatarSrc+'" style="width:70px;height:70px;border-radius:50%;object-fit:cover;flex-shrink:0"/>'
-      + '<div style="flex:1"><h1>'+name+'</h1>'
-      + '<div class="contacts">'+contactLine+'</div>'
-      + (hourly  ? '<div class="contacts">Stawka: '+hourly+'</div>' : '')
-      + (langs.length ? '<div class="contacts">Języki: '+langs.join(' · ')+'</div>' : '')
-      + '</div></div>'
-    : '<h1>'+name+'</h1>'
-      + '<div class="contacts">'+contactLine+'</div>'
-      + (hourly  ? '<div class="contacts">Stawka: '+hourly+'</div>' : '')
-      + (langs.length ? '<div class="contacts">Języki: '+langs.join(' · ')+'</div>' : '');
+      + '<div style="flex:1"><h1>'+name+'</h1>' + contactBlock + '</div></div>'
+    : '<h1>'+name+'</h1>' + contactBlock;
 
   const htmlString = `<!DOCTYPE html>
 <html>
@@ -1589,7 +1584,7 @@ function generatePdf() {
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#222; background:white; padding:15mm; }
   h1 { font-size:24px; font-weight:700; margin-bottom:4px; }
-  .contacts { font-size:10px; color:#555; margin-bottom:4px; }
+  .cv-contacts { line-height:1.8; font-size:10px; color:#555; margin-bottom:6px; }
   .bio { font-size:11px; font-style:italic; margin:6px 0; color:#333; }
   .specs { font-size:10px; color:#F97E00; margin-bottom:8px; }
   .divider { border:none; border-top:2px solid #F97E00; margin:10px 0; }
