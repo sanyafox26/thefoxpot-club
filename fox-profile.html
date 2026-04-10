@@ -1620,12 +1620,23 @@ function generatePdf() {
 
   const element = document.createElement('div');
   element.innerHTML = htmlString;
-  element.style.cssText = 'position:absolute;left:-9999px;top:0;background:white;width:794px';
+  element.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 210mm;
+    background: white;
+    color: #222;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    padding: 15mm;
+    z-index: -9999;
+  `;
   document.body.appendChild(element);
 
-  html2pdf().set(opt).from(element).save()
-    .then(() => { document.body.removeChild(element); console.log('PDF saved'); })
-    .catch(e => { document.body.removeChild(element); console.error('html2pdf error:', e); });
+  html2pdf().set(opt).from(element).save().then(() => {
+    document.body.removeChild(element);
+  });
 }
 
 
