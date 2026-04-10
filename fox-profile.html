@@ -1604,31 +1604,116 @@ function buildCVhtml(photoBase64) {
 }
 
 async function generatePdf() {
-  if (!profileData) {
-    console.log('profileData is null, fetching from API...');
-    const resp = await fetch('/api/fox-public/' + encodeURIComponent(NICKNAME));
-    if (!resp.ok) { alert('Nie udało się załadować danych profilu.'); return; }
-    profileData = await resp.json();
-    initLocals();
+  const d = profileData;
+  if (!d) { alert('Brak danych profilu'); return; }
+
+  const exp = d.experience_items || [];
+  const edu = d.education || [];
+  const skills = d.skills || [];
+  const services = d.services || [];
+  const portfolio = d.portfolio_items || [];
+  const specs = d.specializations || (d.specialization ? [d.specialization] : []);
+
+  let expHtml = exp.map(e => `
+    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+      <strong>${e.title||''}</strong>
+      <span style="color:#777;font-size:10px;white-space:nowrap;margin-left:10px">${e.period||''}</span>
+    </div>
+    <div style="color:#F97E00;font-size:11px;margin-bottom:2px">${e.company||''}</div>
+    ${e.description ? `<div style="font-size:10px;color:#555;margin-left:10px;margin-bottom:8px">${e.description}</div>` : '<div style="margin-bottom:8px"></div>'}
+  `).join('');
+
+  let eduHtml = edu.map(e => `
+    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+      <span style="color:#F97E00;font-weight:700">${e.school||''}</span>
+      <span style="color:#777;font-size:10px;white-space:nowrap;margin-left:10px">${e.years||''}</span>
+    </div>
+    <div style="font-size:10px;color:#555;margin-bottom:8px">${e.field||''} ${e.degree ? '· '+e.degree : ''}</div>
+  `).join('');
+
+  let skillsHtml = Array.isArray(skills) ? skills.join(' · ') : '';
+
+  let servHtml = services.map(s => `
+    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+      <strong style="color:#F97E00">${s.name||''}</strong>
+      <span style="color:#F97E00;font-size:10px;white-space:nowrap;margin-left:10px">${s.price||''}</span>
+    </div>
+    <div style="font-size:10px;color:#555;margin-bottom:8px">${s.description||''}</div>
+  `).join('');
+
+  let portHtml = portfolio.map(p => `
+    <div style="margin-bottom:8px">
+      <strong>${p.name||''}</strong>
+      ${p.url ? `<span style="color:#F97E00;font-size:10px;margin-left:10px">${p.url}</span>` : ''}
+      <div style="font-size:10px;color:#555">${p.role||''} ${p.result ? '· '+p.result : ''}</div>
+    </div>
+  `).join('');
+
+  const specsText = Array.isArray(specs) ? specs.join(' · ') : (specs||'');
+  const username = window.location.pathname.split('/').pop();
+
+  const html = `
+  <div style="font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;width:180mm;padding:0">
+    <h1 style="font-size:24px;font-weight:700;margin:0 0 6px">${d.display_name||d.username||''}</h1>
+    <div style="font-size:10px;color:#555;line-height:1.9">
+      ${d.district||d.city ? `<div>📍 ${[d.district,d.contact_address,d.city].filter(Boolean).join(' · ')}</div>` : ''}
+      <div>🦊 thefoxpot.club/fox/${username}</div>
+      ${d.contact_email ? `<div>📧 ${d.contact_email}</div>` : ''}
+      ${d.hourly_rate ? `<div>💰 ${d.hourly_rate}</div>` : ''}
+      ${Array.isArray(d.languages)&&d.languages.length ? `<div>🗣 ${d.languages.join(' · ')}</div>` : ''}
+    </div>
+    ${d.bio ? `<div style="font-style:italic;font-size:11px;margin:8px 0;color:#333">${d.bio}</div>` : ''}
+    ${specsText ? `<div style="font-size:10px;color:#F97E00;margin-bottom:8px">${specsText}</div>` : ''}
+    <div style="border-top:2px solid #F97E00;margin:10px 0"></div>
+    ${expHtml ? `
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">DOŚWIADCZENIE ZAWODOWE</div>
+      ${expHtml}` : ''}
+    ${eduHtml ? `
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">WYKSZTAŁCENIE</div>
+      ${eduHtml}` : ''}
+    ${skillsHtml ? `
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">UMIEJĘTNOŚCI</div>
+      <div style="font-size:10px;line-height:1.8">${skillsHtml}</div>` : ''}
+    ${servHtml ? `
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">USŁUGI / OFERTA</div>
+      ${servHtml}` : ''}
+    ${portHtml ? `
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">PORTFOLIO</div>
+      ${portHtml}` : ''}
+    <div style="border-top:1px solid #eee;margin-top:20px;padding-top:6px;font-size:8px;color:#aaa;text-align:center">
+      Profil: thefoxpot.club/fox/${username}
+    </div>
+    <div style="font-size:7px;color:#bbb;font-style:italic;text-align:center;margin-top:4px">
+      Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (UE 2016/679).
+    </div>
+  </div>`;
+
+  const element = document.createElement('div');
+  element.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:210mm;background:white;';
+  element.innerHTML = html;
+  document.body.appendChild(element);
+
+  const opt = {
+    margin: [15, 15, 15, 15],
+    filename: `CV_${(d.display_name||d.username||'Fox').replace(/\s+/g,'_')}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    await html2pdf().set(opt).from(element).save();
+  } catch(e) {
+    console.error('PDF error:', e);
+    alert('Błąd generowania PDF: ' + e.message);
+  } finally {
+    document.body.removeChild(element);
   }
-  console.log('profileData:', profileData);
-  console.log('localDisplayName:', localDisplayName, '| localExperience:', localExperience.length);
-
-  const photoBase64 = profileData?.photo_url ? await getImageBase64(profileData.photo_url) : null;
-  console.log('photoBase64:', photoBase64 ? 'loaded' : 'none');
-
-  showToast('💡 W oknie druku: Więcej ustawień → odznacz "Nagłówki i stopki"', 8000);
-
-  const w = window.open('', '_blank');
-  if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
-  const html = buildCVhtml(photoBase64);
-  console.log('CV HTML length:', html.length);
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => {
-    w.focus();
-    w.print();
-  }, 800);
 }
 
 
