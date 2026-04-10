@@ -1494,7 +1494,19 @@ function removeSpec(idx) {
 
 function renderSpecChips() { renderSpecTags(); }
 
-function buildCVhtml() {
+async function getImageBase64(url) {
+  try {
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  } catch { return null; }
+}
+
+function buildCVhtml(photoBase64) {
   if (!profileData) { console.error('No profileData'); return '<p>Brak danych</p>'; }
 
   const name    = escHtml(localDisplayName || NICKNAME);
@@ -1509,7 +1521,7 @@ function buildCVhtml() {
   let expHtml = '';
   if (show('experience')) {
     localExperience.forEach(e => {
-      expHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-weight:700">${escHtml(e.title||'')}</span><span style="color:#777;font-size:10px;white-space:nowrap;margin-left:8px">${escHtml(e.period||'')}</span></div>`
+      expHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;"><strong>${escHtml(e.title||'')}</strong><span style="color:#777;font-size:10px;white-space:nowrap;margin-left:10px;">${escHtml(e.period||'')}</span></div>`
         + (e.company ? `<div style="color:#F97E00;font-size:11px;margin-bottom:2px">${escHtml(e.company)}</div>` : '')
         + (e.desc    ? `<div style="font-size:10px;color:#555;margin-bottom:8px;line-height:1.5">${escHtml(e.desc)}</div>` : '');
     });
@@ -1520,7 +1532,7 @@ function buildCVhtml() {
   if (show('education')) {
     localEducation.forEach(e => {
       const sub = [e.field, e.degree].filter(Boolean).map(escHtml).join(' · ');
-      eduHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-weight:700;color:#F97E00">${escHtml(e.school||'')}</span><span style="color:#777;font-size:10px;white-space:nowrap;margin-left:8px">${escHtml(e.years||'')}</span></div>`
+      eduHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;"><strong style="color:#F97E00">${escHtml(e.school||'')}</strong><span style="color:#777;font-size:10px;white-space:nowrap;margin-left:10px;">${escHtml(e.years||'')}</span></div>`
         + (sub ? `<div style="font-size:10px;color:#555;margin-bottom:8px">${sub}</div>` : '');
     });
   }
@@ -1532,7 +1544,7 @@ function buildCVhtml() {
   let servHtml = '';
   if (show('services')) {
     localServices.forEach(s => {
-      servHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-weight:700">${escHtml(s.name||'')}</span><span style="color:#F97E00;font-size:10px;white-space:nowrap;margin-left:8px">${escHtml(s.price||'')}</span></div>`
+      servHtml += `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;"><strong>${escHtml(s.name||'')}</strong><span style="color:#F97E00;font-size:10px;white-space:nowrap;margin-left:10px;">${escHtml(s.price||'')}</span></div>`
         + (s.desc ? `<div style="font-size:10px;color:#555;margin-bottom:8px">${escHtml(s.desc)}</div>` : '');
     });
   }
@@ -1542,35 +1554,45 @@ function buildCVhtml() {
   if (show('portfolio')) {
     localPortfolio.forEach(p => {
       const sub = [p.role, p.result].filter(Boolean).map(escHtml).join(' · ');
-      portHtml += `<div class="cv-title">${escHtml(p.title||'')}</div>`
-        + (sub ? `<div class="cv-desc">${sub}</div>` : '') + '<br>';
+      portHtml += `<div style="font-weight:700;margin-bottom:2px">${escHtml(p.title||'')}</div>`
+        + (sub ? `<div style="font-size:10px;color:#555;margin-bottom:8px">${sub}</div>` : '');
     });
   }
 
   console.log('buildCVhtml — name:', name, '| exp:', localExperience.length, '| skills:', localSkills.length);
 
-  return `
-  <div style="font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;padding:15mm;width:180mm;">
-    <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">${name}</h1>
-    <div style="font-size:10px;color:#555;line-height:1.9;margin-bottom:8px">
-      ${address ? `<div>📍 ${address}</div>` : ''}
-      ${email   ? `<div>📧 ${email}</div>`   : ''}
-    </div>
-    ${bio   ? `<div style="font-style:italic;font-size:11px;margin:6px 0">${bio}</div>` : ''}
-    ${specs ? `<div style="font-size:10px;color:#F97E00;margin-bottom:8px">${specs}</div>` : ''}
-    <div style="border-top:2px solid #F97E00;margin:10px 0"></div>
-    ${expHtml  ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">DOŚWIADCZENIE ZAWODOWE</div>${expHtml}` : ''}
-    ${eduHtml  ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">WYKSZTAŁCENIE</div>${eduHtml}` : ''}
-    ${skills   ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">UMIEJĘTNOŚCI</div><div style="font-size:10px;line-height:1.8">${skills}</div>` : ''}
-    ${servHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">USŁUGI / OFERTA</div>${servHtml}` : ''}
-    ${portHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">PORTFOLIO</div>${portHtml}` : ''}
-    <div style="border-top:1px solid #eee;margin-top:20px;padding-top:6px;font-size:8px;color:#aaa;text-align:center">
-      Profil: thefoxpot.club/fox/${nickname}
-    </div>
-    <div style="font-size:7px;color:#bbb;font-style:italic;text-align:center;margin-top:4px">
-      Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (UE 2016/679).
-    </div>
-  </div>`;
+  const headerHtml = photoBase64
+    ? `<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px">
+        <img src="${photoBase64}" style="width:70px;height:70px;border-radius:50%;object-fit:cover;flex-shrink:0"/>
+        <div style="flex:1">
+          <h1 style="font-size:24px;font-weight:700;margin:0 0 4px">${name}</h1>
+          <div style="font-size:10px;color:#555;line-height:1.9">
+            ${address ? `<div>📍 ${address}</div>` : ''}
+            ${email   ? `<div>📧 ${email}</div>`   : ''}
+          </div>
+        </div>
+      </div>`
+    : `<h1 style="font-size:24px;font-weight:700;margin:0 0 4px">${name}</h1>
+       <div style="font-size:10px;color:#555;line-height:1.9;margin-bottom:8px">
+         ${address ? `<div>📍 ${address}</div>` : ''}
+         ${email   ? `<div>📧 ${email}</div>`   : ''}
+       </div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;padding:15mm}@media print{@page{margin:15mm;size:A4 portrait}body{padding:0}}</style>
+  </head><body>
+  ${headerHtml}
+  ${bio   ? `<div style="font-style:italic;font-size:11px;margin:6px 0;color:#333">${bio}</div>` : ''}
+  ${specs ? `<div style="font-size:10px;color:#F97E00;margin-bottom:8px">${specs}</div>` : ''}
+  <div style="border-top:2px solid #F97E00;margin:10px 0"></div>
+  ${expHtml  ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">DOŚWIADCZENIE ZAWODOWE</div>${expHtml}` : ''}
+  ${eduHtml  ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">WYKSZTAŁCENIE</div>${eduHtml}` : ''}
+  ${skills   ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">UMIEJĘTNOŚCI</div><div style="font-size:10px;line-height:1.8;margin-bottom:8px">${skills}</div>` : ''}
+  ${servHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">USŁUGI / OFERTA</div>${servHtml}` : ''}
+  ${portHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px">PORTFOLIO</div>${portHtml}` : ''}
+  <div style="border-top:1px solid #eee;margin-top:20px;padding-top:6px;font-size:8px;color:#aaa;text-align:center">Profil: thefoxpot.club/fox/${nickname}</div>
+  <div style="font-size:7px;color:#bbb;font-style:italic;text-align:center;margin-top:4px">Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (UE 2016/679).</div>
+  </body></html>`;
 }
 
 async function generatePdf() {
@@ -1584,9 +1606,12 @@ async function generatePdf() {
   console.log('profileData:', profileData);
   console.log('localDisplayName:', localDisplayName, '| localExperience:', localExperience.length);
 
+  const photoBase64 = profileData?.photo_url ? await getImageBase64(profileData.photo_url) : null;
+  console.log('photoBase64:', photoBase64 ? 'loaded' : 'none');
+
   const w = window.open('', '_blank');
   if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
-  const html = buildCVhtml();
+  const html = buildCVhtml(photoBase64);
   console.log('CV HTML length:', html.length);
   w.document.write(html);
   w.document.close();
