@@ -538,36 +538,6 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <button class="add-btn" onclick="openEduModal(null)">+ Dodaj wykształcenie</button>
       </div>
 
-      <!-- Skills -->
-      <div class="section" id="secSkills" data-sec="skills">
-        <div class="section-head">
-          <div class="section-title">Umiejętności</div>
-          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('skills')" id="visSkills">👁</button>
-        </div>
-        <div class="skills-wrap" id="skillsWrap"></div>
-      </div>
-
-      <!-- Services -->
-      <div class="section" id="secServices" data-sec="services">
-        <div class="section-head">
-          <div class="section-title">Usługi</div>
-          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('services')" id="visServices">👁</button>
-        </div>
-        <div id="servicesList"></div>
-        <button class="add-btn" onclick="openServiceModal(null)">+ Dodaj usługę</button>
-      </div>
-
-      <!-- Portfolio -->
-      <div class="section" id="secPortfolio" data-sec="portfolio">
-        <div class="section-head">
-          <div class="section-title">Portfolio</div>
-          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('portfolio')" id="visPortfolio">👁</button>
-        </div>
-        <div id="featuredWrap"></div>
-        <div class="portfolio-grid" id="portfolioGrid"></div>
-        <button class="add-btn" onclick="openPortfolioModal(null)">+ Dodaj projekt</button>
-      </div>
-
       <!-- Courses -->
       <div class="section" id="secCourses" data-sec="courses">
         <div class="section-head">
@@ -586,6 +556,15 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         </div>
         <div id="achievementsList"></div>
         <button class="add-btn" onclick="openAchieveModal(null)">+ Dodaj osiągnięcie</button>
+      </div>
+
+      <!-- Skills -->
+      <div class="section" id="secSkills" data-sec="skills">
+        <div class="section-head">
+          <div class="section-title">Umiejętności</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('skills')" id="visSkills">👁</button>
+        </div>
+        <div class="skills-wrap" id="skillsWrap"></div>
       </div>
 
       <!-- Hobbies -->
@@ -615,6 +594,27 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         </div>
         <div id="mediaList"></div>
         <button class="add-btn" onclick="openMediaModal(null)">+ Dodaj publikację</button>
+      </div>
+
+      <!-- Services -->
+      <div class="section" id="secServices" data-sec="services">
+        <div class="section-head">
+          <div class="section-title">Usługi</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('services')" id="visServices">👁</button>
+        </div>
+        <div id="servicesList"></div>
+        <button class="add-btn" onclick="openServiceModal(null)">+ Dodaj usługę</button>
+      </div>
+
+      <!-- Portfolio -->
+      <div class="section" id="secPortfolio" data-sec="portfolio">
+        <div class="section-head">
+          <div class="section-title">Portfolio</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('portfolio')" id="visPortfolio">👁</button>
+        </div>
+        <div id="featuredWrap"></div>
+        <div class="portfolio-grid" id="portfolioGrid"></div>
+        <button class="add-btn" onclick="openPortfolioModal(null)">+ Dodaj projekt</button>
       </div>
 
       <!-- Reviews -->
@@ -1441,15 +1441,21 @@ function showToast(msg, duration) {
 // ── Skills ──
 function toggleSkillInput() {
   const wrap = document.getElementById('skillInputWrap');
-  const isHidden = wrap.style.display === 'none';
-  wrap.style.display = isHidden ? 'flex' : 'none';
-  wrap.style.flexDirection = 'row';
+  const isHidden = getComputedStyle(wrap).display === 'none';
+  wrap.style.cssText = isHidden
+    ? 'display:flex;flex-direction:row;gap:6px;margin-top:4px'
+    : 'display:none;gap:6px;margin-top:4px';
   if (isHidden) document.getElementById('skillInputText').focus();
 }
 function confirmAddSkill() {
   const inp = document.getElementById('skillInputText');
   const v = inp.value.trim();
-  if (v) { localSkills.push(v); renderSkills(); markDirty(); inp.value = ''; inp.focus(); }
+  if (!v) return;
+  localSkills.push(v);
+  renderSkills();
+  markDirty();
+  inp.value = '';
+  inp.focus();
 }
 function removeSkill(i) { if (!isEditMode) return; localSkills.splice(i,1); renderSkills(); markDirty(); }
 
@@ -2071,13 +2077,6 @@ async function generatePdf() {
     });
   }
 
-  // НАВИЧКИ
-  if (localSkills?.length) {
-    addSection('UMIEJETNOSCI');
-    addLine(localSkills.join(' · '), 9, '#333333');
-    y += 2;
-  }
-
   // КУРСИ
   if (localCourses?.length) {
     addSection('KURSY I SZKOLENIA');
@@ -2104,6 +2103,13 @@ async function generatePdf() {
       if (a.description) addLine(a.description, 9, '#555555', false, 2);
       y += 2;
     });
+  }
+
+  // НАВИЧКИ
+  if (localSkills?.length) {
+    addSection('UMIEJETNOSCI');
+    addLine(localSkills.join(' · '), 9, '#333333');
+    y += 2;
   }
 
   // HOBBY
