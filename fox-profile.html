@@ -2078,12 +2078,17 @@ async function generatePdf() {
   if (localCourses?.length) {
     addSection('KURSY I SZKOLENIA');
     localCourses.forEach(c => {
-      if (y > pageH - margin) { doc.addPage(); y = margin; }
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
-      doc.text(safeText(removeEmoji(c.name||'')), margin, y);
-      if (c.year) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(c.year), 195, y, { align: 'right' }); }
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#222222');
+      doc.text(safeText(c.name||''), margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#777777');
+      doc.text(safeText(c.year||''), 195, y, { align: 'right' });
       y += lineH;
-      if (c.institution) addLine(c.institution, 9, '#F97E00', false, 2);
+      if (c.institution) addLine(safeText(c.institution), 9, '#F97E00', false, 2);
+      if (c.url) addLine(safeText(c.url), 8, '#999999', false, 2);
       y += 2;
     });
   }
@@ -2092,12 +2097,16 @@ async function generatePdf() {
   if (localAchievements?.length) {
     addSection('OSIAGNIECIA I NAGRODY');
     localAchievements.forEach(a => {
-      if (y > pageH - margin) { doc.addPage(); y = margin; }
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
-      doc.text(safeText(removeEmoji(a.title||'')), margin, y);
-      if (a.year) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(a.year), 195, y, { align: 'right' }); }
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#222222');
+      doc.text(safeText(a.title||''), margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#777777');
+      doc.text(safeText(a.year||''), 195, y, { align: 'right' });
       y += lineH;
-      if (a.description) addLine(a.description, 9, '#555555', false, 2);
+      if (a.description) addLine(safeText(a.description), 9, '#555555', false, 2);
       y += 2;
     });
   }
@@ -2112,7 +2121,8 @@ async function generatePdf() {
   // HOBBY
   if (localHobbies?.length) {
     addSection('HOBBY I ZAINTERESOWANIA');
-    addLine(localHobbies.join(' · '), 9, '#333333');
+    const hobbiesText = Array.isArray(localHobbies) ? localHobbies.join(' · ') : localHobbies;
+    addLine(safeText(hobbiesText), 9, '#333333');
     y += 2;
   }
 
@@ -2120,13 +2130,17 @@ async function generatePdf() {
   if (localVolunteering?.length) {
     addSection('WOLONTARIAT');
     localVolunteering.forEach(v => {
-      if (y > pageH - margin) { doc.addPage(); y = margin; }
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
-      doc.text(safeText(removeEmoji(v.role||v.org||'')), margin, y);
-      if (v.period) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(v.period), 195, y, { align: 'right' }); }
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#222222');
+      doc.text(safeText(v.role||''), margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#777777');
+      doc.text(safeText(v.period||''), 195, y, { align: 'right' });
       y += lineH;
-      if (v.org) addLine(v.org, 9, '#F97E00', false, 2);
-      if (v.description) addLine(v.description, 9, '#555555', false, 4);
+      if (v.org) addLine(safeText(v.org), 9, '#F97E00', false, 2);
+      if (v.description) addLine(safeText(v.description), 9, '#555555', false, 4);
       y += 2;
     });
   }
@@ -2135,13 +2149,17 @@ async function generatePdf() {
   if (localMedia?.length) {
     addSection('PUBLIKACJE I MEDIA');
     localMedia.forEach(m => {
-      if (y > pageH - margin) { doc.addPage(); y = margin; }
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor('#222222');
-      doc.text(safeText(removeEmoji(m.title||'')), margin, y);
-      if (m.year) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor('#777777'); doc.text(safeText(m.year), 195, y, { align: 'right' }); }
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#222222');
+      doc.text(safeText(m.title||''), margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#777777');
+      doc.text(safeText(m.year||''), 195, y, { align: 'right' });
       y += lineH;
-      if (m.source) addLine(m.source, 9, '#F97E00', false, 2);
-      if (m.url) addLine(m.url, 9, '#555555', false, 2);
+      if (m.source) addLine(safeText(m.source), 9, '#F97E00', false, 2);
+      if (m.url) addLine(safeText(m.url), 8, '#999999', false, 2);
       y += 2;
     });
   }
