@@ -1617,7 +1617,7 @@ async function generatePdf() {
   const photoBase64 = profileData?.photo_url ? await getImageBase64(profileData.photo_url) : null;
   console.log('photoBase64:', photoBase64 ? 'loaded' : 'none');
 
-  alert('Aby usunąć nagłówki: W oknie druku → Więcej ustawień → odznacz "Nagłówki i stopki"');
+  showToast('💡 W oknie druku: Więcej ustawień → odznacz "Nagłówki i stopki"', 8000);
 
   const w = window.open('', '_blank');
   if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
