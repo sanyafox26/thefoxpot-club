@@ -1666,6 +1666,9 @@ async function generatePdf() {
   addLine(localDisplayName || username, 22, '#222222', true);
   y += 2;
 
+  console.log('localDistrict raw:', localDistrict);
+  console.log('localAddress raw:', localAddress);
+  console.log('localBio raw:', localBio);
   const addr = [localDistrict, localAddress, 'Warsaw'].filter(Boolean).join(' · ');
   if (addr) addLine('📍 ' + addr, 9, '#555555');
   addLine('Fox: thefoxpot.club/fox/' + username, 9, '#F97E00');
