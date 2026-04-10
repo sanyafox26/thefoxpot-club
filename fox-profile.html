@@ -1607,6 +1607,11 @@ function buildCVhtml(photoBase64) {
 }
 
 async function generatePdf() {
+  console.log('=== generatePdf called ===');
+  console.log('localDisplayName:', localDisplayName);
+  console.log('localExperience:', localExperience);
+  console.log('localSkills:', localSkills);
+  console.log('html2pdf type:', typeof html2pdf);
   if (!localDisplayName && !profileData) {
     alert('Brak danych profilu'); return;
   }
