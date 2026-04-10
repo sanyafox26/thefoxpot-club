@@ -718,6 +718,8 @@ async function init() {
     if (r.status === 403) { showPrivate(); return; }
     if (!r.ok) { showNotFound(); return; }
     profileData = await r.json();
+    console.log('API response:', profileData);
+    window.DEBUG_PROFILE = profileData;
     initLocals();
     render();
     document.getElementById('profileWrap').style.display = '';
@@ -1718,7 +1720,11 @@ async function generatePdf() {
 
 
 // ── Init ──
-init();
+init().then(() => {
+  console.log('profileData:', window.profileData);
+  console.log('foxData:', window.foxData);
+  console.log('profile:', window.profile);
+});
 </script>
 <div id="cv-print"></div>
 </body>
