@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -1607,119 +1608,146 @@ function buildCVhtml(photoBase64) {
 }
 
 async function generatePdf() {
-  console.log('=== generatePdf called ===');
-  console.log('localDisplayName:', localDisplayName);
-  console.log('localExperience:', localExperience);
-  console.log('localSkills:', localSkills);
-  console.log('html2pdf type:', typeof html2pdf);
-  if (!localDisplayName && !profileData) {
-    alert('Brak danych profilu'); return;
-  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
   const username = window.location.pathname.split('/').pop();
+  const margin = 15;
+  let y = margin;
+  const pageH = 297;
+  const lineH = 5;
 
-  const specs = localSpecializations?.length ?
-    localSpecializations.join(' · ') :
-    (localSpec || '');
-
-  let expHtml = (localExperience || []).map(e => `
-    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-      <strong>${e.title||''}</strong>
-      <span style="color:#777;font-size:10px;white-space:nowrap;margin-left:10px">${e.period||''}</span>
-    </div>
-    <div style="color:#F97E00;font-size:11px;margin-bottom:2px">${e.company||''}</div>
-    ${e.description ? `<div style="font-size:10px;color:#555;margin-left:10px;margin-bottom:8px">${e.description}</div>` : '<div style="margin-bottom:8px"></div>'}
-  `).join('');
-
-  let eduHtml = (localEducation || []).map(e => `
-    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-      <span style="color:#F97E00;font-weight:700">${e.school||''}</span>
-      <span style="color:#777;font-size:10px;white-space:nowrap;margin-left:10px">${e.years||''}</span>
-    </div>
-    <div style="font-size:10px;color:#555;margin-bottom:8px">${e.field||''} ${e.degree ? '· '+e.degree : ''}</div>
-  `).join('');
-
-  let skillsHtml = (localSkills || []).join(' · ');
-
-  let servHtml = (localServices || []).map(s => `
-    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-      <strong style="color:#F97E00">${s.name||''}</strong>
-      <span style="color:#F97E00;font-size:10px;white-space:nowrap;margin-left:10px">${s.price||''}</span>
-    </div>
-    <div style="font-size:10px;color:#555;margin-bottom:8px">${s.description||''}</div>
-  `).join('');
-
-  let portHtml = (localPortfolio || []).map(p => `
-    <div style="margin-bottom:8px">
-      <strong>${p.name||''}</strong>
-      ${p.url ? `<span style="color:#F97E00;font-size:10px;margin-left:10px">${p.url}</span>` : ''}
-      <div style="font-size:10px;color:#555">${p.role||''} ${p.result ? '· '+p.result : ''}</div>
-    </div>
-  `).join('');
-
-  const addrParts = [localDistrict, localAddress, 'Warsaw'].filter(Boolean);
-
-  const html = `
-  <div style="font-family:Arial,sans-serif;font-size:11px;color:#222;background:white;width:180mm">
-    <h1 style="font-size:24px;font-weight:700;margin:0 0 6px">${localDisplayName||username}</h1>
-    <div style="font-size:10px;color:#555;line-height:1.9">
-      ${addrParts.length ? `<div>📍 ${addrParts.join(' · ')}</div>` : ''}
-      <div>🦊 thefoxpot.club/fox/${username}</div>
-      ${localEmail ? `<div>📧 ${localEmail}</div>` : ''}
-    </div>
-    ${localBio ? `<div style="font-style:italic;font-size:11px;margin:8px 0;color:#333">${localBio}</div>` : ''}
-    ${specs ? `<div style="font-size:10px;color:#F97E00;margin-bottom:8px">${specs}</div>` : ''}
-    <div style="border-top:2px solid #F97E00;margin:10px 0"></div>
-    ${expHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">DOŚWIADCZENIE ZAWODOWE</div>${expHtml}` : ''}
-    ${eduHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">WYKSZTAŁCENIE</div>${eduHtml}` : ''}
-    ${skillsHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">UMIEJĘTNOŚCI</div><div style="font-size:10px;line-height:1.8">${skillsHtml}</div>` : ''}
-    ${servHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">USŁUGI / OFERTA</div>${servHtml}` : ''}
-    ${portHtml ? `<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px;color:#333">PORTFOLIO</div>${portHtml}` : ''}
-    <div style="border-top:1px solid #eee;margin-top:20px;padding-top:6px;font-size:8px;color:#aaa;text-align:center">
-      Profil: thefoxpot.club/fox/${username}
-    </div>
-    <div style="font-size:7px;color:#bbb;font-style:italic;text-align:center;margin-top:4px">
-      Wyrażam zgodę na przetwarzanie moich danych osobowych zawartych w tym dokumencie dla celów rekrutacji, zgodnie z RODO (UE 2016/679).
-    </div>
-  </div>`;
-
-  const element = document.createElement('div');
-  element.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 794px;
-    background: white;
-    z-index: 99999;
-    opacity: 0.01;
-  `;
-  element.innerHTML = html;
-  document.body.appendChild(element);
-  console.log('element innerHTML length:', element.innerHTML.length);
-  console.log('element offsetHeight:', element.offsetHeight);
-
-  const opt = {
-    margin: [15, 15, 15, 15],
-    filename: `CV_${(localDisplayName||username).replace(/\s+/g,'_')}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      useCORS: true,
-      logging: true,
-      allowTaint: false,
-      foreignObjectRendering: false
-    },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  };
-
-  try {
-    await html2pdf().set(opt).from(element).save();
-  } catch(e) {
-    console.error('PDF generation error:', e);
-  } finally {
-    document.body.removeChild(element);
+  function addLine(text, size, color, bold, indent) {
+    if (y > pageH - margin) { doc.addPage(); y = margin; }
+    doc.setFontSize(size || 10);
+    doc.setTextColor(color || '#222222');
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    const lines = doc.splitTextToSize(text || '', 180 - (indent||0));
+    doc.text(lines, margin + (indent||0), y);
+    y += lines.length * (lineH * ((size||10)/10));
   }
+
+  function addSection(title) {
+    y += 3;
+    addLine(title, 9, '#333333', true);
+    doc.setDrawColor('#dddddd');
+    doc.line(margin, y, 195, y);
+    y += 4;
+  }
+
+  // ШАПКА
+  addLine(localDisplayName || username, 22, '#222222', true);
+  y += 2;
+
+  const addr = [localDistrict, localAddress, 'Warsaw'].filter(Boolean).join(' · ');
+  if (addr) addLine('📍 ' + addr, 9, '#555555');
+  addLine('🦊 thefoxpot.club/fox/' + username, 9, '#F97E00');
+  if (localEmail) addLine('📧 ' + localEmail, 9, '#555555');
+  y += 2;
+
+  if (localBio) addLine(localBio, 9, '#333333', false, 0);
+  y += 2;
+
+  const specs = (localSpecializations||[]).join(' · ') || localSpec || '';
+  if (specs) addLine(specs, 9, '#F97E00');
+
+  // Лінія
+  y += 3;
+  doc.setDrawColor('#F97E00');
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, 195, y);
+  y += 5;
+
+  // ДОСВІД
+  if (localExperience?.length) {
+    addSection('DOŚWIADCZENIE ZAWODOWE');
+    localExperience.forEach(e => {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#222222');
+      doc.text(e.title||'', margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#777777');
+      doc.text(e.period||'', 195, y, { align: 'right' });
+      y += lineH;
+      addLine(e.company||'', 9, '#F97E00', false, 2);
+      if (e.description) addLine(e.description, 9, '#555555', false, 4);
+      y += 2;
+    });
+  }
+
+  // ОСВІТА
+  if (localEducation?.length) {
+    addSection('WYKSZTAŁCENIE');
+    localEducation.forEach(e => {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#F97E00');
+      doc.text(e.school||'', margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#777777');
+      doc.text(e.years||'', 195, y, { align: 'right' });
+      y += lineH;
+      addLine((e.field||'') + (e.degree ? ' · '+e.degree : ''), 9, '#555555', false, 2);
+      y += 2;
+    });
+  }
+
+  // НАВИЧКИ
+  if (localSkills?.length) {
+    addSection('UMIEJĘTNOŚCI');
+    addLine(localSkills.join(' · '), 9, '#333333');
+    y += 2;
+  }
+
+  // ПОСЛУГИ
+  if (localServices?.length) {
+    addSection('USŁUGI / OFERTA');
+    localServices.forEach(s => {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#F97E00');
+      doc.text(s.name||'', margin, y);
+      if (s.price) {
+        doc.setFontSize(9);
+        doc.text(s.price, 195, y, { align: 'right' });
+      }
+      y += lineH;
+      if (s.description) addLine(s.description, 9, '#555555', false, 2);
+      y += 2;
+    });
+  }
+
+  // ПОРТФОЛІО
+  if (localPortfolio?.length) {
+    addSection('PORTFOLIO');
+    localPortfolio.forEach(p => {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor('#222222');
+      doc.text(p.name||'', margin, y);
+      y += lineH;
+      if (p.role) addLine(p.role + (p.result ? ' · '+p.result : ''), 9, '#555555', false, 2);
+      if (p.url) addLine(p.url, 9, '#F97E00', false, 2);
+      y += 2;
+    });
+  }
+
+  // ПІДВАЛ
+  y = pageH - 15;
+  doc.setDrawColor('#eeeeee');
+  doc.line(margin, y, 195, y);
+  y += 4;
+  doc.setFontSize(7);
+  doc.setTextColor('#aaaaaa');
+  doc.setFont('helvetica', 'normal');
+  doc.text('Profil: thefoxpot.club/fox/' + username, 105, y, { align: 'center' });
+  y += 4;
+  doc.text('Wyrażam zgodę na przetwarzanie moich danych osobowych dla celów rekrutacji (RODO UE 2016/679).', 105, y, { align: 'center' });
+
+  doc.save('CV_' + (localDisplayName||username).replace(/\s+/g,'_') + '.pdf');
 }
 
 
