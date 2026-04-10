@@ -436,8 +436,8 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <label>Umiejętności</label>
         <div class="skills-wrap" id="skillsWrapEdit" style="margin-bottom:6px"></div>
         <div class="spec-custom-input" id="skillInputWrap" style="display:none">
-          <input type="text" id="skillInputText" placeholder="Np. Negocjacje, Excel, Photoshop..." onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddSkill()}">
-          <button type="button" onclick="confirmAddSkill()">+ Dodaj</button>
+          <input type="text" id="skillInput" placeholder="np. Python" maxlength="50">
+          <button type="button" onclick="addSkillTag()">Dodaj</button>
         </div>
         <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
       </div>
@@ -1286,7 +1286,7 @@ function toggleEditMode() {
   applySectionsVisibility();
   renderExperience();
   renderEducation();
-  renderSkills();
+  renderSkillTags();
   renderServices();
   renderPortfolio();
   renderCourses();
@@ -1417,7 +1417,7 @@ function discardChanges() {
   dirty = false;
   hideSaveBar();
   renderExperience();
-  renderSkills();
+  renderSkillTags();
   renderServices();
   renderPortfolio();
   renderCourses();
@@ -1441,21 +1441,30 @@ function showToast(msg, duration) {
 // ── Skills ──
 function toggleSkillInput() {
   const wrap = document.getElementById('skillInputWrap');
-  const isHidden = wrap.style.display === 'none';
-  wrap.style.display = isHidden ? '' : 'none';
-  if (isHidden) document.getElementById('skillInputText').focus();
+  wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
+  if (wrap.style.display !== 'none') document.getElementById('skillInput').focus();
 }
-function confirmAddSkill() {
-  const inp = document.getElementById('skillInputText');
-  const v = inp.value.trim();
-  if (!v) return;
-  localSkills.push(v);
-  renderSkills();
+function addSkillTag() {
+  const input = document.getElementById('skillInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (!localSkills.includes(val)) localSkills.push(val);
+  renderSkillTags();
   markDirty();
-  inp.value = '';
-  inp.focus();
+  input.value = '';
+  input.focus();
 }
-function removeSkill(i) { if (!isEditMode) return; localSkills.splice(i,1); renderSkills(); markDirty(); }
+function renderSkillTags() {
+  const edit = document.getElementById('skillsWrapEdit');
+  if (edit) edit.innerHTML = localSkills.map((s, i) =>
+    `<span class="spec-tag">${escHtml(s)}<button type="button" class="spec-tag-x" onclick="removeSkill(${i})">×</button></span>`
+  ).join('');
+  renderSkills();
+}
+function removeSkill(i) { if (!isEditMode) return; localSkills.splice(i,1); renderSkillTags(); markDirty(); }
+document.getElementById('skillInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addSkillTag(); }
+});
 
 // ── Experience modal ──
 function openExpModal(idx) {
