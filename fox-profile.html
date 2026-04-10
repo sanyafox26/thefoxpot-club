@@ -435,11 +435,6 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div class="ep-field">
         <label>Umiejętności</label>
         <div class="skills-wrap" id="skillsWrapEdit" style="margin-bottom:6px"></div>
-        <div class="spec-custom-input" id="skillInputWrap" style="display:none">
-          <input type="text" id="skillInput" placeholder="np. Python" maxlength="50">
-          <button type="button" onclick="addSkillTag()">Dodaj</button>
-        </div>
-        <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
       </div>
 
       <!-- Hobbies input -->
@@ -565,6 +560,11 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
           <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('skills')" id="visSkills">👁</button>
         </div>
         <div class="skills-wrap" id="skillsWrap"></div>
+        <button class="add-btn" onclick="toggleSkillInput()">+ Dodaj umiejętność</button>
+        <div class="spec-custom-input" id="skillInputWrap" style="display:none">
+          <input type="text" id="skillInput" placeholder="np. Python" maxlength="50">
+          <button type="button" onclick="addSkillTag()">Dodaj</button>
+        </div>
       </div>
 
       <!-- Hobbies -->
