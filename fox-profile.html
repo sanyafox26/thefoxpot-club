@@ -1495,15 +1495,19 @@ function removeSpec(idx) {
 function renderSpecChips() { renderSpecTags(); }
 
 async function getImageBase64(url) {
-  try {
-    const resp = await fetch(url);
-    const blob = await resp.blob();
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(blob);
-    });
-  } catch { return null; }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = url + '?t=' + Date.now();
+  });
 }
 
 function buildCVhtml(photoBase64) {
@@ -1609,14 +1613,18 @@ async function generatePdf() {
   const photoBase64 = profileData?.photo_url ? await getImageBase64(profileData.photo_url) : null;
   console.log('photoBase64:', photoBase64 ? 'loaded' : 'none');
 
+  alert('Aby usunąć nagłówki: W oknie druku → Więcej ustawień → odznacz "Nagłówki i stopki"');
+
   const w = window.open('', '_blank');
   if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
   const html = buildCVhtml(photoBase64);
   console.log('CV HTML length:', html.length);
   w.document.write(html);
   w.document.close();
-  showToast('💡 Wskazówka: W oknie druku wybierz "Więcej ustawień" → wyłącz "Nagłówki i stopki"', 10000);
-  setTimeout(() => { w.print(); }, 500);
+  setTimeout(() => {
+    w.focus();
+    w.print();
+  }, 800);
 }
 
 
