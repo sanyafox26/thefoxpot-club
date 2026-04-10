@@ -1612,9 +1612,19 @@ async function generatePdf() {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', putOnlyUsedFonts: true });
   doc.setLanguage('pl');
 
-  function safeText(str) {
+  function decodeHtml(str) {
     if (!str) return '';
     return str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  }
+
+  function safeText(str) {
+    if (!str) return '';
+    return decodeHtml(str)
       .replace(/ą/g,'a').replace(/Ą/g,'A')
       .replace(/ć/g,'c').replace(/Ć/g,'C')
       .replace(/ę/g,'e').replace(/Ę/g,'E')
