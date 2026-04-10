@@ -1618,6 +1618,15 @@ function generatePdf() {
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
+  console.log('CV data check — profileData:', profileData);
+  console.log('CV data check — localDisplayName:', localDisplayName, '| NICKNAME:', NICKNAME);
+  console.log('CV data check — localExperience:', localExperience);
+  console.log('CV data check — localSkills:', localSkills);
+  console.log('CV data check — localSectionsVis:', localSectionsVis);
+  console.log('CV htmlString length:', htmlString.length);
+  console.log('CV htmlString preview:', htmlString.substring(0, 500));
+  console.log('CV name:', name, '| bio:', bio.substring(0,50), '| sections:', sections.substring(0,100));
+
   const element = document.createElement('div');
   element.innerHTML = htmlString;
   element.style.cssText = `
