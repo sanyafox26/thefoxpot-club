@@ -441,11 +441,6 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div class="ep-field">
         <label>Hobby i zainteresowania</label>
         <div class="skills-wrap" id="hobbiesWrapEdit" style="margin-bottom:6px"></div>
-        <div class="spec-custom-input" id="hobbyInputWrap" style="display:none">
-          <input type="text" id="hobbyInputText" placeholder="Np. Fotografia, Wspinaczka, Gotowanie..." onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAddHobby()}">
-          <button type="button" onclick="confirmAddHobby()">+ Dodaj</button>
-        </div>
-        <button type="button" class="spec-add-btn" style="margin-top:6px" onclick="toggleHobbyInput()">+ Dodaj hobby</button>
       </div>
 
       <button class="btn-save-profile" onclick="saveAll()">💾 Zapisz zmiany</button>
@@ -574,6 +569,11 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
           <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('hobbies')" id="visHobbies">👁</button>
         </div>
         <div class="skills-wrap" id="hobbiesWrap"></div>
+        <button class="add-btn" onclick="toggleHobbyInput()">+ Dodaj hobby</button>
+        <div class="spec-custom-input" id="hobbyInputWrap" style="display:none">
+          <input type="text" id="hobbyInput" placeholder="np. Fotografia" maxlength="50">
+          <button type="button" onclick="addHobbyTag()">Dodaj</button>
+        </div>
       </div>
 
       <!-- Volunteering -->
@@ -1291,7 +1291,7 @@ function toggleEditMode() {
   renderPortfolio();
   renderCourses();
   renderAchievements();
-  renderHobbies();
+  renderHobbyTags();
   renderVolunteering();
   renderMedia();
 }
@@ -1422,7 +1422,7 @@ function discardChanges() {
   renderPortfolio();
   renderCourses();
   renderAchievements();
-  renderHobbies();
+  renderHobbyTags();
   renderVolunteering();
   renderMedia();
   applySectionsVisibility();
@@ -1637,24 +1637,33 @@ function renderHobbies() {
       ${escHtml(h)}${isEditMode?' ✕':''}
     </span>`).join('') || '<div style="color:var(--muted);font-size:13px">Brak hobby.</div>';
   const pub = document.getElementById('hobbiesWrap'); if (pub) pub.innerHTML = chips;
-  const edit = document.getElementById('hobbiesWrapEdit');
-  if (edit) edit.innerHTML = localHobbies.map((h,i)=>`
-    <span class="skill-chip" onclick="removeHobby(${i})" style="cursor:pointer" title="Kliknij aby usunąć">
-      ${escHtml(h)} ✕
-    </span>`).join('');
 }
 function toggleHobbyInput() {
   const wrap = document.getElementById('hobbyInputWrap');
-  const isHidden = wrap.style.display === 'none';
-  wrap.style.display = isHidden ? '' : 'none';
-  if (isHidden) document.getElementById('hobbyInputText').focus();
+  wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
+  if (wrap.style.display !== 'none') document.getElementById('hobbyInput').focus();
 }
-function confirmAddHobby() {
-  const inp = document.getElementById('hobbyInputText');
-  const v = inp.value.trim();
-  if (v) { localHobbies.push(v); renderHobbies(); markDirty(); inp.value = ''; inp.focus(); }
+function addHobbyTag() {
+  const input = document.getElementById('hobbyInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (!localHobbies.includes(val)) localHobbies.push(val);
+  renderHobbyTags();
+  markDirty();
+  input.value = '';
+  input.focus();
 }
-function removeHobby(i) { if (!isEditMode) return; localHobbies.splice(i,1); renderHobbies(); markDirty(); }
+function renderHobbyTags() {
+  const edit = document.getElementById('hobbiesWrapEdit');
+  if (edit) edit.innerHTML = localHobbies.map((h, i) =>
+    `<span class="spec-tag">${escHtml(h)}<button type="button" class="spec-tag-x" onclick="removeHobby(${i})">×</button></span>`
+  ).join('');
+  renderHobbies();
+}
+function removeHobby(i) { if (!isEditMode) return; localHobbies.splice(i,1); renderHobbyTags(); markDirty(); }
+document.getElementById('hobbyInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addHobbyTag(); }
+});
 
 // ── Volunteering ──
 function renderVolunteering() {
