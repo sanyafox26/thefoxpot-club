@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -1612,28 +1613,23 @@ function generatePdf() {
   <div class="footer">Profil: thefoxpot.club/fox/${NICKNAME}</div>
 </body></html>`;
 
-  if (typeof html2pdf === 'undefined') {
-    console.warn('html2pdf not loaded, falling back to window.open');
-    const w = window.open('', '_blank');
-    if (!w) { alert('Zezwól na otwieranie nowych okien w przeglądarce.'); return; }
-    w.document.write(htmlString);
-    w.document.close();
-    w.print();
-    setTimeout(() => w.close(), 1500);
-    return;
-  }
-
   const filename = 'CV_' + (localDisplayName || NICKNAME).replace(/\s+/g, '_') + '.pdf';
   const opt = {
     margin: [15, 15, 15, 15],
     filename,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, background: '#ffffff', useCORS: true },
+    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
-  html2pdf().set(opt).from(htmlString).save()
-    .then(() => console.log('PDF saved'))
-    .catch(e => console.error('html2pdf error:', e));
+
+  const element = document.createElement('div');
+  element.innerHTML = htmlString;
+  element.style.cssText = 'position:absolute;left:-9999px;top:0;background:white;width:794px';
+  document.body.appendChild(element);
+
+  html2pdf().set(opt).from(element).save()
+    .then(() => { document.body.removeChild(element); console.log('PDF saved'); })
+    .catch(e => { document.body.removeChild(element); console.error('html2pdf error:', e); });
 }
 
 
@@ -1641,6 +1637,5 @@ function generatePdf() {
 init();
 </script>
 <div id="cv-print"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </body>
 </html>
