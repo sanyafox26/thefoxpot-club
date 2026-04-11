@@ -851,6 +851,8 @@ async function migrate() {
   await ensureColumn("fp1_foxes", "languages",           "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "postal_code",         "VARCHAR(10)");
   await ensureColumn("fp1_foxes", "city",                "VARCHAR(100)");
+  await ensureColumn("fp1_foxes", "fox_pro",             "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("fp1_foxes", "gallery",             "JSONB NOT NULL DEFAULT '[]'");
   await ensureColumn("fp1_foxes", "available_today",     "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("fp1_foxes", "available_from",      "TIME");
   await ensureColumn("fp1_foxes", "available_to",        "TIME");
@@ -4572,6 +4574,70 @@ async function uploadToCloudinary(base64Data, folder) {
 
 // Increase body size limit for photo uploads (10MB)
 app.use("/panel/venue/photos/upload", express.json({ limit: "10mb" }));
+app.use("/api/fox/portfolio-image",   express.json({ limit: "10mb" }));
+app.use("/api/fox/gallery-image",     express.json({ limit: "10mb" }));
+
+// POST /api/fox/portfolio-image — upload portfolio project image to Cloudinary
+app.post("/api/fox/portfolio-image", requireWebAppAuth, async (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: "Brak zdjęcia" });
+    if (!CLOUDINARY_CLOUD || !CLOUDINARY_KEY || !CLOUDINARY_SECRET)
+      return res.status(500).json({ error: "Cloudinary nie skonfigurowany" });
+    const result = await uploadToCloudinary(image, "fox-portfolio");
+    if (result.error) return res.status(400).json({ error: result.error.message || "Błąd Cloudinary" });
+    res.json({ url: result.secure_url });
+  } catch(e) {
+    console.error("PORTFOLIO_IMG_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/fox/gallery-image — upload to gallery, PRO limit check
+app.post("/api/fox/gallery-image", requireWebAppAuth, async (req, res) => {
+  try {
+    const tgUserId = req.tgUser.id;
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: "Brak zdjęcia" });
+    if (!CLOUDINARY_CLOUD || !CLOUDINARY_KEY || !CLOUDINARY_SECRET)
+      return res.status(500).json({ error: "Cloudinary nie skonfigurowany" });
+    const fox = await pool.query(`SELECT gallery, fox_pro FROM fp1_foxes WHERE user_id=$1`, [String(tgUserId)]);
+    if (!fox.rowCount) return res.status(404).json({ error: "not_found" });
+    const { gallery, fox_pro } = fox.rows[0];
+    const arr = Array.isArray(gallery) ? gallery : [];
+    if (!fox_pro && arr.length >= 3)
+      return res.status(403).json({ error: "PRO_LIMIT", message: "Limit 3 zdjęć dla wersji darmowej" });
+    const result = await uploadToCloudinary(image, "fox-gallery");
+    if (result.error) return res.status(400).json({ error: result.error.message || "Błąd Cloudinary" });
+    const url = result.secure_url;
+    await pool.query(
+      `UPDATE fp1_foxes SET gallery = gallery || $1::jsonb WHERE user_id=$2`,
+      [JSON.stringify([url]), String(tgUserId)]
+    );
+    res.json({ url });
+  } catch(e) {
+    console.error("GALLERY_IMG_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// DELETE /api/fox/gallery-image — remove URL from gallery array
+app.delete("/api/fox/gallery-image", requireWebAppAuth, async (req, res) => {
+  try {
+    const tgUserId = req.tgUser.id;
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "Brak url" });
+    const fox = await pool.query(`SELECT gallery FROM fp1_foxes WHERE user_id=$1`, [String(tgUserId)]);
+    if (!fox.rowCount) return res.status(404).json({ error: "not_found" });
+    const arr = Array.isArray(fox.rows[0].gallery) ? fox.rows[0].gallery : [];
+    const updated = arr.filter(u => u !== url);
+    await pool.query(`UPDATE fp1_foxes SET gallery=$1::jsonb WHERE user_id=$2`, [JSON.stringify(updated), String(tgUserId)]);
+    res.json({ success: true });
+  } catch(e) {
+    console.error("GALLERY_DEL_ERR", e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
 
 // GET /panel/venue/photos — get venue photos
 app.get("/panel/venue/photos", requirePanelAuth, async (req, res) => {
@@ -8816,6 +8882,7 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
               f.available_today, f.available_from, f.available_to,
               f.courses, f.achievements, f.hobbies, f.volunteering, f.media,
               f.birthdate, f.phone, f.languages, f.postal_code,
+              f.gallery, f.fox_pro,
               0 AS checkins_completed,
               0 AS checkins_failed,
               0 AS checkins_pending

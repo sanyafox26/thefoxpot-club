@@ -155,6 +155,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .portfolio-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--accent);text-decoration:none;margin-top:8px}
 .portfolio-link:hover{text-decoration:underline}
 
+/* ── gallery ── */
+.gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.gallery-thumb{position:relative;height:200px;border-radius:8px;overflow:hidden;cursor:pointer}
+.gallery-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s}
+.gallery-thumb:hover img{opacity:.85}
+.gallery-remove{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:50%;width:24px;height:24px;color:#fff;font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
+.edit-mode .gallery-remove{display:flex}
+.gallery-edit-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.gallery-edit-thumb{position:relative;width:100%;padding-bottom:100%;border-radius:8px;overflow:hidden;background:var(--surface)}
+.gallery-edit-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.gallery-edit-thumb .ge-rm{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.75);border:none;border-radius:50%;width:22px;height:22px;color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+.gallery-counter{font-size:12px;color:var(--muted);margin-bottom:8px}
+/* ── lightbox ── */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1000;display:flex;align-items:center;justify-content:center}
+.lightbox img{max-width:90vw;max-height:90vh;border-radius:12px;object-fit:contain}
+.lightbox-close{position:fixed;top:16px;right:20px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;z-index:1001;line-height:1}
+/* ── portfolio image ── */
+.port-img-preview{width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:8px;vertical-align:middle}
+.port-card-img{width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0;display:block;margin:-14px -14px 10px -14px;width:calc(100% + 28px)}
 /* ── reviews ── */
 .review-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
 .review-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -662,6 +681,21 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <button class="add-btn" onclick="openPortfolioModal(null)">+ Dodaj projekt</button>
       </div>
 
+      <!-- Gallery -->
+      <div class="section" id="secGallery" data-sec="gallery">
+        <div class="section-head">
+          <div class="section-title">📸 Moje prace</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('gallery')" id="visGallery">👁</button>
+        </div>
+        <div class="gallery-grid" id="galleryGrid"></div>
+        <div class="gallery-counter" id="galleryCounter"></div>
+        <div id="galleryAddWrap">
+          <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
+          <div id="galleryProNotice" style="display:none;font-size:13px;color:var(--muted);padding:8px 0">🔒 Więcej zdjęć w Fox PRO</div>
+        </div>
+        <input type="file" id="galleryFileInput" accept="image/*" style="display:none" onchange="uploadGalleryImage(this)"/>
+      </div>
+
       <!-- Reviews -->
       <div class="section" id="secReviews" data-sec="reviews">
         <div class="section-head">
@@ -763,6 +797,15 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
     <div class="field-group"><label>Wynik / efekt</label><textarea id="portResult" rows="2" placeholder="np. +40% konwersji"></textarea></div>
     <div class="field-group"><label>Link (opcjonalnie)</label><input id="portLink" type="url" placeholder="https://..."/></div>
     <div class="field-group"><label>Tagi (przecinek)</label><input id="portTags" placeholder="np. React, Figma, UX"/></div>
+    <div class="field-group">
+      <label>Zdjęcie projektu</label>
+      <div id="portImagePreview" style="margin-bottom:8px;display:none">
+        <img id="portImageThumb" src="" class="port-img-preview"/>
+        <button type="button" onclick="removePortImage()" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer">× Usuń</button>
+      </div>
+      <button type="button" class="spec-add-btn" id="portImageBtn" onclick="document.getElementById('portImageInput').click()">📷 Dodaj zdjęcie</button>
+      <input type="file" id="portImageInput" accept="image/*" style="display:none" onchange="uploadPortImage(this)"/>
+    </div>
     <div class="field-group">
       <label>Wyróżniony projekt?</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--muted)">
@@ -874,6 +917,8 @@ let localPhone = '';
 let localPostalCode = '';
 let localCity = '';
 let localLanguages = [];
+let localGallery = [];
+let localFoxPro = false;
 let localFeaturedId = null;
 let localInvoicing = false;
 let localSectionsVis = {};
@@ -943,6 +988,8 @@ function initLocals() {
   localPostalCode = d.postal_code || '';
   localCity = d.city || '';
   localLanguages = JSON.parse(JSON.stringify(d.languages || []));
+  localGallery = Array.isArray(d.gallery) ? [...d.gallery] : [];
+  localFoxPro = !!d.fox_pro;
   localFeaturedId = d.featured_project_id || null;
   localInvoicing = !!d.invoicing;
   localSectionsVis = JSON.parse(JSON.stringify(d.sections_visibility || {}));
@@ -1129,6 +1176,7 @@ function render() {
   renderHobbies();
   renderVolunteering();
   renderMedia();
+  renderGallery();
   renderReviews(d.reviews || []);
   // Section visibility
   applySectionsVisibility();
@@ -1256,8 +1304,9 @@ function renderPortfolio() {
   const featIdx = localPortfolio.findIndex(p=>p.id===localFeaturedId || p._featured);
   const feat = featIdx >= 0 ? localPortfolio[featIdx] : null;
   if (feat) {
-    featured.innerHTML = `<div class="featured-card" style="margin-bottom:14px;position:relative">
+    featured.innerHTML = `<div class="featured-card" style="margin-bottom:14px;position:relative;overflow:hidden">
       <button class="edit-card-btn" onclick="openPortfolioModal(${featIdx})">✏️</button>
+      ${feat.image?`<img src="${escHtml(feat.image)}" style="width:100%;height:180px;object-fit:cover;border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;display:block;margin:-20px -20px 12px;width:calc(100% + 40px)"/>`:''}
       <div class="featured-label">⭐ Wyróżniony projekt</div>
       <div class="portfolio-name" style="font-size:17px">${escHtml(feat.name||'')}</div>
       ${feat.role?`<div class="portfolio-role">${escHtml(feat.role)}</div>`:''}
@@ -1270,12 +1319,14 @@ function renderPortfolio() {
   if (!rest.length) { grid.innerHTML = ''; return; }
   grid.innerHTML = rest.map((p,i)=>{
     const realIdx = localPortfolio.indexOf(p);
-    return `<div class="portfolio-card" onclick="isEditMode&&openPortfolioModal(${realIdx})">
+    return `<div class="portfolio-card" style="overflow:hidden;padding:${p.image?'0':'14px'}" onclick="isEditMode&&openPortfolioModal(${realIdx})">
+      ${p.image?`<img src="${escHtml(p.image)}" style="width:100%;height:140px;object-fit:cover;display:block;border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0"/><div style="padding:10px 14px 14px">`:''}
       <div class="portfolio-name">${escHtml(p.name||'')}</div>
       ${p.role?`<div class="portfolio-role">${escHtml(p.role)}</div>`:''}
       ${p.result?`<div class="portfolio-result">${escHtml(p.result)}</div>`:''}
       ${p.tags?.length?`<div class="portfolio-tags">${p.tags.map(t=>`<span class="portfolio-tag">${escHtml(t)}</span>`).join('')}</div>`:''}
       ${p.link?`<a class="portfolio-link" href="${escHtml(p.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 Link</a>`:''}
+      ${p.image?'</div>':''}
     </div>`;
   }).join('');
 }
@@ -1295,7 +1346,7 @@ function renderReviews(reviews) {
 }
 
 function applySectionsVisibility() {
-  const secs = ['stats','experience','education','skills','services','portfolio','courses','achievements','hobbies','volunteering','media','reviews'];
+  const secs = ['stats','experience','education','skills','services','portfolio','courses','achievements','hobbies','volunteering','media','gallery','reviews'];
   secs.forEach(s=>{
     const el = document.getElementById(`sec${s.charAt(0).toUpperCase()+s.slice(1)}`);
     const btn = document.getElementById(`vis${s.charAt(0).toUpperCase()+s.slice(1)}`);
@@ -1387,6 +1438,7 @@ function toggleEditMode() {
   renderHobbyTags();
   renderVolunteering();
   renderMedia();
+  renderGallery();
 }
 
 function populateEditForm() {
@@ -1532,6 +1584,7 @@ function discardChanges() {
   renderHobbyTags();
   renderVolunteering();
   renderMedia();
+  renderGallery();
   applySectionsVisibility();
   document.getElementById('togglePublic').checked = localProfilePublic;
   showToast('Zmiany anulowane');
@@ -1650,6 +1703,7 @@ function deleteSvcItem() {
 }
 
 // ── Portfolio modal ──
+let _portImageUrl = '';
 function openPortfolioModal(idx) {
   editingPortIdx = idx;
   const p = idx !== null ? localPortfolio[idx] : {};
@@ -1660,7 +1714,42 @@ function openPortfolioModal(idx) {
   document.getElementById('portTags').value = (p.tags||[]).join(', ');
   document.getElementById('portFeatured').checked = !!(p._featured || p.id===localFeaturedId);
   document.getElementById('portDeleteBtn').style.display = idx !== null ? '' : 'none';
+  _portImageUrl = p.image || '';
+  const prev = document.getElementById('portImagePreview');
+  const thumb = document.getElementById('portImageThumb');
+  if (_portImageUrl) { thumb.src = _portImageUrl; prev.style.display = ''; }
+  else prev.style.display = 'none';
+  document.getElementById('portImageInput').value = '';
   openModal('modalPortfolio');
+}
+function removePortImage() {
+  _portImageUrl = '';
+  document.getElementById('portImagePreview').style.display = 'none';
+}
+async function uploadPortImage(input) {
+  const file = input.files[0]; if (!file) return;
+  const btn = document.getElementById('portImageBtn');
+  btn.textContent = '⏳ Przesyłanie...'; btn.disabled = true;
+  try {
+    const b64 = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+    });
+    const token = localStorage.getItem('fox_jwt') || '';
+    const initData = (typeof TG !== 'undefined' && TG?.initData) ? TG.initData : '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (initData) headers['x-telegram-init-data'] = initData;
+    else if (token) headers['Authorization'] = 'Bearer ' + token;
+    const resp = await fetch('/api/fox/portfolio-image', { method: 'POST', headers, body: JSON.stringify({ image: b64 }) });
+    const data = await resp.json();
+    if (data.url) {
+      _portImageUrl = data.url;
+      document.getElementById('portImageThumb').src = data.url;
+      document.getElementById('portImagePreview').style.display = '';
+    } else {
+      showToast(data.error || 'Błąd przesyłania');
+    }
+  } catch(e) { showToast('Błąd przesyłania'); }
+  finally { btn.textContent = '📷 Dodaj zdjęcie'; btn.disabled = false; }
 }
 function savePortItem() {
   const name = document.getElementById('portName').value.trim();
@@ -1672,7 +1761,8 @@ function savePortItem() {
     name, role: document.getElementById('portRole').value.trim(),
     result: document.getElementById('portResult').value.trim(),
     link: document.getElementById('portLink').value.trim(),
-    tags, _featured: isFeat
+    tags, _featured: isFeat,
+    image: _portImageUrl || undefined
   };
   if (isFeat) localFeaturedId = item.id;
   else if (localFeaturedId === item.id) localFeaturedId = null;
@@ -1688,6 +1778,78 @@ function deletePortItem() {
     renderPortfolio(); markDirty(); closeModal('modalPortfolio');
   }
 }
+
+// ── Gallery ──
+function renderGallery() {
+  const grid = document.getElementById('galleryGrid');
+  const counter = document.getElementById('galleryCounter');
+  const addWrap = document.getElementById('galleryAddWrap');
+  const addBtn = document.getElementById('galleryAddBtn');
+  const proNotice = document.getElementById('galleryProNotice');
+  if (!grid) return;
+  grid.innerHTML = localGallery.map(url =>
+    `<div class="gallery-thumb">
+      <img src="${escHtml(url)}" onclick="openLightbox('${escHtml(url)}')"/>
+      ${isEditMode ? `<button class="gallery-remove" onclick="removeGalleryImage('${escHtml(url)}')">×</button>` : ''}
+    </div>`
+  ).join('');
+  if (counter) {
+    if (localGallery.length && isEditMode) {
+      counter.textContent = localFoxPro
+        ? `${localGallery.length} zdjęć (Fox PRO ∞)`
+        : `${localGallery.length}/3 zdjęć`;
+      counter.style.display = '';
+    } else {
+      counter.style.display = 'none';
+    }
+  }
+  if (addWrap) addWrap.style.display = isEditMode ? '' : 'none';
+  if (addBtn && proNotice) {
+    const atLimit = !localFoxPro && localGallery.length >= 3;
+    addBtn.style.display = atLimit ? 'none' : '';
+    proNotice.style.display = atLimit ? '' : 'none';
+  }
+}
+async function uploadGalleryImage(input) {
+  const file = input.files[0]; if (!file) return;
+  const btn = document.getElementById('galleryAddBtn');
+  if (btn) { btn.textContent = '⏳ Przesyłanie...'; btn.disabled = true; }
+  try {
+    const b64 = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+    });
+    const token = localStorage.getItem('fox_jwt') || '';
+    const initData = (typeof TG !== 'undefined' && TG?.initData) ? TG.initData : '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (initData) headers['x-telegram-init-data'] = initData;
+    else if (token) headers['Authorization'] = 'Bearer ' + token;
+    const resp = await fetch('/api/fox/gallery-image', { method: 'POST', headers, body: JSON.stringify({ image: b64 }) });
+    const data = await resp.json();
+    if (data.url) { localGallery.push(data.url); renderGallery(); }
+    else if (data.error === 'PRO_LIMIT') { showToast('Limit 3 zdjęć dla wersji darmowej. Upgrade do Fox PRO!'); }
+    else { showToast(data.error || 'Błąd przesyłania'); }
+  } catch(e) { showToast('Błąd przesyłania'); }
+  finally {
+    if (btn) { btn.textContent = '📷 Dodaj zdjęcie'; btn.disabled = false; }
+    input.value = '';
+  }
+}
+async function removeGalleryImage(url) {
+  if (!isEditMode) return;
+  const token = localStorage.getItem('fox_jwt') || '';
+  const initData = (typeof TG !== 'undefined' && TG?.initData) ? TG.initData : '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (initData) headers['x-telegram-init-data'] = initData;
+  else if (token) headers['Authorization'] = 'Bearer ' + token;
+  await fetch('/api/fox/gallery-image', { method: 'DELETE', headers, body: JSON.stringify({ url }) }).catch(()=>{});
+  localGallery = localGallery.filter(u => u !== url);
+  renderGallery();
+}
+function openLightbox(url) {
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightbox').style.display = 'flex';
+}
+function closeLightbox() { document.getElementById('lightbox').style.display = 'none'; }
 
 // ── Courses ──
 function renderCourses() {
@@ -2533,5 +2695,10 @@ init().then(() => {
 });
 </script>
 <div id="cv-print"></div>
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" style="display:none" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">×</button>
+  <img id="lightboxImg" src="" alt=""/>
+</div>
 </body>
 </html>
