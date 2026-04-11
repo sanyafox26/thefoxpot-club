@@ -157,7 +157,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 /* ── gallery ── */
 .gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
-.gallery-thumb{position:relative;height:200px;border-radius:8px;overflow:hidden;cursor:pointer}
+.gallery-thumb{position:relative;height:150px;border-radius:8px;overflow:hidden;cursor:pointer}
 .gallery-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s}
 .gallery-thumb:hover img{opacity:.85}
 .gallery-remove{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:50%;width:24px;height:24px;color:#fff;font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
@@ -171,6 +171,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1000;display:flex;align-items:center;justify-content:center}
 .lightbox img{max-width:90vw;max-height:90vh;border-radius:12px;object-fit:contain}
 .lightbox-close{position:fixed;top:16px;right:20px;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;z-index:1001;line-height:1}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);background:none;border:none;color:#fff;font-size:40px;cursor:pointer;padding:0 8px;line-height:1;user-select:none;z-index:1001}
+.lightbox-counter{position:absolute;bottom:15px;left:50%;transform:translateX(-50%);color:#fff;font-size:14px;pointer-events:none}
 /* ── portfolio image ── */
 .port-img-preview{width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:8px;vertical-align:middle}
 .port-card-img{width:100%;height:140px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0;display:block;margin:-14px -14px 10px -14px;width:calc(100% + 28px)}
@@ -1787,9 +1789,10 @@ function renderGallery() {
   const addBtn = document.getElementById('galleryAddBtn');
   const proNotice = document.getElementById('galleryProNotice');
   if (!grid) return;
-  grid.innerHTML = localGallery.map(url =>
+  const urls = localGallery;
+  grid.innerHTML = urls.map((url, i) =>
     `<div class="gallery-thumb">
-      <img src="${escHtml(url)}" onclick="openLightbox('${escHtml(url)}')"/>
+      <img src="${escHtml(url)}" onclick="openLightbox(${JSON.stringify(urls)}, ${i})"/>
       ${isEditMode ? `<button class="gallery-remove" onclick="removeGalleryImage('${escHtml(url)}')">×</button>` : ''}
     </div>`
   ).join('');
@@ -1845,11 +1848,29 @@ async function removeGalleryImage(url) {
   localGallery = localGallery.filter(u => u !== url);
   renderGallery();
 }
-function openLightbox(url) {
-  document.getElementById('lightboxImg').src = url;
+let galleryIndex = 0;
+let galleryUrls = [];
+function openLightbox(urls, index) {
+  galleryUrls = Array.isArray(urls) ? urls : [urls];
+  galleryIndex = index || 0;
+  updateLightbox();
   document.getElementById('lightbox').style.display = 'flex';
 }
+function updateLightbox() {
+  document.getElementById('lightboxImg').src = galleryUrls[galleryIndex];
+  const counter = document.getElementById('lightboxCounter');
+  if (counter) counter.textContent = (galleryIndex + 1) + ' / ' + galleryUrls.length;
+}
+function showNext() { galleryIndex = (galleryIndex + 1) % galleryUrls.length; updateLightbox(); }
+function showPrev() { galleryIndex = (galleryIndex - 1 + galleryUrls.length) % galleryUrls.length; updateLightbox(); }
 function closeLightbox() { document.getElementById('lightbox').style.display = 'none'; }
+document.addEventListener('keydown', e => {
+  if (document.getElementById('lightbox').style.display !== 'none') {
+    if (e.key === 'ArrowRight') showNext();
+    if (e.key === 'ArrowLeft') showPrev();
+    if (e.key === 'Escape') closeLightbox();
+  }
+});
 
 // ── Courses ──
 function renderCourses() {
@@ -2697,8 +2718,11 @@ init().then(() => {
 <div id="cv-print"></div>
 <!-- Lightbox -->
 <div class="lightbox" id="lightbox" style="display:none" onclick="closeLightbox()">
-  <button class="lightbox-close" onclick="closeLightbox()">×</button>
-  <img id="lightboxImg" src="" alt=""/>
+  <button class="lightbox-close" onclick="closeLightbox(); event.stopPropagation()">×</button>
+  <button class="lightbox-nav" style="left:15px" onclick="showPrev(); event.stopPropagation()">‹</button>
+  <img id="lightboxImg" src="" alt="" onclick="event.stopPropagation()"/>
+  <button class="lightbox-nav" style="right:15px" onclick="showNext(); event.stopPropagation()">›</button>
+  <div class="lightbox-counter" id="lightboxCounter"></div>
 </div>
 </body>
 </html>
