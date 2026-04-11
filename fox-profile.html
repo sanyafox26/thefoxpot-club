@@ -1792,7 +1792,7 @@ function renderGallery() {
   const urls = localGallery;
   grid.innerHTML = urls.map((url, i) =>
     `<div class="gallery-thumb">
-      <img src="${escHtml(url)}" onclick="openLightbox(${JSON.stringify(urls)}, ${i})"/>
+      <img src="${escHtml(url)}" onclick="openLightbox(localGallery, ${i})"/>
       ${isEditMode ? `<button class="gallery-remove" onclick="removeGalleryImage('${escHtml(url)}')">×</button>` : ''}
     </div>`
   ).join('');
@@ -1851,10 +1851,12 @@ async function removeGalleryImage(url) {
 let galleryIndex = 0;
 let galleryUrls = [];
 function openLightbox(urls, index) {
+  console.log('openLightbox called', index, urls);
   galleryUrls = Array.isArray(urls) ? urls : [urls];
   galleryIndex = index || 0;
   updateLightbox();
-  document.getElementById('lightbox').style.display = 'flex';
+  const overlay = document.getElementById('lightboxOverlay');
+  overlay.style.display = 'flex';
 }
 function updateLightbox() {
   document.getElementById('lightboxImg').src = galleryUrls[galleryIndex];
@@ -1863,9 +1865,9 @@ function updateLightbox() {
 }
 function showNext() { galleryIndex = (galleryIndex + 1) % galleryUrls.length; updateLightbox(); }
 function showPrev() { galleryIndex = (galleryIndex - 1 + galleryUrls.length) % galleryUrls.length; updateLightbox(); }
-function closeLightbox() { document.getElementById('lightbox').style.display = 'none'; }
+function closeLightbox() { document.getElementById('lightboxOverlay').style.display = 'none'; }
 document.addEventListener('keydown', e => {
-  if (document.getElementById('lightbox').style.display !== 'none') {
+  if (document.getElementById('lightboxOverlay').style.display !== 'none') {
     if (e.key === 'ArrowRight') showNext();
     if (e.key === 'ArrowLeft') showPrev();
     if (e.key === 'Escape') closeLightbox();
@@ -2717,12 +2719,12 @@ init().then(() => {
 </script>
 <div id="cv-print"></div>
 <!-- Lightbox -->
-<div class="lightbox" id="lightbox" style="display:none" onclick="closeLightbox()">
-  <button class="lightbox-close" onclick="closeLightbox(); event.stopPropagation()">×</button>
-  <button class="lightbox-nav" style="left:15px" onclick="showPrev(); event.stopPropagation()">‹</button>
-  <img id="lightboxImg" src="" alt="" onclick="event.stopPropagation()"/>
-  <button class="lightbox-nav" style="right:15px" onclick="showNext(); event.stopPropagation()">›</button>
-  <div class="lightbox-counter" id="lightboxCounter"></div>
+<div id="lightboxOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;" onclick="closeLightbox()">
+  <span onclick="closeLightbox(); event.stopPropagation()" style="position:absolute;top:15px;right:20px;color:white;font-size:30px;cursor:pointer;line-height:1">×</span>
+  <span onclick="showPrev(); event.stopPropagation()" style="position:absolute;left:15px;top:50%;transform:translateY(-50%);color:white;font-size:40px;cursor:pointer;user-select:none">‹</span>
+  <img id="lightboxImg" src="" alt="" style="max-height:90vh;max-width:90vw;border-radius:8px;object-fit:contain" onclick="event.stopPropagation()"/>
+  <span onclick="showNext(); event.stopPropagation()" style="position:absolute;right:15px;top:50%;transform:translateY(-50%);color:white;font-size:40px;cursor:pointer;user-select:none">›</span>
+  <div id="lightboxCounter" style="position:absolute;bottom:15px;color:white;font-size:14px;text-align:center;width:100%"></div>
 </div>
 </body>
 </html>
