@@ -572,6 +572,21 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         </div>
       </div>
 
+      <!-- Gallery -->
+      <div class="section" id="secGallery" data-sec="gallery">
+        <div class="section-head">
+          <div class="section-title">📸 Moje prace</div>
+          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('gallery')" id="visGallery">👁</button>
+        </div>
+        <div class="gallery-grid" id="galleryGrid"></div>
+        <div class="gallery-counter" id="galleryCounter"></div>
+        <div id="galleryAddWrap">
+          <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
+          <div id="galleryProNotice" style="display:none;font-size:13px;color:var(--muted);padding:8px 0">🔒 Więcej zdjęć w Fox PRO</div>
+        </div>
+        <input type="file" id="galleryFileInput" accept="image/*" style="display:none" onchange="uploadGalleryImage(this)"/>
+      </div>
+
       <!-- Experience -->
       <div class="section" id="secExperience" data-sec="experience">
         <div class="section-head">
@@ -679,21 +694,6 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <div id="featuredWrap"></div>
         <div class="portfolio-grid" id="portfolioGrid"></div>
         <button class="add-btn" onclick="openPortfolioModal(null)">+ Dodaj projekt</button>
-      </div>
-
-      <!-- Gallery -->
-      <div class="section" id="secGallery" data-sec="gallery">
-        <div class="section-head">
-          <div class="section-title">📸 Moje prace</div>
-          <button class="section-vis-btn" title="Widoczność sekcji" onclick="toggleSectionVis('gallery')" id="visGallery">👁</button>
-        </div>
-        <div class="gallery-grid" id="galleryGrid"></div>
-        <div class="gallery-counter" id="galleryCounter"></div>
-        <div id="galleryAddWrap">
-          <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
-          <div id="galleryProNotice" style="display:none;font-size:13px;color:var(--muted);padding:8px 0">🔒 Więcej zdjęć w Fox PRO</div>
-        </div>
-        <input type="file" id="galleryFileInput" accept="image/*" style="display:none" onchange="uploadGalleryImage(this)"/>
       </div>
 
       <!-- Reviews -->
