@@ -596,7 +596,7 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
           <div class="section-title">📸 Moje prace</div>
           <div class="visibility-toggle" id="visGallery"></div>
         </div>
-        <div class="gallery-grid" id="galleryGrid"></div>
+        <div class="gallery-grid" id="galleryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%;"></div>
         <div class="gallery-counter" id="galleryCounter"></div>
         <div id="galleryAddWrap">
           <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
@@ -1851,6 +1851,20 @@ function renderGallery() {
         ${isEditMode ? `<button class="gallery-remove" onclick="removeGalleryImage('${escHtml(url)}')">×</button>` : ''}
       </div>`
     ).join('');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    grid.style.gap = '4px';
+    grid.querySelectorAll('.gallery-thumb').forEach(el => {
+      el.style.height = '150px';
+      el.style.overflow = 'hidden';
+      el.style.position = 'relative';
+    });
+    grid.querySelectorAll('.gallery-thumb img').forEach(img => {
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'cover';
+      img.style.display = 'block';
+    });
   }
   if (counter) {
     if (localGallery.length && isEditMode) {
