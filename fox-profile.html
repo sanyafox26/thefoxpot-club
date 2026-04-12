@@ -958,6 +958,7 @@ const TG = window.Telegram?.WebApp;
 
 // ── Boot ──
 async function init() {
+  console.log('init() called, NICKNAME:', NICKNAME);
   if (!NICKNAME) { showNotFound(); return; }
   try {
     const token = localStorage.getItem('fox_jwt') || '';
@@ -968,6 +969,7 @@ async function init() {
     profileData = await r.json();
     window.profileData = profileData;
     console.log('API response:', profileData);
+    console.log('profile loaded:', profileData?.display_name);
     window.DEBUG_PROFILE = profileData;
     initLocals();
     render();
