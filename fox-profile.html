@@ -1335,7 +1335,7 @@ function renderPortfolio() {
   if (feat) {
     featured.innerHTML = `<div class="featured-card" style="margin-bottom:14px;position:relative;overflow:hidden;padding:${feat.image?'0':'14px'}">
       <button class="edit-card-btn" onclick="openPortfolioModal(${featIdx})">✏️</button>
-      ${feat.image?`<div style="width:100%;height:180px;overflow:hidden;border-radius:8px 8px 0 0;cursor:pointer;background:#000" onclick="openLightbox(['${escHtml(feat.image)}'],0)"><img src="${escHtml(feat.image)}" style="width:100%;height:100%;object-fit:cover;display:block"/></div><div style="padding:10px 14px 14px">`:''}
+      ${feat.image?`<div style="width:100%;height:180px;overflow:hidden;border-radius:8px 8px 0 0;cursor:pointer;background:#000" onclick="event.stopPropagation();openLightbox(['${escHtml(feat.image)}'],0)"><img src="${escHtml(feat.image)}" style="width:100%;height:100%;object-fit:cover;display:block"/></div><div style="padding:10px 14px 14px">`:''}
       <div class="featured-label">⭐ Wyróżniony projekt</div>
       <div class="portfolio-name" style="font-size:17px">${escHtml(feat.name||'')}</div>
       ${feat.role?`<div class="portfolio-role">${escHtml(feat.role)}</div>`:''}
