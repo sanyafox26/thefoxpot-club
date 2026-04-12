@@ -8892,6 +8892,16 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
     );
     if (!r.rowCount) return res.status(404).json({ error: "not_found" });
     const fox = r.rows[0];
+    console.log('fox data from DB:', {
+      bio: fox.bio,
+      district: fox.district,
+      contact_email: fox.contact_email,
+      contact_address: fox.contact_address,
+      postal_code: fox.postal_code,
+      city: fox.city,
+      phone: fox.phone,
+      birthdate: fox.birthdate
+    });
 
     // ── Determine viewer level ──
     let viewerLevel = 'public'; // 'public' | 'fox' | 'owner'
