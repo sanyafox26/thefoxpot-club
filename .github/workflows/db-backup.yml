@@ -19,12 +19,20 @@ jobs:
           sudo apt-get install -y postgresql-client-17
           pg_dump --version
 
+      - name: Check pg_dump version
+        run: |
+          which pg_dump
+          pg_dump --version
+          ls /usr/lib/postgresql/
+          ls /usr/bin/pg_dump || echo "no pg_dump in /usr/bin"
+
       - name: Backup database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           FILENAME="backup_$(date +%Y%m%d_%H%M).sql"
-          /usr/lib/postgresql/17/bin/pg_dump "$DATABASE_URL" > "$FILENAME"
+          /usr/lib/postgresql/17/bin/pg_dump --no-password "$DATABASE_URL" > "$FILENAME" || \
+          pg_dump --no-acl --no-owner "$DATABASE_URL" > "$FILENAME"
           echo "Backup size: $(wc -c < $FILENAME) bytes"
 
       - name: Upload artifact
