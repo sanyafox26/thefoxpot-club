@@ -1017,6 +1017,16 @@ function initLocals() {
   localSectionsVis = JSON.parse(JSON.stringify(d.sections_visibility || {}));
   localProfilePublic = d.profile_public !== false;
   if (d.viewer_level && !isOwner) viewerLevel = d.viewer_level;
+  console.log('initLocals result:', {
+    bio: localBio,
+    district: localDistrict,
+    email: localEmail,
+    address: localAddress,
+    postal: localPostalCode,
+    city: localCity,
+    phone: localPhone,
+    birthdate: localBirthdate
+  });
 }
 
 async function checkOwner() {
