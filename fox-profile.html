@@ -1349,7 +1349,7 @@ function renderPortfolio() {
   grid.innerHTML = rest.map((p,i)=>{
     const realIdx = localPortfolio.indexOf(p);
     return `<div class="portfolio-card" style="overflow:hidden;border-radius:8px;padding:${p.image?'0':'14px'}" onclick="isEditMode&&openPortfolioModal(${realIdx})">
-      ${p.image?`<img src="${escHtml(p.image)}" style="width:100%;height:180px;object-fit:cover;display:block;border-radius:8px 8px 0 0;cursor:pointer" onclick="event.stopPropagation();openLightbox(['${escHtml(p.image)}'],0)"/><div style="padding:10px 14px 14px">`:''}
+      ${p.image?`<div style="width:100%;height:180px;overflow:hidden;border-radius:8px 8px 0 0;cursor:pointer;background:#000" onclick="event.stopPropagation();openLightbox(['${escHtml(p.image)}'],0)"><img src="${escHtml(p.image)}" style="width:100%;height:100%;object-fit:cover;display:block"/></div><div style="padding:10px 14px 14px">`:''}
       <div class="portfolio-name">${escHtml(p.name||'')}</div>
       ${p.role?`<div class="portfolio-role">${escHtml(p.role)}</div>`:''}
       ${p.result?`<div class="portfolio-result">${escHtml(p.result)}</div>`:''}
