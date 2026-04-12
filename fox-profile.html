@@ -107,10 +107,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .hero-field-row{display:flex;align-items:center;justify-content:center;gap:8px}
 .fox-email a{color:var(--muted);text-decoration:none}
 .fox-email a:hover{color:var(--accent)}
-.visibility-toggle{display:none;gap:4px}
+.visibility-toggle{display:none}
 .vis-btn{background:transparent;border:1px solid #444;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:14px;opacity:0.4}
 .vis-btn.active{border-color:#F97E00;opacity:1;background:rgba(249,126,0,0.15)}
-.is-owner .visibility-toggle{display:flex}
+.vis-setting-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.vis-setting-label{font-size:13px;color:var(--text)}
+.vis-setting-btns{display:flex;gap:4px}
+.vis-setting-group-title{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:1px;margin:10px 0 4px}
 .section-hidden-owner{opacity:.35}
 
 /* ── stats ── */
@@ -502,6 +505,10 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <label>Hobby i zainteresowania</label>
         <div class="skills-wrap" id="hobbiesWrapEdit" style="margin-bottom:6px"></div>
       </div>
+
+      <!-- Visibility settings -->
+      <div class="ep-section-title">👁 Widoczność sekcji</div>
+      <div id="editVisSettings"></div>
 
       <button class="btn-save-profile" onclick="saveAll()">💾 Zapisz zmiany</button>
     </div>
@@ -1403,12 +1410,6 @@ function applySectionsVisibility() {
         el.style.opacity = '';
       }
     }
-    if (wrap && isOwner) {
-      wrap.innerHTML =
-        `<button class="vis-btn${vis==='public'?' active':''}" title="Widoczne dla wszystkich" onclick="setSectionVis('${s}','public')">🌍</button>` +
-        `<button class="vis-btn${vis==='foxes'?' active':''}" title="Tylko dla zalogowanych Foxów" onclick="setSectionVis('${s}','foxes')">🦊</button>` +
-        `<button class="vis-btn${vis==='private'?' active':''}" title="Tylko dla Ciebie" onclick="setSectionVis('${s}','private')">🔒</button>`;
-    }
   });
 
   // Hero element toggles
@@ -1455,13 +1456,8 @@ function applySectionsVisibility() {
         wrap.style.display = vis === 'public' ? '' : 'none';
       }
     }
-    if (btnWrap && isOwner) {
-      btnWrap.innerHTML =
-        `<button class="vis-btn${vis==='public'?' active':''}" title="Widoczne dla wszystkich" onclick="setSectionVis('${key}','public')">🌍</button>` +
-        `<button class="vis-btn${vis==='foxes'?' active':''}" title="Tylko dla zalogowanych Foxów" onclick="setSectionVis('${key}','foxes')">🦊</button>` +
-        `<button class="vis-btn${vis==='private'?' active':''}" title="Tylko dla Ciebie" onclick="setSectionVis('${key}','private')">🔒</button>`;
-    }
   });
+  if (isEditMode) renderEditVisSettings();
 }
 
 // ── Edit mode ──
@@ -1526,11 +1522,60 @@ function populateEditForm() {
   document.getElementById('editAvailFrom').value = localAvailFrom;
   document.getElementById('editAvailTo').value = localAvailTo;
   document.getElementById('availHoursRow').style.display = localAvailToday ? 'flex' : 'none';
+  renderEditVisSettings();
 }
 
 function markDirty() { dirty = true; showSaveBar(); }
 function showSaveBar() { document.getElementById('saveBar').classList.add('visible'); }
 function hideSaveBar() { document.getElementById('saveBar').classList.remove('visible'); }
+
+function renderEditVisSettings() {
+  const container = document.getElementById('editVisSettings');
+  if (!container) return;
+  const sections = [
+    { key: 'stats',           label: 'Statystyki' },
+    { key: 'gallery',         label: 'Moje prace' },
+    { key: 'experience',      label: 'Doświadczenie' },
+    { key: 'education',       label: 'Wykształcenie' },
+    { key: 'courses',         label: 'Kursy' },
+    { key: 'achievements',    label: 'Osiągnięcia' },
+    { key: 'skills',          label: 'Umiejętności' },
+    { key: 'hobbies',         label: 'Hobby' },
+    { key: 'volunteering',    label: 'Wolontariat' },
+    { key: 'media',           label: 'Publikacje' },
+    { key: 'services',        label: 'Usługi' },
+    { key: 'portfolio',       label: 'Portfolio' },
+    { key: 'reviews',         label: 'Recenzje' },
+  ];
+  const hero = [
+    { key: 'photo',           label: 'Zdjęcie' },
+    { key: 'bio',             label: 'Bio' },
+    { key: 'specializations', label: 'Specjalizacje' },
+    { key: 'social_links',    label: 'Linki' },
+    { key: 'email',           label: 'Email' },
+    { key: 'phone',           label: 'Telefon' },
+    { key: 'birthdate',       label: 'Urodziny' },
+    { key: 'address',         label: 'Adres' },
+    { key: 'rating',          label: 'Rating' },
+    { key: 'invoicing_badge', label: 'Faktury' },
+  ];
+  const makeRow = ({key, label}) => {
+    const vis = normVis(localSectionsVis[key], key);
+    return `<div class="vis-setting-row">
+      <span class="vis-setting-label">${label}</span>
+      <div class="vis-setting-btns">
+        <button class="vis-btn${vis==='public'?' active':''}" title="Widoczne dla wszystkich" onclick="setSectionVis('${key}','public')">🌍</button>
+        <button class="vis-btn${vis==='foxes'?' active':''}" title="Tylko dla zalogowanych Foxów" onclick="setSectionVis('${key}','foxes')">🦊</button>
+        <button class="vis-btn${vis==='private'?' active':''}" title="Tylko dla Ciebie" onclick="setSectionVis('${key}','private')">🔒</button>
+      </div>
+    </div>`;
+  };
+  container.innerHTML =
+    '<div class="vis-setting-group-title">Sekcje</div>' +
+    sections.map(makeRow).join('') +
+    '<div class="vis-setting-group-title" style="margin-top:12px">Pola nagłówka</div>' +
+    hero.map(makeRow).join('');
+}
 
 function setSectionVis(sec, val) {
   if (!isOwner) return;
