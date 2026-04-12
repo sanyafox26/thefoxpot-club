@@ -162,10 +162,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .portfolio-link:hover{text-decoration:underline}
 
 /* ── gallery ── */
-.gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
-.gallery-thumb{position:relative;height:150px;border-radius:8px;overflow:hidden;cursor:pointer}
-.gallery-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s}
-.gallery-thumb:hover img{opacity:.85}
+.gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px}
+.gallery-thumb{position:relative;aspect-ratio:1/1;overflow:hidden;cursor:pointer;border-radius:4px}
+.gallery-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .gallery-remove{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:50%;width:24px;height:24px;color:#fff;font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
 .edit-mode .gallery-remove{display:flex}
 .gallery-edit-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
@@ -1843,12 +1842,16 @@ function renderGallery() {
   const proNotice = document.getElementById('galleryProNotice');
   if (!grid) return;
   const urls = localGallery;
-  grid.innerHTML = urls.map((url, i) =>
-    `<div class="gallery-thumb">
-      <img src="${escHtml(url)}" onclick="openLightbox(localGallery, ${i})"/>
-      ${isEditMode ? `<button class="gallery-remove" onclick="removeGalleryImage('${escHtml(url)}')">×</button>` : ''}
-    </div>`
-  ).join('');
+  if (!urls.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;text-align:center;grid-column:1/-1">Brak zdjęć. Dodaj swoje pierwsze zdjęcie! 📷</div>';
+  } else {
+    grid.innerHTML = urls.map((url, i) =>
+      `<div class="gallery-thumb">
+        <img src="${escHtml(url)}" onclick="openLightbox(localGallery, ${i})"/>
+        ${isEditMode ? `<button class="gallery-remove" onclick="removeGalleryImage('${escHtml(url)}')">×</button>` : ''}
+      </div>`
+    ).join('');
+  }
   if (counter) {
     if (localGallery.length && isEditMode) {
       counter.textContent = localFoxPro
