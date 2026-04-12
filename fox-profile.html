@@ -1482,6 +1482,16 @@ function toggleEditMode() {
 }
 
 function populateEditForm() {
+  console.log('filling edit form:', {
+    bio: profileData?.bio,
+    district: profileData?.district,
+    email: profileData?.contact_email,
+    address: profileData?.contact_address,
+    postal: profileData?.postal_code,
+    city: profileData?.city,
+    phone: profileData?.phone,
+    birthdate: profileData?.birthdate
+  });
   document.getElementById('editPublic').checked = localProfilePublic;
   document.getElementById('editDisplayName').value = localDisplayName;
   document.getElementById('editBio').value = localBio;
