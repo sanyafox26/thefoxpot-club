@@ -984,14 +984,14 @@ async function init() {
 
 function initLocals() {
   const d = profileData;
-  localBio = d.bio || '';
+  localBio = d.bio ?? '';
   localSpec = d.specialization || '';
   localSpecializations = Array.isArray(d.specializations) ? [...d.specializations] : [];
   localSocial = d.social_links || {};
   localDisplayName = d.display_name || '';
-  localDistrict = d.district || '';
-  localEmail = d.contact_email || '';
-  localAddress = d.contact_address || '';
+  localDistrict = d.district ?? '';
+  localEmail = d.contact_email ?? '';
+  localAddress = d.contact_address ?? '';
   localAvailToday = !!d.available_today;
   localAvailFrom = d.available_from || '';
   localAvailTo = d.available_to || '';
@@ -1005,10 +1005,10 @@ function initLocals() {
   localHobbies = JSON.parse(JSON.stringify(d.hobbies || []));
   localVolunteering = JSON.parse(JSON.stringify(d.volunteering || []));
   localMedia = JSON.parse(JSON.stringify(d.media || []));
-  localBirthdate = d.birthdate || '';
-  localPhone = d.phone || '';
-  localPostalCode = d.postal_code || '';
-  localCity = d.city || '';
+  localBirthdate = d.birthdate ?? '';
+  localPhone = d.phone ?? '';
+  localPostalCode = d.postal_code ?? '';
+  localCity = d.city ?? '';
   localLanguages = JSON.parse(JSON.stringify(d.languages || []));
   localGallery = Array.isArray(d.gallery) ? [...d.gallery] : [];
   localFoxPro = !!d.fox_pro;
