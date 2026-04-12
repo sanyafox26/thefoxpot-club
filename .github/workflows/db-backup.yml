@@ -1,24 +1,33 @@
 name: Daily DB Backup
 on:
   schedule:
-    - cron: '0 3 * * *'  # щодня о 3:00 UTC
-  workflow_dispatch:      # також вручну
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 jobs:
   backup:
     runs-on: ubuntu-latest
-    container:
-      image: postgres:17
     steps:
-      - name: Backup PostgreSQL
+      - name: Install pg_dump 17
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      - name: Backup database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           FILENAME="backup_$(date +%Y%m%d_%H%M).sql"
-          pg_dump "$DATABASE_URL" > "$FILENAME"
+          /usr/lib/postgresql/17/bin/pg_dump "$DATABASE_URL" > "$FILENAME"
           echo "Backup size: $(wc -c < $FILENAME) bytes"
 
-      - name: Upload backup as artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: db-backup-${{ github.run_number }}
