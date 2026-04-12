@@ -1333,15 +1333,16 @@ function renderPortfolio() {
   const featIdx = localPortfolio.findIndex(p=>p.id===localFeaturedId || p._featured);
   const feat = featIdx >= 0 ? localPortfolio[featIdx] : null;
   if (feat) {
-    featured.innerHTML = `<div class="featured-card" style="margin-bottom:14px;position:relative;overflow:hidden">
+    featured.innerHTML = `<div class="featured-card" style="margin-bottom:14px;position:relative;overflow:hidden;padding:${feat.image?'0':'14px'}">
       <button class="edit-card-btn" onclick="openPortfolioModal(${featIdx})">✏️</button>
-      ${feat.image?`<div style="height:180px;overflow:hidden;margin:-14px -14px 12px;width:calc(100% + 28px);cursor:pointer" onclick="openLightbox(['${escHtml(feat.image)}'],0)"><img src="${escHtml(feat.image)}" style="width:100%;height:100%;object-fit:cover;display:block"/></div>`:''}
+      ${feat.image?`<div style="width:100%;height:180px;overflow:hidden;border-radius:8px 8px 0 0;cursor:pointer;background:#000" onclick="openLightbox(['${escHtml(feat.image)}'],0)"><img src="${escHtml(feat.image)}" style="width:100%;height:100%;object-fit:cover;display:block"/></div><div style="padding:10px 14px 14px">`:''}
       <div class="featured-label">⭐ Wyróżniony projekt</div>
       <div class="portfolio-name" style="font-size:17px">${escHtml(feat.name||'')}</div>
       ${feat.role?`<div class="portfolio-role">${escHtml(feat.role)}</div>`:''}
       ${feat.result?`<div class="portfolio-result" style="margin-top:8px">${escHtml(feat.result)}</div>`:''}
       ${feat.tags?.length?`<div class="portfolio-tags">${feat.tags.map(t=>`<span class="portfolio-tag">${escHtml(t)}</span>`).join('')}</div>`:''}
       ${feat.link?`<a class="portfolio-link" href="${escHtml(feat.link)}" target="_blank" rel="noopener">🔗 Otwórz projekt</a>`:''}
+      ${feat.image?'</div>':''}
     </div>`;
   } else { featured.innerHTML = ''; }
   const rest = localPortfolio.filter((_,i)=>i!==featIdx);
