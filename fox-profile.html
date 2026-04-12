@@ -1346,12 +1346,12 @@ function renderPortfolio() {
   } else { featured.innerHTML = ''; }
   const rest = localPortfolio.filter((_,i)=>i!==featIdx);
   if (!rest.length) { grid.innerHTML = ''; return; }
+  const portImgUrls = localPortfolio.filter(x=>x.image).map(x=>x.image);
   grid.innerHTML = rest.map((p,i)=>{
     const realIdx = localPortfolio.indexOf(p);
-    const portImgUrls = localPortfolio.filter(x=>x.image).map(x=>x.image);
     const imgLbIdx = portImgUrls.indexOf(p.image);
-    return `<div class="portfolio-card" style="overflow:hidden;padding:${p.image?'0':'14px'}" onclick="isEditMode&&openPortfolioModal(${realIdx})">
-      ${p.image?`<img src="${escHtml(p.image)}" style="width:100%;height:180px;object-fit:cover;display:block;border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;cursor:pointer" onclick="event.stopPropagation();openLightbox(portImgUrls,${imgLbIdx})"/><div style="padding:10px 14px 14px">`:''}
+    return `<div class="portfolio-card" style="overflow:hidden;border-radius:8px;padding:${p.image?'0':'14px'}" onclick="isEditMode&&openPortfolioModal(${realIdx})">
+      ${p.image?`<img src="${escHtml(p.image)}" style="width:100%;height:180px;object-fit:cover;display:block;border-radius:8px 8px 0 0;cursor:pointer" onclick="event.stopPropagation();openLightbox(portImgUrls,${imgLbIdx})"/><div style="padding:10px 14px 14px">`:''}
       <div class="portfolio-name">${escHtml(p.name||'')}</div>
       ${p.role?`<div class="portfolio-role">${escHtml(p.role)}</div>`:''}
       ${p.result?`<div class="portfolio-result">${escHtml(p.result)}</div>`:''}
