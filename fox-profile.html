@@ -96,7 +96,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .social-btn svg{width:15px;height:15px;fill:currentColor}
 
 /* ── section wrapper ── */
-.section{margin:0 16px 20px;animation:fadeUp .4s ease both}
+.section{margin:0 16px 20px;animation:fadeUp .4s ease both;position:relative;background:var(--bg)}
 .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .section-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--text)}
 .hero-vis-btn{display:none;border:none;border-radius:16px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;margin-top:3px}
@@ -1841,7 +1841,7 @@ function renderGallery() {
   const addBtn = document.getElementById('galleryAddBtn');
   const proNotice = document.getElementById('galleryProNotice');
   if (!grid) return;
-  const urls = localGallery;
+  const urls = (Array.isArray(localGallery) ? localGallery : []).filter(u => typeof u === 'string' && u.startsWith('http'));
   if (!urls.length) {
     grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;text-align:center;grid-column:1/-1">Brak zdjęć. Dodaj swoje pierwsze zdjęcie! 📷</div>';
   } else {
