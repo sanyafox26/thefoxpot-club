@@ -8892,18 +8892,36 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
     );
     if (!r.rowCount) return res.status(404).json({ error: "not_found" });
     const fox = r.rows[0];
-    if (!fox.profile_public) {
-      // Allow owner to see their own private profile via JWT
-      let isOwner = false;
-      const authHeader = req.headers.authorization || "";
-      if (authHeader.startsWith("Bearer ")) {
-        try {
-          const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
-          if (decoded.fox_id && String(decoded.fox_id) === String(fox.id)) isOwner = true;
-        } catch(e) {}
-      }
-      if (!isOwner) return res.status(403).json({ error: "private" });
+
+    // ── Determine viewer level ──
+    let viewerLevel = 'public'; // 'public' | 'fox' | 'owner'
+    const authHeader = req.headers.authorization || "";
+    if (authHeader.startsWith("Bearer ")) {
+      try {
+        const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+        if (decoded.fox_id && String(decoded.fox_id) === String(fox.id)) {
+          viewerLevel = 'owner';
+        } else if (decoded.fox_id) {
+          viewerLevel = 'fox';
+        }
+      } catch(e) {}
     }
+
+    if (!fox.profile_public && viewerLevel !== 'owner') {
+      return res.status(403).json({ error: "private" });
+    }
+
+    // ── Normalize sections_visibility: boolean → string ──
+    const rawVis = fox.sections_visibility || {};
+    const normVis = {};
+    for (const [k, v] of Object.entries(rawVis)) {
+      if (v === true)  normVis[k] = 'public';
+      else if (v === false) normVis[k] = 'private';
+      else normVis[k] = v;
+    }
+    fox.sections_visibility = normVis;
+    fox.viewer_level = viewerLevel;
+
     // Reviews from fp1_reviews (user_id stored as TEXT)
     const rev = await pool.query(
       `SELECT v.name AS venue_name, r.rating AS stars, r.text, r.created_at AS date
@@ -8914,7 +8932,6 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
       [fox.user_id]
     );
     fox.reviews = rev.rows;
-    console.log('sections_visibility from DB:', fox.username, fox.sections_visibility);
     // response_rate: completed / (completed + failed) * 100
     const total = Number(fox.checkins_completed) + Number(fox.checkins_failed);
     fox.response_rate = total > 0 ? Math.round((Number(fox.checkins_completed) / total) * 100) : null;
