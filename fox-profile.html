@@ -100,6 +100,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .hero-vis-btn.sec-off{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171}
 .is-owner .hero-vis-btn{display:inline-flex;align-items:center}
 .fox-email{font-size:13px;color:var(--muted);margin-top:3px}
+.hero-field-row{display:flex;align-items:center;justify-content:center;gap:8px}
 .fox-email a{color:var(--muted);text-decoration:none}
 .fox-email a:hover{color:var(--accent)}
 .visibility-toggle{display:none;gap:4px}
@@ -512,26 +513,26 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       </div>
       <div class="fox-nick" id="foxNick" data-cv="name"></div>
       <div class="fox-spec" id="foxSpec" style="display:none"></div>
-      <div id="heroAddressWrap">
+      <div id="heroAddressWrap" class="hero-field-row">
         <div class="fox-city" id="foxCity" data-cv="address"></div>
         <div class="visibility-toggle" id="visHeroAddress"></div>
       </div>
-      <div id="heroEmailWrap">
+      <div id="heroEmailWrap" class="hero-field-row">
         <div class="fox-email" id="foxEmail" data-cv="email" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroEmail"></div>
       </div>
-      <div id="heroBirthdateWrap">
+      <div id="heroBirthdateWrap" class="hero-field-row">
         <div class="fox-city" id="foxBirthdate" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroBirthdate"></div>
       </div>
-      <div id="heroPhoneWrap">
+      <div id="heroPhoneWrap" class="hero-field-row">
         <div class="fox-email" id="foxPhone" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroPhone"></div>
       </div>
       <div id="foxLanguagesWrap" style="display:none">
         <div class="fox-city" id="foxLanguages"></div>
       </div>
-      <div id="heroRatingWrap">
+      <div id="heroRatingWrap" class="hero-field-row">
         <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
         <div class="pioneer-badge" id="pioneerBadge" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroRating"></div>
@@ -539,19 +540,19 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div id="heroAvailWrap">
         <div class="avail-badge" id="availBadge" style="display:none">🟢 Dostępny dziś</div>
       </div>
-      <div id="heroInvoiceWrap">
+      <div id="heroInvoiceWrap" class="hero-field-row">
         <div class="invoice-badge" id="invoiceBadge" style="display:none">🧾 Wystawia faktury</div>
         <div class="visibility-toggle" id="visHeroInvoice"></div>
       </div>
-      <div id="heroBioWrap">
+      <div id="heroBioWrap" class="hero-field-row">
         <div class="fox-bio" id="foxBio" data-cv="bio" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroBio"></div>
       </div>
-      <div id="heroSpecsWrap">
+      <div id="heroSpecsWrap" class="hero-field-row">
         <div class="pub-spec-wrap" id="pubSpecWrap" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroSpecs"></div>
       </div>
-      <div id="heroSocialWrap">
+      <div id="heroSocialWrap" class="hero-field-row">
         <div class="social-row" id="socialRow"></div>
         <div class="visibility-toggle" id="visHeroSocial"></div>
       </div>
