@@ -1842,6 +1842,8 @@ function renderGallery() {
   const proNotice = document.getElementById('galleryProNotice');
   if (!grid) return;
   const urls = (Array.isArray(localGallery) ? localGallery : []).filter(u => typeof u === 'string' && u.startsWith('http'));
+  console.log('localGallery:', localGallery);
+  console.log('urls filtered:', urls);
   if (!urls.length) {
     grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;text-align:center;grid-column:1/-1">Brak zdjęć. Dodaj swoje pierwsze zdjęcie! 📷</div>';
   } else {
