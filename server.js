@@ -8922,6 +8922,30 @@ app.get("/api/fox-public/:nickname", async (req, res) => {
     fox.sections_visibility = normVis;
     fox.viewer_level = viewerLevel;
 
+    // ── Redact sensitive hero fields based on visibility + viewer_level ──
+    const heroDefaults = {
+      email: 'foxes', phone: 'foxes', birthdate: 'private',
+      address: 'foxes', languages: 'public', rating: 'public',
+      bio: 'public', specializations: 'public', photo: 'public',
+      invoicing_badge: 'public', social_links: 'public'
+    };
+    function heroCanView(key) {
+      let vis = normVis[key];
+      if (vis === undefined || vis === null) vis = heroDefaults[key] || 'public';
+      if (vis === 'public') return true;
+      if (vis === 'foxes') return viewerLevel === 'fox' || viewerLevel === 'owner';
+      if (vis === 'private') return viewerLevel === 'owner';
+      return true;
+    }
+    if (!heroCanView('email'))    fox.contact_email = null;
+    if (!heroCanView('phone'))    fox.phone = null;
+    if (!heroCanView('birthdate')) fox.birthdate = null;
+    if (!heroCanView('address'))  { fox.contact_address = null; fox.district = null; fox.postal_code = null; }
+    if (!heroCanView('languages')) fox.languages = null;
+    if (!heroCanView('bio'))      fox.bio = null;
+    if (!heroCanView('specializations')) { fox.specializations = null; fox.specialization = null; }
+    if (!heroCanView('social_links')) fox.social_links = null;
+
     // Reviews from fp1_reviews (user_id stored as TEXT)
     const rev = await pool.query(
       `SELECT v.name AS venue_name, r.rating AS stars, r.text, r.created_at AS date

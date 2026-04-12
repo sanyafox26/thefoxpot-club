@@ -508,25 +508,25 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <div class="avatar-wrap">
           <img class="avatar" id="foxAvatar" src="" alt=""/>
         </div>
-        <button class="hero-vis-btn" id="visHeroPhoto" onclick="toggleSectionVis('photo')"></button>
+        <div class="visibility-toggle" id="visHeroPhoto"></div>
       </div>
       <div class="fox-nick" id="foxNick" data-cv="name"></div>
       <div class="fox-spec" id="foxSpec" style="display:none"></div>
       <div id="heroAddressWrap">
         <div class="fox-city" id="foxCity" data-cv="address"></div>
-        <button class="hero-vis-btn" id="visHeroAddress" onclick="toggleSectionVis('address')"></button>
+        <div class="visibility-toggle" id="visHeroAddress"></div>
       </div>
       <div id="heroEmailWrap">
         <div class="fox-email" id="foxEmail" data-cv="email" style="display:none"></div>
-        <button class="hero-vis-btn" id="visHeroEmail" onclick="toggleSectionVis('email')"></button>
+        <div class="visibility-toggle" id="visHeroEmail"></div>
       </div>
       <div id="heroBirthdateWrap">
         <div class="fox-city" id="foxBirthdate" style="display:none"></div>
-        <button class="hero-vis-btn" id="visHeroBirthdate" onclick="toggleSectionVis('birthdate')"></button>
+        <div class="visibility-toggle" id="visHeroBirthdate"></div>
       </div>
       <div id="heroPhoneWrap">
         <div class="fox-email" id="foxPhone" style="display:none"></div>
-        <button class="hero-vis-btn" id="visHeroPhone" onclick="toggleSectionVis('phone')"></button>
+        <div class="visibility-toggle" id="visHeroPhone"></div>
       </div>
       <div id="foxLanguagesWrap" style="display:none">
         <div class="fox-city" id="foxLanguages"></div>
@@ -534,26 +534,26 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       <div id="heroRatingWrap">
         <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
         <div class="pioneer-badge" id="pioneerBadge" style="display:none"></div>
-        <button class="hero-vis-btn" id="visHeroRating" onclick="toggleSectionVis('rating')"></button>
+        <div class="visibility-toggle" id="visHeroRating"></div>
       </div>
       <div id="heroAvailWrap">
         <div class="avail-badge" id="availBadge" style="display:none">🟢 Dostępny dziś</div>
       </div>
       <div id="heroInvoiceWrap">
         <div class="invoice-badge" id="invoiceBadge" style="display:none">🧾 Wystawia faktury</div>
-        <button class="hero-vis-btn" id="visHeroInvoice" onclick="toggleSectionVis('invoicing_badge')"></button>
+        <div class="visibility-toggle" id="visHeroInvoice"></div>
       </div>
       <div id="heroBioWrap">
         <div class="fox-bio" id="foxBio" data-cv="bio" style="display:none"></div>
-        <button class="hero-vis-btn" id="visHeroBio" onclick="toggleSectionVis('bio')"></button>
+        <div class="visibility-toggle" id="visHeroBio"></div>
       </div>
       <div id="heroSpecsWrap">
         <div class="pub-spec-wrap" id="pubSpecWrap" style="display:none"></div>
-        <button class="hero-vis-btn" id="visHeroSpecs" onclick="toggleSectionVis('specializations')"></button>
+        <div class="visibility-toggle" id="visHeroSpecs"></div>
       </div>
       <div id="heroSocialWrap">
         <div class="social-row" id="socialRow"></div>
-        <button class="hero-vis-btn" id="visHeroSocial" onclick="toggleSectionVis('social_links')"></button>
+        <div class="visibility-toggle" id="visHeroSocial"></div>
       </div>
     </div>
 
@@ -1357,9 +1357,16 @@ function renderReviews(reviews) {
     </div>`).join('');
 }
 
-function normVis(v) {
+const VIS_DEFAULTS = {
+  email: 'foxes', phone: 'foxes', birthdate: 'private',
+  address: 'foxes', languages: 'public', rating: 'public',
+  bio: 'public', specializations: 'public', photo: 'public',
+  invoicing_badge: 'public', social_links: 'public', availability: 'public'
+};
+function normVis(v, key) {
   if (v === false) return 'private';
-  if (v === true || v === undefined || v === null) return 'public';
+  if (v === true) return 'public';
+  if (v === undefined || v === null || v === '') return (key && VIS_DEFAULTS[key]) || 'public';
   return v; // 'public' | 'foxes' | 'private'
 }
 function applySectionsVisibility() {
@@ -1367,7 +1374,7 @@ function applySectionsVisibility() {
   secs.forEach(s=>{
     const el = document.getElementById(`sec${s.charAt(0).toUpperCase()+s.slice(1)}`);
     const wrap = document.getElementById(`vis${s.charAt(0).toUpperCase()+s.slice(1)}`);
-    const vis = normVis(localSectionsVis[s]);
+    const vis = normVis(localSectionsVis[s], s);
     if (el) {
       if (isOwner) {
         el.style.display = '';
@@ -1410,8 +1417,8 @@ function applySectionsVisibility() {
   };
   heroItems.forEach(({key, wrapId, btnId}) => {
     const wrap = document.getElementById(wrapId);
-    const btn  = document.getElementById(btnId);
-    const hidden = normVis(localSectionsVis[key]) === 'private';
+    const btnWrap = btnId ? document.getElementById(btnId) : null;
+    const vis = normVis(localSectionsVis[key], key);
     // birthdate/phone: hide wrap entirely when field is empty
     if (key === 'birthdate' && (!localBirthdate || localBirthdate === 'undefined')) {
       if (wrap) wrap.style.display = 'none';
@@ -1423,16 +1430,21 @@ function applySectionsVisibility() {
     }
     if (wrap) {
       if (isOwner) {
-        wrap.style.display = '';       // clear any display:none set before owner was confirmed
-        wrap.style.opacity = hidden ? '0.35' : '';
+        wrap.style.display = '';
+        wrap.style.opacity = (vis === 'foxes' || vis === 'private') ? '0.5' : '';
+      } else if (viewerLevel === 'fox') {
+        wrap.style.opacity = '';
+        wrap.style.display = vis === 'private' ? 'none' : '';
       } else {
         wrap.style.opacity = '';
-        wrap.style.display = hidden ? 'none' : '';
+        wrap.style.display = vis === 'public' ? '' : 'none';
       }
     }
-    if (btn) {
-      btn.textContent = (hidden ? '🔴 ' : '🟢 ') + heroLabels[key];
-      btn.className = 'hero-vis-btn ' + (hidden ? 'sec-off' : 'sec-on');
+    if (btnWrap && isOwner) {
+      btnWrap.innerHTML =
+        `<button class="vis-btn${vis==='public'?' active':''}" title="Widoczne dla wszystkich" onclick="setSectionVis('${key}','public')">🌍</button>` +
+        `<button class="vis-btn${vis==='foxes'?' active':''}" title="Tylko dla zalogowanych Foxów" onclick="setSectionVis('${key}','foxes')">🦊</button>` +
+        `<button class="vis-btn${vis==='private'?' active':''}" title="Tylko dla Ciebie" onclick="setSectionVis('${key}','private')">🔒</button>`;
     }
   });
 }
