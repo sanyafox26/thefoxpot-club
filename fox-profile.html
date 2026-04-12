@@ -596,11 +596,7 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
           <div class="section-title">📸 Moje prace</div>
           <div class="visibility-toggle" id="visGallery"></div>
         </div>
-        <div class="gallery-grid" id="galleryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%;">
-          <div style="height:150px;background:red;border-radius:4px;"></div>
-          <div style="height:150px;background:green;border-radius:4px;"></div>
-          <div style="height:150px;background:blue;border-radius:4px;"></div>
-        </div>
+        <div class="gallery-grid" id="galleryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:100%;"></div>
         <div class="gallery-counter" id="galleryCounter"></div>
         <div id="galleryAddWrap">
           <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
@@ -1851,6 +1847,8 @@ function renderGallery() {
   if (!urls.length) {
     grid.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;text-align:center;grid-column:1/-1">Brak zdjęć. Dodaj swoje pierwsze zdjęcie! 📷</div>';
   } else {
+    console.log('Setting gallery HTML, urls count:', urls.length);
+    console.log('First url:', urls[0]);
     grid.innerHTML = urls.map((url, i) =>
       `<div class="portfolio-card" style="overflow:hidden;border-radius:8px;padding:0;border:1px solid var(--border);position:relative;">
         <div style="height:180px;overflow:hidden;border-radius:8px 8px 0 0;cursor:pointer;" onclick="openLightbox(localGallery, ${i})"><img src="${escHtml(url)}" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
