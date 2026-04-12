@@ -84,6 +84,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .fox-bio{font-size:14px;color:rgba(255,255,255,.7);max-width:480px;margin:14px auto 0;line-height:1.65}
 .rating-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(249,126,0,.12);border:1px solid rgba(249,126,0,.3);border-radius:20px;padding:6px 14px;font-size:14px;font-weight:600;margin-top:14px}
 .rating-pill span{color:var(--accent)}
+.rating-wrap{position:relative;display:inline-block;cursor:pointer}
+.rating-tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#1a1d29;border:1px solid #F97E00;border-radius:10px;padding:12px 16px;width:240px;font-size:12px;color:#ccc;line-height:1.8;z-index:100;text-align:left;box-shadow:0 4px 20px rgba(0,0,0,0.5);white-space:normal}
+.rating-tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#F97E00}
+.rating-wrap:hover .rating-tooltip{display:block}
 
 /* social links */
 .social-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
@@ -533,7 +537,18 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <div class="fox-city" id="foxLanguages"></div>
       </div>
       <div id="heroRatingWrap" class="hero-field-row">
-        <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
+        <div class="rating-wrap">
+          <div class="rating-pill"><span id="foxRating">0</span> pkt Fox Rating</div>
+          <div class="rating-tooltip">
+            <strong>Jak liczy się Fox Rating?</strong><br><br>
+            🏠 Wizyty w lokalach — <b>+10 pkt</b><br>
+            ✅ Zlecenia zaliczone — <b>+25 pkt</b><br>
+            ⭐ Recenzje od lokali — <b>+15 pkt</b><br>
+            👥 Zaproszeni Foxowie — <b>+20 pkt</b><br>
+            🔥 Aktywność miesięczna — <b>+5 pkt</b><br><br>
+            <span style="color:#aaa;font-size:11px">Rośnie automatycznie z aktywnością w klubie</span>
+          </div>
+        </div>
         <div class="pioneer-badge" id="pioneerBadge" style="display:none"></div>
         <div class="visibility-toggle" id="visHeroRating"></div>
       </div>
@@ -2748,6 +2763,17 @@ async function generatePdf() {
   doc.save('CV_' + (localDisplayName || username).replace(/\s+/g, '_') + '.pdf');
 }
 
+
+// ── Rating tooltip (mobile click) ──
+document.querySelector('.rating-wrap')?.addEventListener('click', function(e) {
+  e.stopPropagation();
+  const t = this.querySelector('.rating-tooltip');
+  t.style.display = t.style.display === 'block' ? 'none' : 'block';
+});
+document.addEventListener('click', () => {
+  const t = document.querySelector('.rating-tooltip');
+  if (t) t.style.display = 'none';
+});
 
 // ── Init ──
 init().then(() => {
