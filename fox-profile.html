@@ -591,12 +591,12 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
       </div>
 
       <!-- Gallery -->
-      <div class="section" id="secGallery" data-sec="gallery">
+      <div class="section" id="secGallery" data-sec="gallery" style="position:relative;z-index:1;">
         <div class="section-head">
           <div class="section-title">📸 Moje prace</div>
           <div class="visibility-toggle" id="visGallery"></div>
         </div>
-        <div class="gallery-grid" id="galleryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:100%;"></div>
+        <div class="gallery-grid" id="galleryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:100%;position:relative;z-index:1;"></div>
         <div class="gallery-counter" id="galleryCounter"></div>
         <div id="galleryAddWrap">
           <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
