@@ -822,6 +822,7 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
         <button type="button" onclick="removePortImage()" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer">× Usuń</button>
       </div>
       <button type="button" class="spec-add-btn" id="portImageBtn" onclick="document.getElementById('portImageInput').click()">📷 Dodaj zdjęcie</button>
+      <div id="portProNotice" style="display:none;font-size:13px;color:var(--muted);padding:6px 0">🔒 Więcej zdjęć w Fox PRO</div>
       <input type="file" id="portImageInput" accept="image/*" style="display:none" onchange="uploadPortImage(this)"/>
     </div>
     <div class="field-group">
@@ -1347,8 +1348,10 @@ function renderPortfolio() {
   if (!rest.length) { grid.innerHTML = ''; return; }
   grid.innerHTML = rest.map((p,i)=>{
     const realIdx = localPortfolio.indexOf(p);
+    const portImgUrls = localPortfolio.filter(x=>x.image).map(x=>x.image);
+    const imgLbIdx = portImgUrls.indexOf(p.image);
     return `<div class="portfolio-card" style="overflow:hidden;padding:${p.image?'0':'14px'}" onclick="isEditMode&&openPortfolioModal(${realIdx})">
-      ${p.image?`<img src="${escHtml(p.image)}" style="width:100%;height:140px;object-fit:cover;display:block;border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0"/><div style="padding:10px 14px 14px">`:''}
+      ${p.image?`<img src="${escHtml(p.image)}" style="width:100%;height:180px;object-fit:cover;display:block;border-radius:calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;cursor:pointer" onclick="event.stopPropagation();openLightbox(portImgUrls,${imgLbIdx})"/><div style="padding:10px 14px 14px">`:''}
       <div class="portfolio-name">${escHtml(p.name||'')}</div>
       ${p.role?`<div class="portfolio-role">${escHtml(p.role)}</div>`:''}
       ${p.result?`<div class="portfolio-result">${escHtml(p.result)}</div>`:''}
@@ -1776,11 +1779,21 @@ function openPortfolioModal(idx) {
   if (_portImageUrl) { thumb.src = _portImageUrl; prev.style.display = ''; }
   else prev.style.display = 'none';
   document.getElementById('portImageInput').value = '';
+  _updatePortImageState();
   openModal('modalPortfolio');
+}
+function _updatePortImageState() {
+  const btn = document.getElementById('portImageBtn');
+  const notice = document.getElementById('portProNotice');
+  if (!btn || !notice) return;
+  const atLimit = !localFoxPro && !!_portImageUrl;
+  btn.style.display = atLimit ? 'none' : '';
+  notice.style.display = atLimit ? '' : 'none';
 }
 function removePortImage() {
   _portImageUrl = '';
   document.getElementById('portImagePreview').style.display = 'none';
+  _updatePortImageState();
 }
 async function uploadPortImage(input) {
   const file = input.files[0]; if (!file) return;
@@ -1801,6 +1814,7 @@ async function uploadPortImage(input) {
       _portImageUrl = data.url;
       document.getElementById('portImageThumb').src = data.url;
       document.getElementById('portImagePreview').style.display = '';
+      _updatePortImageState();
     } else {
       showToast(data.error || 'Błąd przesyłania');
     }
