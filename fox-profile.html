@@ -162,7 +162,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .portfolio-link:hover{text-decoration:underline}
 
 /* ── gallery ── */
-.gallery-grid{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:4px!important;margin-bottom:4px}
+.gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .gallery-thumb{position:relative!important;width:100%!important;height:150px!important;overflow:hidden!important;cursor:pointer!important;border-radius:4px!important}
 .gallery-thumb img{width:100%!important;height:100%!important;object-fit:cover!important;display:block!important}
 .gallery-remove{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;border-radius:50%;width:24px;height:24px;color:#fff;font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
@@ -596,7 +596,7 @@ body.print-mode .pcv-row,#cv-print .pcv-row{display:flex;justify-content:space-b
           <div class="section-title">📸 Moje prace</div>
           <div class="visibility-toggle" id="visGallery"></div>
         </div>
-        <div class="gallery-grid" id="galleryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:100%;position:relative;z-index:1;"></div>
+        <div class="gallery-grid" id="galleryGrid" style="position:relative;z-index:1;"></div>
         <div class="gallery-counter" id="galleryCounter"></div>
         <div id="galleryAddWrap">
           <button class="add-btn" id="galleryAddBtn" onclick="document.getElementById('galleryFileInput').click()">📷 Dodaj zdjęcie</button>
@@ -1855,9 +1855,6 @@ function renderGallery() {
         ${isEditMode ? `<button class="gallery-remove" onclick="event.stopPropagation();removeGalleryImage('${escHtml(url)}')" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.6);color:white;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;">×</button>` : ''}
       </div>`
     ).join('');
-    grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
-    grid.style.gap = '10px';
     setTimeout(() => {
       console.log('gallery grid computed:', window.getComputedStyle(grid).display, window.getComputedStyle(grid).gridTemplateColumns);
       console.log('gallery grid offsetHeight:', grid.offsetHeight);
