@@ -1858,6 +1858,16 @@ function renderGallery() {
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
     grid.style.gap = '10px';
+    setTimeout(() => {
+      console.log('gallery grid computed:', window.getComputedStyle(grid).display, window.getComputedStyle(grid).gridTemplateColumns);
+      console.log('gallery grid offsetHeight:', grid.offsetHeight);
+      console.log('gallery grid children:', grid.children.length);
+      const firstChild = grid.children[0];
+      if (firstChild) {
+        console.log('first child offsetHeight:', firstChild.offsetHeight);
+        console.log('first child computed height:', window.getComputedStyle(firstChild).height);
+      }
+    }, 500);
   }
   if (counter) {
     if (localGallery.length && isEditMode) {
